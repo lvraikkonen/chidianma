@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first runnable vertical slice of “中午吃点啥”: shared API types, Fastify recommendation API with seeded PostgreSQL data, and a Chrome MV3 extension that can fetch, cache, display, and notify today’s recommendations.
+**Status:** Revised after P0/P1 plan review. Do not execute earlier revisions of this plan.
+
+**Goal:** Build the first runnable engineering vertical slice of “中午吃点啥”: shared API types, Fastify recommendation API with seeded PostgreSQL data, and a Chrome MV3 extension that can fetch, cache, display, and notify today’s recommendations.
 
 **Architecture:** Use a pnpm TypeScript monorepo with `apps/server`, `apps/extension`, `apps/admin`, and `packages/shared`. The first slice prioritizes server + shared + extension, with admin and real weather added after the end-to-end path works. Server owns recommendations and persistence; extension owns alarms, notifications, popup display, and local fallback cache.
 
@@ -10,7 +12,7 @@
 
 ## Global Constraints
 
-- Spec status is `Draft Accepted for Prototype`, but Open Design HTML prototype is skipped for now.
+- Current spec status is `Prototype Design Skipped; Ready for Engineering Vertical Slice`.
 - Monorepo paths are `apps/extension/`, `apps/server/`, `apps/admin/`, and `packages/shared/`.
 - Plugin default reminder time is `11:30`.
 - Chrome extension must use Manifest V3.
@@ -30,9 +32,34 @@
 - Real weather uses an Open-Meteo-style adapter after the mock-weather vertical slice works.
 - Team invite code must never be embedded into frontend bundles.
 - Management auth uses a short-lived signed session token created from teammate name + team invite code.
+- Management write APIs must require `Authorization: Bearer <session-token>`.
+- Admin frontend must never hardcode `TEAM_INVITE_CODE`; the invite input default is an empty string.
+- Extension manifest must be emitted to `apps/extension/dist/manifest.json`.
+- Extension tests must not import side-effectful `background.ts`; pure scheduling logic lives in `alarmSchedule.ts`.
+- Notification click opens popup when available and falls back to a `detail.html` extension page.
+- Weather snapshots must be read/written through PostgreSQL before falling back to mock weather.
+- Recommendation batch creation must use a transaction to avoid duplicate current batches at 11:30.
 - First runnable slice may seed 5-10 restaurants manually.
 
 ---
+
+## Plan Review Resolutions
+
+- P0.1 accepted: production `tsconfig.json` files include only production source. Tests are run by Vitest; test typechecking can be added later with dedicated test configs.
+- P0.2 accepted: `manifest.json` moves to `apps/extension/public/manifest.json`, Vite copies it to `dist`, and a script generates temporary PNG icons.
+- P0.3 accepted: `getNextAlarmTime` moves to `apps/extension/src/alarmSchedule.ts`; tests import only that pure module.
+- P0.4 accepted: background service worker registers listeners at top level and calls `ensureLunchAlarm()` on startup to recreate a missing alarm.
+- P0.5 accepted: notification click uses `chrome.action.openPopup()` when available and falls back to `chrome.tabs.create({ url: chrome.runtime.getURL("detail.html") })`.
+- P0.6 accepted: admin session tokens are HMAC signed, include `teammateId`, `name`, and `exp`, and are verified on every management write.
+- P0.7 accepted: management write APIs require a valid admin session token; feedback requires read token or admin session token.
+- P0.8 accepted: weather uses `weather_snapshots` cache, returns `weatherUnavailable`, and only falls back when neither cached nor fetched weather is available.
+- P0.9 accepted: daily recommendation batch creation uses a serializable Prisma transaction and rechecks existing current batches inside the transaction.
+- P1.10 accepted: server computes office weekday tag and uses `recommendation.weekdayTags`.
+- P1.11 accepted: candidates are generated at `restaurant + recommendation` granularity, then deduped by restaurant.
+- P1.12 accepted: extension gets a minimal options page for API URL, read token, reminder time, and enabled flag.
+- P1.13 accepted: manifest host permissions cover localhost and Railway generated domains without using `<all_urls>`.
+- P1.14 accepted: dev scripts build `@lunch/shared` before starting server, extension, or admin.
+- P1.15 accepted: seed data uses unique restaurant names and upsert to avoid duplicate rows.
 
 ## File Structure
 
@@ -43,18 +70,24 @@ Create this structure during Task 1:
   apps/
     extension/
       index.html
-      manifest.json
       package.json
+      detail.html
+      options.html
       src/
+        alarmSchedule.ts
         background.ts
-        chromeApi.ts
         config.ts
+        detail.ts
+        options.ts
         popup.ts
         recommendationClient.ts
         storage.ts
       styles/
+        detail.css
+        options.css
         popup.css
       public/
+        manifest.json
         icon-16.png
         icon-32.png
         icon-48.png
@@ -77,12 +110,18 @@ Create this structure during Task 1:
           health.ts
           recommendations.ts
           feedback.ts
+          restaurants.ts
+          recommendations-admin.ts
+          session.ts
         services/
+          auth/
+            sessionToken.ts
           dates.ts
           recommendation/
             scorer.ts
             today.ts
           weather/
+            officeWeather.ts
             mockWeather.ts
             openMeteo.ts
       tests/
@@ -104,6 +143,8 @@ Create this structure during Task 1:
         scoring.test.ts
   package.json
   pnpm-workspace.yaml
+  scripts/
+    create-extension-icons.mjs
   tsconfig.base.json
   vitest.config.ts
 ```
@@ -117,6 +158,7 @@ Create this structure during Task 1:
 **Files:**
 - Create: `/Users/claus/chidianma/package.json`
 - Create: `/Users/claus/chidianma/pnpm-workspace.yaml`
+- Create: `/Users/claus/chidianma/scripts/create-extension-icons.mjs`
 - Create: `/Users/claus/chidianma/tsconfig.base.json`
 - Create: `/Users/claus/chidianma/vitest.config.ts`
 - Create: `/Users/claus/chidianma/apps/server/package.json`
@@ -145,15 +187,46 @@ Create `/Users/claus/chidianma/package.json`:
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "dev:server": "pnpm --filter @lunch/server dev",
-    "dev:extension": "pnpm --filter @lunch/extension dev",
-    "dev:admin": "pnpm --filter @lunch/admin dev"
+    "dev:server": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/server dev",
+    "dev:extension": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/extension dev",
+    "dev:admin": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/admin dev",
+    "icons:extension": "node scripts/create-extension-icons.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "pngjs": "^7.0.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }
+}
+```
+
+Create `/Users/claus/chidianma/scripts/create-extension-icons.mjs`:
+
+```js
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { PNG } from "pngjs";
+
+const sizes = [16, 32, 48, 128];
+const outputDir = resolve("apps/extension/public");
+mkdirSync(outputDir, { recursive: true });
+
+for (const size of sizes) {
+  const png = new PNG({ width: size, height: size });
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const index = (size * y + x) << 2;
+      const edge = x < 2 || y < 2 || x >= size - 2 || y >= size - 2;
+      png.data[index] = edge ? 37 : 245;
+      png.data[index + 1] = edge ? 99 : 158;
+      png.data[index + 2] = edge ? 235 : 11;
+      png.data[index + 3] = 255;
+    }
+  }
+  const file = resolve(outputDir, `icon-${size}.png`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, PNG.sync.write(png));
 }
 ```
 
@@ -320,7 +393,7 @@ Create `/Users/claus/chidianma/packages/shared/tsconfig.json`:
     "declaration": true,
     "emitDeclarationOnly": false
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }
 ```
 
@@ -334,7 +407,7 @@ Create `/Users/claus/chidianma/apps/server/tsconfig.json`:
     "rootDir": "src",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "prisma/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }
 ```
 
@@ -634,7 +707,7 @@ git commit -m "feat: add shared lunch contracts"
 **Interfaces:**
 - Produces: Prisma models `Teammate`, `Restaurant`, `Recommendation`, `DailyRecommendation`, `WeatherSnapshot`, `Feedback`.
 - Produces: seed data with at least 6 active restaurants and recommendations.
-- Consumes: shared enum names from Task 2 conceptually; Prisma enum names use uppercase values.
+- Consumes: shared enum names from Task 2 conceptually; Prisma enum values use the same lowercase strings as the shared types.
 
 - [ ] **Step 1: Write Prisma schema**
 
@@ -676,7 +749,7 @@ model Teammate {
 
 model Restaurant {
   id                   String                @id @default(cuid())
-  name                 String
+  name                 String                @unique
   area                 String?
   address              String?
   distanceMinutes      Int?                  @map("distance_minutes")
@@ -867,8 +940,20 @@ async function main() {
   });
 
   for (const item of restaurants) {
-    const restaurant = await prisma.restaurant.create({
-      data: {
+    const restaurant = await prisma.restaurant.upsert({
+      where: { name: item.name },
+      update: {
+        area: item.area,
+        address: item.address,
+        distanceMinutes: item.distanceMinutes,
+        cuisine: item.cuisine,
+        priceBand: item.priceBand,
+        supportsDineIn: true,
+        supportsTakeout: true,
+        tags: item.tags,
+        status: "active"
+      },
+      create: {
         name: item.name,
         area: item.area,
         address: item.address,
@@ -882,17 +967,27 @@ async function main() {
       }
     });
 
-    await prisma.recommendation.create({
-      data: {
+    const existingRecommendation = await prisma.recommendation.findFirst({
+      where: {
         restaurantId: restaurant.id,
         teammateId: teammate.id,
-        dish: item.dish,
-        reason: item.reason,
-        weatherTags: item.tags.includes("雨天") ? ["rainy"] : item.tags.includes("清爽") ? ["hot"] : [],
-        weekdayTags: item.tags.includes("周五") ? ["friday"] : [],
-        moodTags: item.tags
+        dish: item.dish
       }
     });
+
+    if (!existingRecommendation) {
+      await prisma.recommendation.create({
+        data: {
+          restaurantId: restaurant.id,
+          teammateId: teammate.id,
+          dish: item.dish,
+          reason: item.reason,
+          weatherTags: item.tags.includes("雨天") ? ["rainy"] : item.tags.includes("清爽") ? ["hot"] : [],
+          weekdayTags: item.tags.includes("周五") ? ["friday"] : [],
+          moodTags: item.tags
+        }
+      });
+    }
   }
 }
 
@@ -946,6 +1041,7 @@ git commit -m "feat: add lunch database schema"
 - Create: `/Users/claus/chidianma/apps/server/src/plugins/prisma.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/routes/health.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/routes/recommendations.ts`
+- Create: `/Users/claus/chidianma/apps/server/src/services/auth/readToken.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/services/dates.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/services/weather/mockWeather.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/services/recommendation/scorer.ts`
@@ -957,6 +1053,7 @@ git commit -m "feat: add lunch database schema"
 - Consumes: Prisma schema from Task 3 and shared contracts from Task 2.
 - Produces: `buildApp(): FastifyInstance`.
 - Produces: `getOfficeDate(now: Date, timezone: string): string`.
+- Produces: `getOfficeWeekdayTag(now: Date, timezone: string): WeekdayTag | null`.
 - Produces: `getTodayRecommendations({ prisma, env, forceRefresh }): Promise<TodayRecommendationResponse>`.
 - Produces: `GET /api/today-recommendations` and `GET /api/health`.
 
@@ -966,12 +1063,17 @@ Create `/Users/claus/chidianma/apps/server/tests/dates.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { getOfficeDate } from "../src/services/dates";
+import { getOfficeDate, getOfficeWeekdayTag } from "../src/services/dates";
 
 describe("getOfficeDate", () => {
   it("uses office timezone for date boundaries", () => {
     const date = getOfficeDate(new Date("2026-07-06T17:00:00.000Z"), "Asia/Shanghai");
     expect(date).toBe("2026-07-07");
+  });
+
+  it("returns office weekday tag", () => {
+    const weekday = getOfficeWeekdayTag(new Date("2026-07-06T17:00:00.000Z"), "Asia/Shanghai");
+    expect(weekday).toBe("tuesday");
   });
 });
 ```
@@ -981,6 +1083,28 @@ describe("getOfficeDate", () => {
 Create `/Users/claus/chidianma/apps/server/src/services/dates.ts`:
 
 ```ts
+import type { WeekdayTag } from "@lunch/shared";
+
+const WEEKDAY_TAGS: Record<number, WeekdayTag | null> = {
+  0: null,
+  1: "monday",
+  2: "tuesday",
+  3: "wednesday",
+  4: "thursday",
+  5: "friday",
+  6: null
+};
+
+const WEEKDAY_INDEX_BY_SHORT_NAME: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6
+};
+
 export function getOfficeDate(now: Date, timezone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
@@ -998,6 +1122,15 @@ export function getOfficeDate(now: Date, timezone: string): string {
   }
 
   return `${year}-${month}-${day}`;
+}
+
+export function getOfficeWeekdayTag(now: Date, timezone: string): WeekdayTag | null {
+  const weekdayName = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short"
+  }).formatToParts(now).find((part) => part.type === "weekday")?.value;
+  const weekday = weekdayName ? WEEKDAY_INDEX_BY_SHORT_NAME[weekdayName] : undefined;
+  return typeof weekday === "number" ? WEEKDAY_TAGS[weekday] : null;
 }
 ```
 
@@ -1132,7 +1265,7 @@ export function rankRestaurantCandidates(input: {
   candidates: Candidate[];
   limit: number;
 }): RankedRecommendation[] {
-  return input.candidates
+  const ranked = input.candidates
     .map((candidate) => {
       const result = calculateRestaurantScore({
         weekdayMatch: candidate.weekdayMatch,
@@ -1154,8 +1287,16 @@ export function rankRestaurantCandidates(input: {
         score: result.score
       };
     })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, input.limit);
+    .sort((a, b) => b.score - a.score);
+
+  const byRestaurant = new Map<string, RankedRecommendation>();
+  for (const item of ranked) {
+    if (!byRestaurant.has(item.restaurantId)) {
+      byRestaurant.set(item.restaurantId, item);
+    }
+  }
+
+  return [...byRestaurant.values()].slice(0, input.limit);
 }
 ```
 
@@ -1220,14 +1361,14 @@ await app.listen({
 Create `/Users/claus/chidianma/apps/server/src/routes/recommendations.ts`:
 
 ```ts
-import { READ_TOKEN_HEADER } from "@lunch/shared";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type { AppEnv } from "../env";
 import { prisma } from "../plugins/prisma";
+import { requireReadToken } from "../services/auth/readToken";
 import { getTodayRecommendations } from "../services/recommendation/today";
 
 export async function registerRecommendationRoutes(app: FastifyInstance, env: AppEnv) {
-  app.get("/api/today-recommendations", async (request, reply) => {
+  app.get<{ Querystring: { forceRefresh?: string } }>("/api/today-recommendations", async (request, reply) => {
     requireReadToken(request, reply, env);
     const forceRefresh = request.query && typeof request.query === "object" &&
       "forceRefresh" in request.query &&
@@ -1236,10 +1377,22 @@ export async function registerRecommendationRoutes(app: FastifyInstance, env: Ap
     return getTodayRecommendations({ prisma, env, forceRefresh });
   });
 }
+```
 
-function requireReadToken(request: FastifyRequest, reply: FastifyReply, env: AppEnv) {
+Create `/Users/claus/chidianma/apps/server/src/services/auth/readToken.ts`:
+
+```ts
+import { READ_TOKEN_HEADER } from "@lunch/shared";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import type { AppEnv } from "../../env";
+
+export function hasReadToken(request: FastifyRequest, env: AppEnv): boolean {
   const token = request.headers[READ_TOKEN_HEADER];
-  if (token !== env.EXTENSION_READ_TOKEN) {
+  return token === env.EXTENSION_READ_TOKEN;
+}
+
+export function requireReadToken(request: FastifyRequest, reply: FastifyReply, env: AppEnv): void {
+  if (!hasReadToken(request, env)) {
     reply.code(401);
     throw new Error("Invalid read token");
   }
@@ -1252,9 +1405,10 @@ Create `/Users/claus/chidianma/apps/server/src/services/recommendation/today.ts`
 
 ```ts
 import { LUNCH_HEADLINE, type TodayRecommendationResponse } from "@lunch/shared";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import type { AppEnv } from "../../env";
-import { getOfficeDate } from "../dates";
+import { getOfficeDate, getOfficeWeekdayTag } from "../dates";
 import { getMockWeather } from "../weather/mockWeather";
 import { rankRestaurantCandidates } from "./scorer";
 
@@ -1264,90 +1418,112 @@ export async function getTodayRecommendations(input: {
   forceRefresh: boolean;
 }): Promise<TodayRecommendationResponse> {
   const date = getOfficeDate(new Date(), input.env.OFFICE_TIMEZONE);
-  const existing = await input.prisma.dailyRecommendation.findMany({
-    where: { date, isCurrent: true },
-    include: { restaurant: true, recommendation: true },
-    orderBy: { score: "desc" }
-  });
+  const weather = getMockWeather();
+  const todayWeekday = getOfficeWeekdayTag(new Date(), input.env.OFFICE_TIMEZONE);
 
-  if (!input.forceRefresh && existing.length > 0) {
-    return {
-      date,
-      headline: LUNCH_HEADLINE,
-      weatherSummary: getMockWeather().summary,
-      items: existing.map((item) => ({
-        restaurantId: item.restaurantId,
-        recommendationId: item.recommendationId ?? undefined,
-        restaurantName: item.restaurant.name,
-        dish: item.recommendation?.dish ?? undefined,
-        reason: item.reason,
-        distanceMinutes: item.restaurant.distanceMinutes ?? undefined,
-        tags: item.restaurant.tags
-      }))
-    };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await input.prisma.$transaction(async (tx) => {
+        const existing = await tx.dailyRecommendation.findMany({
+          where: { date, isCurrent: true },
+          include: { restaurant: true, recommendation: true },
+          orderBy: { score: "desc" }
+        });
+
+        if (!input.forceRefresh && existing.length > 0) {
+          return {
+            date,
+            headline: LUNCH_HEADLINE,
+            weatherSummary: weather.summary,
+            weatherUnavailable: false,
+            items: existing.map((item) => ({
+              restaurantId: item.restaurantId,
+              recommendationId: item.recommendationId ?? undefined,
+              restaurantName: item.restaurant.name,
+              dish: item.recommendation?.dish ?? undefined,
+              reason: item.reason,
+              distanceMinutes: item.restaurant.distanceMinutes ?? undefined,
+              tags: item.restaurant.tags
+            }))
+          };
+        }
+
+        const restaurants = await tx.restaurant.findMany({
+          where: { status: "active" },
+          include: {
+            recommendations: true,
+            feedback: { where: { date, type: { in: ["skip", "blocked"] } } }
+          }
+        });
+
+        const recent = await tx.dailyRecommendation.findMany({
+          where: { date: { not: date } },
+          take: 20,
+          orderBy: { createdAt: "desc" }
+        });
+        const recentIds = new Set(recent.map((item) => item.restaurantId));
+
+        const ranked = rankRestaurantCandidates({
+          limit: 3,
+          candidates: restaurants.flatMap((restaurant) => {
+            const recommendations = restaurant.recommendations.length
+              ? restaurant.recommendations
+              : [{ id: undefined, dish: undefined, weatherTags: [], weekdayTags: [], moodTags: [] }];
+
+            return recommendations.map((recommendation) => ({
+              restaurantId: restaurant.id,
+              recommendationId: recommendation.id,
+              name: restaurant.name,
+              dish: recommendation.dish ?? undefined,
+              distanceMinutes: restaurant.distanceMinutes ?? undefined,
+              tags: [...new Set([...restaurant.tags, ...recommendation.moodTags])],
+              weekdayMatch: todayWeekday && recommendation.weekdayTags.includes(todayWeekday) ? 1 : 0,
+              weatherMatch: recommendation.weatherTags.includes(weather.condition) ? 1 : 0,
+              teammateRecommendationCount: restaurant.recommendations.length,
+              recentlyRecommended: recentIds.has(restaurant.id),
+              negativeFeedbackCount: restaurant.feedback.length
+            }));
+          })
+        });
+
+        const batchId = randomUUID();
+        await tx.dailyRecommendation.updateMany({
+          where: { date, isCurrent: true },
+          data: { isCurrent: false }
+        });
+
+        await tx.dailyRecommendation.createMany({
+          data: ranked.map((item) => ({
+            date,
+            batchId,
+            restaurantId: item.restaurantId,
+            recommendationId: item.recommendationId,
+            score: item.score,
+            reason: item.reason,
+            isCurrent: true
+          }))
+        });
+
+        return {
+          date,
+          headline: LUNCH_HEADLINE,
+          weatherSummary: weather.summary,
+          weatherUnavailable: false,
+          items: ranked.map(({ score: _score, ...item }) => item)
+        };
+      }, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+      });
+    } catch (error) {
+      if (attempt === 2 || !isRetryableTransactionError(error)) throw error;
+    }
   }
 
-  const restaurants = await input.prisma.restaurant.findMany({
-    where: { status: "active" },
-    include: {
-      recommendations: true,
-      feedback: { where: { date, type: { in: ["skip", "blocked"] } } }
-    }
-  });
+  throw new Error("Could not create daily recommendations");
+}
 
-  const recent = await input.prisma.dailyRecommendation.findMany({
-    where: { date: { not: date } },
-    take: 20,
-    orderBy: { createdAt: "desc" }
-  });
-  const recentIds = new Set(recent.map((item) => item.restaurantId));
-  const weather = getMockWeather();
-
-  const ranked = rankRestaurantCandidates({
-    limit: 3,
-    candidates: restaurants.map((restaurant) => {
-      const recommendation = restaurant.recommendations[0];
-      const weatherMatch = recommendation?.weatherTags.includes(weather.condition) ? 1 : 0;
-      return {
-        restaurantId: restaurant.id,
-        recommendationId: recommendation?.id,
-        name: restaurant.name,
-        dish: recommendation?.dish ?? undefined,
-        distanceMinutes: restaurant.distanceMinutes ?? undefined,
-        tags: restaurant.tags,
-        weekdayMatch: 0,
-        weatherMatch,
-        teammateRecommendationCount: restaurant.recommendations.length,
-        recentlyRecommended: recentIds.has(restaurant.id),
-        negativeFeedbackCount: restaurant.feedback.length
-      };
-    })
-  });
-
-  const batchId = crypto.randomUUID();
-  await input.prisma.dailyRecommendation.updateMany({
-    where: { date, isCurrent: true },
-    data: { isCurrent: false }
-  });
-
-  await input.prisma.dailyRecommendation.createMany({
-    data: ranked.map((item) => ({
-      date,
-      batchId,
-      restaurantId: item.restaurantId,
-      recommendationId: item.recommendationId,
-      score: item.score,
-      reason: item.reason,
-      isCurrent: true
-    }))
-  });
-
-  return {
-    date,
-    headline: LUNCH_HEADLINE,
-    weatherSummary: weather.summary,
-    items: ranked.map(({ score: _score, ...item }) => item)
-  };
+function isRetryableTransactionError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
 }
 ```
 
@@ -1389,15 +1565,23 @@ git commit -m "feat: add today recommendation api"
 
 ---
 
-### Task 5: Extension Popup Fetch and Cache
+### Task 5: Extension Popup, Settings, Fetch, and Cache
 
 **Files:**
-- Create: `/Users/claus/chidianma/apps/extension/manifest.json`
 - Create: `/Users/claus/chidianma/apps/extension/index.html`
+- Create: `/Users/claus/chidianma/apps/extension/detail.html`
+- Create: `/Users/claus/chidianma/apps/extension/options.html`
+- Create: `/Users/claus/chidianma/apps/extension/vite.config.ts`
+- Create: `/Users/claus/chidianma/apps/extension/public/manifest.json`
+- Create: `/Users/claus/chidianma/apps/extension/src/background.ts`
 - Create: `/Users/claus/chidianma/apps/extension/src/config.ts`
+- Create: `/Users/claus/chidianma/apps/extension/src/detail.ts`
+- Create: `/Users/claus/chidianma/apps/extension/src/options.ts`
 - Create: `/Users/claus/chidianma/apps/extension/src/storage.ts`
 - Create: `/Users/claus/chidianma/apps/extension/src/recommendationClient.ts`
 - Create: `/Users/claus/chidianma/apps/extension/src/popup.ts`
+- Create: `/Users/claus/chidianma/apps/extension/styles/detail.css`
+- Create: `/Users/claus/chidianma/apps/extension/styles/options.css`
 - Create: `/Users/claus/chidianma/apps/extension/styles/popup.css`
 - Create: `/Users/claus/chidianma/apps/extension/tests/storage.test.ts`
 
@@ -1405,6 +1589,8 @@ git commit -m "feat: add today recommendation api"
 - Consumes: `TodayRecommendationResponse`, `READ_TOKEN_HEADER` from `@lunch/shared`.
 - Produces: `getSettings()`, `saveRecommendationCache(response)`, `fetchTodayRecommendations(options)`.
 - Produces: extension popup that shows server recommendations and fallback cache.
+- Produces: extension options page that saves API base URL, read token, reminder time, and enabled flag.
+- Produces: extension detail page for notification click fallback.
 
 - [ ] **Step 1: Write storage tests**
 
@@ -1467,6 +1653,13 @@ export async function getSettings(): Promise<ExtensionSettings> {
   };
 }
 
+export async function saveSettings(settings: ExtensionSettings): Promise<void> {
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.settings]: settings
+  });
+  await chrome.runtime.sendMessage({ type: "settingsChanged" }).catch(() => undefined);
+}
+
 export async function saveRecommendationCache(response: TodayRecommendationResponse): Promise<void> {
   await chrome.storage.local.set({
     [STORAGE_KEYS.lastRecommendation]: {
@@ -1515,7 +1708,17 @@ export async function fetchTodayRecommendations(options: {
 }
 ```
 
-- [ ] **Step 4: Create popup HTML and CSS**
+- [ ] **Step 4: Generate temporary extension icons**
+
+Run:
+
+```bash
+pnpm icons:extension
+```
+
+Expected: `apps/extension/public/icon-16.png`, `icon-32.png`, `icon-48.png`, and `icon-128.png` exist.
+
+- [ ] **Step 5: Create popup and detail HTML/CSS**
 
 Create `/Users/claus/chidianma/apps/extension/index.html`:
 
@@ -1540,9 +1743,62 @@ Create `/Users/claus/chidianma/apps/extension/index.html`:
       <section id="items" class="items"></section>
       <footer class="actions">
         <button id="refresh" type="button">换一批</button>
+        <button id="settings" type="button">设置</button>
       </footer>
     </main>
     <script type="module" src="/src/popup.ts"></script>
+  </body>
+</html>
+```
+
+Create `/Users/claus/chidianma/apps/extension/detail.html`:
+
+```html
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>今日午饭推荐</title>
+    <link rel="stylesheet" href="/styles/detail.css" />
+  </head>
+  <body>
+    <main class="detail">
+      <header>
+        <p>吃饭才是正事</p>
+        <h1>今日午饭推荐</h1>
+      </header>
+      <section id="detail-root"></section>
+    </main>
+    <script type="module" src="/src/detail.ts"></script>
+  </body>
+</html>
+```
+
+Create `/Users/claus/chidianma/apps/extension/options.html`:
+
+```html
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>中午吃点啥设置</title>
+    <link rel="stylesheet" href="/styles/options.css" />
+  </head>
+  <body>
+    <main class="options">
+      <h1>中午吃点啥设置</h1>
+      <form id="settings-form">
+        <label>API 地址<input id="apiBaseUrl" type="url" required /></label>
+        <label>只读 Team Token<input id="readToken" type="text" required /></label>
+        <label>提醒时间<input id="reminderTime" type="time" required /></label>
+        <label><input id="enabled" type="checkbox" /> 启用工作日提醒</label>
+        <button type="submit">保存</button>
+      </form>
+      <p id="message"></p>
+    </main>
+    <script type="module" src="/src/options.ts"></script>
   </body>
 </html>
 ```
@@ -1645,6 +1901,7 @@ body {
 
 .actions {
   display: flex;
+  gap: 8px;
 }
 
 button {
@@ -1659,7 +1916,69 @@ button {
 }
 ```
 
-- [ ] **Step 5: Implement popup rendering**
+Create `/Users/claus/chidianma/apps/extension/styles/detail.css`:
+
+```css
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  color: #172033;
+  background: #f8fafc;
+}
+
+.detail {
+  display: grid;
+  gap: 16px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+}
+```
+
+Create `/Users/claus/chidianma/apps/extension/styles/options.css`:
+
+```css
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  color: #172033;
+  background: #f8fafc;
+}
+
+.options {
+  display: grid;
+  gap: 16px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+form {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+}
+
+input,
+button {
+  font: inherit;
+  padding: 10px;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #2563eb;
+  font-weight: 700;
+}
+```
+
+- [ ] **Step 6: Implement popup, detail, and options rendering**
 
 Create `/Users/claus/chidianma/apps/extension/src/popup.ts`:
 
@@ -1672,9 +1991,13 @@ const statusEl = document.querySelector<HTMLElement>("#status")!;
 const weatherEl = document.querySelector<HTMLElement>("#weather")!;
 const itemsEl = document.querySelector<HTMLElement>("#items")!;
 const refreshButton = document.querySelector<HTMLButtonElement>("#refresh")!;
+const settingsButton = document.querySelector<HTMLButtonElement>("#settings")!;
 
 refreshButton.addEventListener("click", () => {
   void render(true);
+});
+settingsButton.addEventListener("click", () => {
+  chrome.runtime.openOptionsPage();
 });
 
 void render(false);
@@ -1746,9 +2069,96 @@ function setStatus(text: string) {
 }
 ```
 
-- [ ] **Step 6: Create manifest**
+Create `/Users/claus/chidianma/apps/extension/src/detail.ts`:
 
-Create `/Users/claus/chidianma/apps/extension/manifest.json`:
+```ts
+import { fetchTodayRecommendations } from "./recommendationClient";
+
+const root = document.querySelector<HTMLElement>("#detail-root")!;
+
+void fetchTodayRecommendations()
+  .then((response) => {
+    root.innerHTML = "";
+    const summary = document.createElement("p");
+    summary.textContent = response.weatherSummary ?? "今天先按距离和历史推荐来挑。";
+    root.appendChild(summary);
+    for (const item of response.items) {
+      const article = document.createElement("article");
+      article.innerHTML = `<h2>${item.restaurantName}</h2><p>${item.reason}</p>`;
+      root.appendChild(article);
+    }
+  })
+  .catch((error) => {
+    root.textContent = `加载失败：${error instanceof Error ? error.message : String(error)}`;
+  });
+```
+
+Create `/Users/claus/chidianma/apps/extension/src/options.ts`:
+
+```ts
+import { getSettings, saveSettings } from "./storage";
+
+const form = document.querySelector<HTMLFormElement>("#settings-form")!;
+const apiBaseUrl = document.querySelector<HTMLInputElement>("#apiBaseUrl")!;
+const readToken = document.querySelector<HTMLInputElement>("#readToken")!;
+const reminderTime = document.querySelector<HTMLInputElement>("#reminderTime")!;
+const enabled = document.querySelector<HTMLInputElement>("#enabled")!;
+const message = document.querySelector<HTMLElement>("#message")!;
+
+void getSettings().then((settings) => {
+  apiBaseUrl.value = settings.apiBaseUrl;
+  readToken.value = settings.readToken;
+  reminderTime.value = settings.reminderTime;
+  enabled.checked = settings.enabled;
+});
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void saveSettings({
+    apiBaseUrl: apiBaseUrl.value,
+    readToken: readToken.value,
+    reminderTime: reminderTime.value,
+    enabled: enabled.checked
+  }).then(() => {
+    message.textContent = "设置已保存。";
+  });
+});
+```
+
+- [ ] **Step 7: Create manifest copied by Vite**
+
+Create `/Users/claus/chidianma/apps/extension/src/background.ts` as a temporary no-op background entry:
+
+```ts
+export {};
+```
+
+Create `/Users/claus/chidianma/apps/extension/vite.config.ts`:
+
+```ts
+import { resolve } from "node:path";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        popup: resolve(__dirname, "index.html"),
+        detail: resolve(__dirname, "detail.html"),
+        options: resolve(__dirname, "options.html"),
+        background: resolve(__dirname, "src/background.ts")
+      },
+      output: {
+        entryFileNames: "assets/[name].js"
+      }
+    }
+  }
+});
+```
+
+Create `/Users/claus/chidianma/apps/extension/public/manifest.json`:
 
 ```json
 {
@@ -1757,19 +2167,35 @@ Create `/Users/claus/chidianma/apps/extension/manifest.json`:
   "version": "0.1.0",
   "description": "每天中午提醒你和同事们：吃饭才是正事，中午吃点啥呢？",
   "permissions": ["alarms", "notifications", "storage"],
-  "host_permissions": ["http://localhost:3000/*"],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://*.up.railway.app/*"
+  ],
   "action": {
     "default_title": "中午吃点啥",
-    "default_popup": "index.html"
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
   },
+  "options_page": "options.html",
   "background": {
     "service_worker": "assets/background.js",
     "type": "module"
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
   }
 }
 ```
 
-- [ ] **Step 7: Verify extension tests and build**
+- [ ] **Step 8: Verify extension tests and build**
 
 Run:
 
@@ -1778,9 +2204,9 @@ pnpm --filter @lunch/extension test
 pnpm --filter @lunch/extension build
 ```
 
-Expected: tests pass and `apps/extension/dist` is created.
+Expected: tests pass, `apps/extension/dist` is created, `apps/extension/dist/manifest.json` exists, and `apps/extension/dist/icon-128.png` exists.
 
-- [ ] **Step 8: Manual smoke test**
+- [ ] **Step 9: Manual smoke test**
 
 Run server:
 
@@ -1792,7 +2218,7 @@ Load `apps/extension/dist` in `chrome://extensions` with Developer mode. Open th
 
 Expected: popup displays 2-3 recommendation cards from the server. Stop the server, open popup again, and verify cached cards appear with `缓存` in the date line.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add apps/extension
@@ -1804,10 +2230,10 @@ git commit -m "feat: show server recommendations in extension"
 ### Task 6: Extension Alarm and Notification
 
 **Files:**
-- Create: `/Users/claus/chidianma/apps/extension/src/background.ts`
-- Create: `/Users/claus/chidianma/apps/extension/src/chromeApi.ts`
-- Modify: `/Users/claus/chidianma/apps/extension/manifest.json`
-- Create: `/Users/claus/chidianma/apps/extension/tests/background.test.ts`
+- Create: `/Users/claus/chidianma/apps/extension/src/alarmSchedule.ts`
+- Replace: `/Users/claus/chidianma/apps/extension/src/background.ts`
+- Modify: `/Users/claus/chidianma/apps/extension/public/manifest.json`
+- Create: `/Users/claus/chidianma/apps/extension/tests/alarmSchedule.test.ts`
 - Modify: `/Users/claus/chidianma/apps/extension/package.json`
 
 **Interfaces:**
@@ -1818,11 +2244,11 @@ git commit -m "feat: show server recommendations in extension"
 
 - [ ] **Step 1: Write alarm scheduling test**
 
-Create `/Users/claus/chidianma/apps/extension/tests/background.test.ts`:
+Create `/Users/claus/chidianma/apps/extension/tests/alarmSchedule.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { getNextAlarmTime } from "../src/background";
+import { getNextAlarmTime } from "../src/alarmSchedule";
 
 describe("getNextAlarmTime", () => {
   it("schedules the next weekday 11:30 when today is already past lunch", () => {
@@ -1835,45 +2261,11 @@ describe("getNextAlarmTime", () => {
 });
 ```
 
-- [ ] **Step 2: Implement background service worker**
+- [ ] **Step 2: Implement pure alarm scheduling**
 
-Create `/Users/claus/chidianma/apps/extension/src/background.ts`:
+Create `/Users/claus/chidianma/apps/extension/src/alarmSchedule.ts`:
 
 ```ts
-import { LUNCH_HEADLINE } from "@lunch/shared";
-import { fetchTodayRecommendations } from "./recommendationClient";
-import { getSettings } from "./storage";
-
-const ALARM_NAME = "lunch-reminder";
-const NOTIFICATION_ID = "today-lunch";
-
-chrome.runtime.onInstalled.addListener(() => {
-  void scheduleLunchAlarm();
-});
-
-chrome.runtime.onStartup.addListener(() => {
-  void scheduleLunchAlarm();
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== ALARM_NAME) return;
-  void showLunchNotification().then(scheduleLunchAlarm);
-});
-
-chrome.notifications.onClicked.addListener((notificationId) => {
-  if (notificationId !== NOTIFICATION_ID) return;
-  void chrome.action.openPopup?.();
-});
-
-export async function scheduleLunchAlarm(): Promise<void> {
-  const settings = await getSettings();
-  await chrome.alarms.clear(ALARM_NAME);
-  if (!settings.enabled) return;
-  await chrome.alarms.create(ALARM_NAME, {
-    when: getNextAlarmTime(new Date(), settings.reminderTime)
-  });
-}
-
 export function getNextAlarmTime(now: Date, reminderTime: string): number {
   const [hour, minute] = parseReminderTime(reminderTime);
   const weekdays = new Set([1, 2, 3, 4, 5]);
@@ -1916,9 +2308,92 @@ function parseReminderTime(value: string): [number, number] {
 }
 ```
 
-- [ ] **Step 3: Configure Vite multi-entry build**
+- [ ] **Step 3: Implement background service worker**
 
-Create `/Users/claus/chidianma/apps/extension/vite.config.ts`:
+Create `/Users/claus/chidianma/apps/extension/src/background.ts`:
+
+```ts
+import { LUNCH_HEADLINE } from "@lunch/shared";
+import { getNextAlarmTime } from "./alarmSchedule";
+import { fetchTodayRecommendations } from "./recommendationClient";
+import { getSettings } from "./storage";
+
+const ALARM_NAME = "lunch-reminder";
+const NOTIFICATION_ID = "today-lunch";
+
+chrome.runtime.onInstalled.addListener(() => {
+  void scheduleLunchAlarm();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void ensureLunchAlarm();
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "settingsChanged") {
+    void scheduleLunchAlarm();
+  }
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== ALARM_NAME) return;
+  void showLunchNotification().then(scheduleLunchAlarm);
+});
+
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId !== NOTIFICATION_ID) return;
+  void openRecommendationDetail();
+});
+
+void ensureLunchAlarm();
+
+export async function ensureLunchAlarm(): Promise<void> {
+  const existing = await chrome.alarms.get(ALARM_NAME);
+  if (!existing) {
+    await scheduleLunchAlarm();
+  }
+}
+
+export async function scheduleLunchAlarm(): Promise<void> {
+  const settings = await getSettings();
+  await chrome.alarms.clear(ALARM_NAME);
+  if (!settings.enabled) return;
+  await chrome.alarms.create(ALARM_NAME, {
+    when: getNextAlarmTime(new Date(), settings.reminderTime)
+  });
+}
+
+export async function showLunchNotification(): Promise<void> {
+  const recommendation = await fetchTodayRecommendations();
+  const names = recommendation.items.map((item) => item.restaurantName).join("、");
+  await chrome.notifications.create(NOTIFICATION_ID, {
+    type: "basic",
+    iconUrl: "icon-128.png",
+    title: LUNCH_HEADLINE,
+    message: names || "还没有可用推荐，先去管理页添加几家饭馆。",
+    contextMessage: recommendation.weatherSummary,
+    priority: 1
+  });
+}
+
+async function openRecommendationDetail(): Promise<void> {
+  if (chrome.action.openPopup) {
+    try {
+      await chrome.action.openPopup();
+      return;
+    } catch {
+      // Fall through to opening a detail tab.
+    }
+  }
+  await chrome.tabs.create({
+    url: chrome.runtime.getURL("detail.html")
+  });
+}
+```
+
+- [ ] **Step 4: Confirm Vite multi-entry build still includes background**
+
+Ensure `/Users/claus/chidianma/apps/extension/vite.config.ts` still includes:
 
 ```ts
 import { resolve } from "node:path";
@@ -1931,6 +2406,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         popup: resolve(__dirname, "index.html"),
+        detail: resolve(__dirname, "detail.html"),
+        options: resolve(__dirname, "options.html"),
         background: resolve(__dirname, "src/background.ts")
       },
       output: {
@@ -1941,9 +2418,9 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 4: Verify manifest background path**
+- [ ] **Step 5: Verify manifest background path**
 
-Ensure `/Users/claus/chidianma/apps/extension/manifest.json` contains:
+Ensure `/Users/claus/chidianma/apps/extension/public/manifest.json` contains:
 
 ```json
 {
@@ -1954,7 +2431,9 @@ Ensure `/Users/claus/chidianma/apps/extension/manifest.json` contains:
 }
 ```
 
-- [ ] **Step 5: Verify tests and manual notification**
+After `pnpm --filter @lunch/extension build`, verify `/Users/claus/chidianma/apps/extension/dist/manifest.json` contains the same background path.
+
+- [ ] **Step 6: Verify tests and manual notification**
 
 Run:
 
@@ -1963,7 +2442,7 @@ pnpm --filter @lunch/extension test
 pnpm --filter @lunch/extension build
 ```
 
-Expected: PASS and `dist/assets/background.js` exists.
+Expected: PASS, `dist/assets/background.js` exists, `dist/detail.html` exists, `dist/options.html` exists, and `dist/manifest.json` exists.
 
 Manual test: load `apps/extension/dist`, inspect service worker, and run:
 
@@ -1973,7 +2452,7 @@ chrome.alarms.getAll(console.log)
 
 Expected: one alarm named `lunch-reminder`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add apps/extension
@@ -1985,6 +2464,7 @@ git commit -m "feat: add lunch reminder notification"
 ### Task 7: Minimal Admin CRUD
 
 **Files:**
+- Create: `/Users/claus/chidianma/apps/server/src/services/auth/sessionToken.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/routes/session.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/routes/restaurants.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/routes/recommendations-admin.ts`
@@ -2000,7 +2480,56 @@ git commit -m "feat: add lunch reminder notification"
 - Produces: `POST /api/recommendations`.
 - Produces: admin page for login, listing, creating restaurants, and creating recommendations.
 
-- [ ] **Step 1: Add session route**
+- [ ] **Step 1: Add signed session token helper**
+
+Create `/Users/claus/chidianma/apps/server/src/services/auth/sessionToken.ts`:
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import type { AppEnv } from "../../env";
+
+export interface AdminSession {
+  teammateId: string;
+  name: string;
+  exp: number;
+}
+
+export function signSessionToken(session: AdminSession, secret: string): string {
+  const payload = Buffer.from(JSON.stringify(session)).toString("base64url");
+  const signature = createHmac("sha256", secret).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+export function verifySessionToken(token: string, secret: string): AdminSession {
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature) throw new Error("Invalid session token");
+
+  const expected = createHmac("sha256", secret).update(payload).digest("base64url");
+  const providedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (providedBuffer.length !== expectedBuffer.length || !timingSafeEqual(providedBuffer, expectedBuffer)) {
+    throw new Error("Invalid session signature");
+  }
+
+  const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as AdminSession;
+  if (session.exp <= Date.now()) throw new Error("Session expired");
+  return session;
+}
+
+export function requireAdminSession(request: FastifyRequest, reply: FastifyReply, env: AppEnv): AdminSession {
+  const authorization = request.headers.authorization;
+  const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  try {
+    return verifySessionToken(token, env.SESSION_SECRET);
+  } catch {
+    reply.code(401);
+    throw new Error("Admin session required");
+  }
+}
+```
+
+- [ ] **Step 2: Add session route**
 
 Create `/Users/claus/chidianma/apps/server/src/routes/session.ts`:
 
@@ -2023,22 +2552,28 @@ export async function registerSessionRoutes(app: FastifyInstance, env: AppEnv) {
     });
 
     return {
-      token: Buffer.from(`${teammate.id}:${Date.now()}`).toString("base64url"),
+      token: signSessionToken({
+        teammateId: teammate.id,
+        name: teammate.name,
+        exp: Date.now() + 1000 * 60 * 60 * 12
+      }, env.SESSION_SECRET),
       teammate
     };
   });
 }
 ```
 
-- [ ] **Step 2: Add restaurant route**
+- [ ] **Step 3: Add restaurant route with protected writes**
 
 Create `/Users/claus/chidianma/apps/server/src/routes/restaurants.ts`:
 
 ```ts
 import type { FastifyInstance } from "fastify";
+import type { AppEnv } from "../env";
 import { prisma } from "../plugins/prisma";
+import { requireAdminSession } from "../services/auth/sessionToken";
 
-export async function registerRestaurantRoutes(app: FastifyInstance) {
+export async function registerRestaurantRoutes(app: FastifyInstance, env: AppEnv) {
   app.get("/api/restaurants", async () => {
     return prisma.restaurant.findMany({ orderBy: { createdAt: "desc" } });
   });
@@ -2053,7 +2588,8 @@ export async function registerRestaurantRoutes(app: FastifyInstance) {
       priceBand?: string;
       tags?: string[];
     };
-  }>("/api/restaurants", async (request) => {
+  }>("/api/restaurants", async (request, reply) => {
+    requireAdminSession(request, reply, env);
     return prisma.restaurant.create({
       data: {
         name: request.body.name,
@@ -2070,44 +2606,43 @@ export async function registerRestaurantRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string }; Body: { status: "active" | "paused" | "blocked" } }>(
     "/api/restaurants/:id",
-    async (request) => prisma.restaurant.update({
-      where: { id: request.params.id },
-      data: { status: request.body.status }
-    })
+    async (request, reply) => {
+      requireAdminSession(request, reply, env);
+      return prisma.restaurant.update({
+        where: { id: request.params.id },
+        data: { status: request.body.status }
+      });
+    }
   );
 }
 ```
 
-- [ ] **Step 3: Add recommendation admin route**
+- [ ] **Step 4: Add recommendation admin route with teammate from token**
 
 Create `/Users/claus/chidianma/apps/server/src/routes/recommendations-admin.ts`:
 
 ```ts
 import type { FastifyInstance } from "fastify";
+import type { AppEnv } from "../env";
 import { prisma } from "../plugins/prisma";
+import { requireAdminSession } from "../services/auth/sessionToken";
 
-export async function registerRecommendationAdminRoutes(app: FastifyInstance) {
+export async function registerRecommendationAdminRoutes(app: FastifyInstance, env: AppEnv) {
   app.post<{
     Body: {
       restaurantId: string;
-      teammateName: string;
       dish?: string;
       reason: string;
       weatherTags?: string[];
       weekdayTags?: string[];
       moodTags?: string[];
     };
-  }>("/api/recommendations", async (request) => {
-    const teammate = await prisma.teammate.upsert({
-      where: { name: request.body.teammateName },
-      update: { lastSeenAt: new Date() },
-      create: { name: request.body.teammateName, lastSeenAt: new Date() }
-    });
-
+  }>("/api/recommendations", async (request, reply) => {
+    const session = requireAdminSession(request, reply, env);
     return prisma.recommendation.create({
       data: {
         restaurantId: request.body.restaurantId,
-        teammateId: teammate.id,
+        teammateId: session.teammateId,
         dish: request.body.dish,
         reason: request.body.reason,
         weatherTags: request.body.weatherTags ?? [],
@@ -2119,7 +2654,7 @@ export async function registerRecommendationAdminRoutes(app: FastifyInstance) {
 }
 ```
 
-- [ ] **Step 4: Register admin routes**
+- [ ] **Step 5: Register admin routes**
 
 Modify `/Users/claus/chidianma/apps/server/src/app.ts` to import and register routes:
 
@@ -2129,22 +2664,33 @@ import { registerRestaurantRoutes } from "./routes/restaurants";
 import { registerSessionRoutes } from "./routes/session";
 
 await registerSessionRoutes(app, env);
-await registerRestaurantRoutes(app);
-await registerRecommendationAdminRoutes(app);
+await registerRestaurantRoutes(app, env);
+await registerRecommendationAdminRoutes(app, env);
 ```
 
-- [ ] **Step 5: Replace admin app with minimal CRUD UI**
+- [ ] **Step 6: Replace admin app with minimal CRUD UI**
 
 Create `/Users/claus/chidianma/apps/admin/src/api.ts`:
 
 ```ts
 const API_BASE_URL = "http://localhost:3000";
+const TOKEN_KEY = "lunchAdminSessionToken";
+
+export function saveAdminToken(token: string): void {
+  window.localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function getAdminToken(): string {
+  return window.localStorage.getItem(TOKEN_KEY) ?? "";
+}
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getAdminToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(options.headers ?? {})
     }
   });
@@ -2158,7 +2704,7 @@ Replace `/Users/claus/chidianma/apps/admin/src/main.tsx`:
 ```tsx
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { api } from "./api";
+import { api, saveAdminToken } from "./api";
 import "./styles.css";
 
 interface Restaurant {
@@ -2174,7 +2720,7 @@ interface Restaurant {
 
 function App() {
   const [name, setName] = useState("Demo 同事");
-  const [inviteCode, setInviteCode] = useState("let-us-eat");
+  const [inviteCode, setInviteCode] = useState("");
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [restaurantName, setRestaurantName] = useState("");
   const [dish, setDish] = useState("");
@@ -2191,10 +2737,11 @@ function App() {
   }, []);
 
   async function login() {
-    await api("/api/session", {
+    const session = await api<{ token: string }>("/api/session", {
       method: "POST",
       body: JSON.stringify({ inviteCode, name })
     });
+    saveAdminToken(session.token);
     setMessage(`已识别为 ${name}`);
   }
 
@@ -2215,7 +2762,6 @@ function App() {
       method: "POST",
       body: JSON.stringify({
         restaurantId: selectedRestaurantId,
-        teammateName: name,
         dish,
         reason,
         weatherTags: [],
@@ -2234,7 +2780,11 @@ function App() {
       <section>
         <h2>登录</h2>
         <input value={name} onChange={(event) => setName(event.target.value)} />
-        <input value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} />
+        <input
+          value={inviteCode}
+          onChange={(event) => setInviteCode(event.target.value)}
+          placeholder="请输入团队邀请码"
+        />
         <button onClick={login}>进入</button>
       </section>
       <section>
@@ -2351,6 +2901,7 @@ git commit -m "feat: add minimal lunch admin"
 **Files:**
 - Create: `/Users/claus/chidianma/apps/server/src/routes/feedback.ts`
 - Create: `/Users/claus/chidianma/apps/server/src/services/weather/openMeteo.ts`
+- Create: `/Users/claus/chidianma/apps/server/src/services/weather/officeWeather.ts`
 - Modify: `/Users/claus/chidianma/apps/server/src/services/recommendation/today.ts`
 - Modify: `/Users/claus/chidianma/apps/server/src/app.ts`
 - Modify: `/Users/claus/chidianma/apps/extension/src/popup.ts`
@@ -2358,6 +2909,7 @@ git commit -m "feat: add minimal lunch admin"
 **Interfaces:**
 - Produces: `POST /api/feedback`.
 - Produces: `fetchWeatherSummary(env): Promise<WeatherSummary>`.
+- Produces: `getWeatherForOfficeDate({ prisma, env, date }): Promise<{ weather: WeatherSummary | null; weatherUnavailable: boolean }>`.
 - Consumes: `FeedbackType` from shared.
 
 - [ ] **Step 1: Add feedback route**
@@ -2367,9 +2919,12 @@ Create `/Users/claus/chidianma/apps/server/src/routes/feedback.ts`:
 ```ts
 import type { FeedbackType } from "@lunch/shared";
 import type { FastifyInstance } from "fastify";
+import type { AppEnv } from "../env";
 import { prisma } from "../plugins/prisma";
+import { hasReadToken } from "../services/auth/readToken";
+import { verifySessionToken } from "../services/auth/sessionToken";
 
-export async function registerFeedbackRoutes(app: FastifyInstance) {
+export async function registerFeedbackRoutes(app: FastifyInstance, env: AppEnv) {
   app.post<{
     Body: {
       date: string;
@@ -2377,7 +2932,12 @@ export async function registerFeedbackRoutes(app: FastifyInstance) {
       recommendationId?: string;
       type: FeedbackType;
     };
-  }>("/api/feedback", async (request) => {
+  }>("/api/feedback", async (request, reply) => {
+    if (!hasReadToken(request, env) && !hasAdminToken(request.headers.authorization, env)) {
+      reply.code(401);
+      throw new Error("Read token or admin session required");
+    }
+
     return prisma.feedback.create({
       data: {
         date: request.body.date,
@@ -2387,6 +2947,17 @@ export async function registerFeedbackRoutes(app: FastifyInstance) {
       }
     });
   });
+}
+
+function hasAdminToken(authorization: string | undefined, env: AppEnv): boolean {
+  const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  if (!token) return false;
+  try {
+    verifySessionToken(token, env.SESSION_SECRET);
+    return true;
+  } catch {
+    return false;
+  }
 }
 ```
 
@@ -2436,25 +3007,96 @@ export async function fetchWeatherSummary(env: AppEnv): Promise<WeatherSummary> 
 
 - [ ] **Step 3: Register feedback route**
 
+Create `/Users/claus/chidianma/apps/server/src/services/weather/officeWeather.ts`:
+
+```ts
+import type { PrismaClient } from "@prisma/client";
+import type { AppEnv } from "../../env";
+import { getMockWeather, type WeatherSummary } from "./mockWeather";
+import { fetchWeatherSummary } from "./openMeteo";
+
+export async function getWeatherForOfficeDate(input: {
+  prisma: PrismaClient;
+  env: AppEnv;
+  date: string;
+}): Promise<{ weather: WeatherSummary | null; weatherUnavailable: boolean }> {
+  const existing = await input.prisma.weatherSnapshot.findUnique({
+    where: {
+      date_city: {
+        date: input.date,
+        city: input.env.OFFICE_CITY
+      }
+    }
+  });
+
+  if (existing) {
+    return {
+      weather: {
+        temperatureC: existing.temperatureC ?? 20,
+        condition: existing.condition as WeatherSummary["condition"],
+        precipitationProbability: existing.precipitationProbability ?? 0,
+        summary: weatherSummaryText(existing.condition)
+      },
+      weatherUnavailable: false
+    };
+  }
+
+  try {
+    const weather = await fetchWeatherSummary(input.env);
+    await input.prisma.weatherSnapshot.create({
+      data: {
+        date: input.date,
+        city: input.env.OFFICE_CITY,
+        temperatureC: weather.temperatureC,
+        condition: weather.condition,
+        precipitationProbability: weather.precipitationProbability,
+        rawPayload: { source: "open-meteo" }
+      }
+    });
+    return { weather, weatherUnavailable: false };
+  } catch {
+    return { weather: null, weatherUnavailable: true };
+  }
+}
+
+export function weatherOrFallback(result: {
+  weather: WeatherSummary | null;
+  weatherUnavailable: boolean;
+}): WeatherSummary {
+  return result.weather ?? getMockWeather();
+}
+
+function weatherSummaryText(condition: string): string {
+  if (condition === "rainy") return "今天有雨，优先推荐近一点、热乎一点的选择。";
+  if (condition === "hot") return "今天偏热，优先推荐清爽、近一点的选择。";
+  return "今天天气稳定，按距离和同事推荐来挑。";
+}
+```
+
 Modify `/Users/claus/chidianma/apps/server/src/app.ts`:
 
 ```ts
 import { registerFeedbackRoutes } from "./routes/feedback";
 
-await registerFeedbackRoutes(app);
+await registerFeedbackRoutes(app, env);
 ```
 
-- [ ] **Step 4: Use real weather with fallback**
+- [ ] **Step 4: Use cached office weather with fallback**
 
 Modify `/Users/claus/chidianma/apps/server/src/services/recommendation/today.ts` so weather is loaded like this:
 
 ```ts
-import { fetchWeatherSummary } from "../weather/openMeteo";
+import { getWeatherForOfficeDate, weatherOrFallback } from "../weather/officeWeather";
 
-const weather = await fetchWeatherSummary(input.env).catch(() => getMockWeather());
+const weatherResult = await getWeatherForOfficeDate({
+  prisma: input.prisma,
+  env: input.env,
+  date
+});
+const weather = weatherOrFallback(weatherResult);
 ```
 
-Use this `weather` in both existing-response and newly-generated-response branches.
+Use `weather` in both existing-response and newly-generated-response branches, and set `weatherUnavailable: weatherResult.weatherUnavailable` on every `TodayRecommendationResponse`.
 
 - [ ] **Step 5: Add configured feedback client**
 
@@ -2613,6 +3255,22 @@ Chrome MV3 extension + Fastify + PostgreSQL lunch recommendation tool.
    ```
 
 6. Load `apps/extension/dist` in `chrome://extensions`.
+
+## Railway deploy checklist
+
+1. Create a Railway project with one PostgreSQL service and one app service.
+2. Set the variables listed in `apps/server/README.md`.
+3. Deploy `apps/server` with:
+
+   ```bash
+   pnpm --filter @lunch/shared build
+   pnpm --filter @lunch/server prisma:generate
+   pnpm --filter @lunch/server build
+   pnpm --filter @lunch/server prisma:migrate deploy
+   pnpm --filter @lunch/server start
+   ```
+
+4. Copy the Railway public domain into the extension settings as the API base URL.
 ```
 
 - [ ] **Step 2: Write server README**
@@ -2648,6 +3306,12 @@ await app.listen({
   host: "::"
 });
 ```
+
+Migration command for deploy:
+
+```bash
+pnpm --filter @lunch/server prisma:migrate deploy
+```
 ```
 
 - [ ] **Step 3: Write extension README**
@@ -2670,12 +3334,19 @@ Permissions:
 - `alarms`
 - `notifications`
 - `storage`
-- host permission for the API domain
+- host permission for `http://localhost:3000/*`
+- host permission for `https://*.up.railway.app/*`
 
 Default local API:
 
 - `http://localhost:3000`
 - read token `dev-read-token`
+
+Production config:
+
+- Set API base URL in the extension options page to the Railway public domain.
+- Set the read token in the extension options page to the Railway `EXTENSION_READ_TOKEN` value.
+- If using a custom API domain outside `*.up.railway.app`, update `apps/extension/public/manifest.json` host permissions before publishing.
 ```
 
 - [ ] **Step 4: Verify full workspace**
@@ -2706,23 +3377,23 @@ Spec coverage:
 - Monorepo structure is covered by Task 1.
 - Shared API contract is covered by Task 2.
 - PostgreSQL persistence and seed data are covered by Task 3.
-- Fastify API, Railway listen host constraint, read token, office timezone, and idempotent recommendations are covered by Task 4.
-- Extension popup, API fetch, and fallback cache are covered by Task 5.
-- MV3 alarms and notifications are covered by Task 6.
-- Admin login and data entry are covered by Task 7.
-- Feedback and Open-Meteo weather are covered by Task 8.
+- Fastify API, Railway listen host constraint, read token, office timezone, weekday matching, serializable transaction, and idempotent recommendations are covered by Task 4.
+- Extension manifest output, generated PNG icons, popup, settings page, detail page, API fetch, and fallback cache are covered by Task 5.
+- MV3 alarm scheduling, side-effect-free scheduling tests, `ensureLunchAlarm`, and notification click fallback are covered by Task 6.
+- Signed admin session tokens, protected management writes, admin login, and data entry are covered by Task 7.
+- Feedback auth, Open-Meteo adapter, `weather_snapshots` caching, and `weatherUnavailable` response behavior are covered by Task 8.
 - Local runbook and Railway notes are covered by Task 9.
 - Chrome Web Store unlisted publishing is not implemented in this vertical slice; it remains a later release task after internal testing.
 
 Placeholder scan:
 
 - No TBD, TODO, “implement later”, or vague “handle errors” steps remain.
-- Task 8 contains an explicit intermediate hard-coded feedback snippet and immediately requires replacing it with settings-based API base URL before commit.
+- No known hard-coded invite code, unsigned admin token, side-effectful background import test, rootDir/test mismatch, or manifest-copy gap remains.
 
 Type consistency:
 
 - `TodayRecommendationResponse`, `RecommendationItem`, `FeedbackType`, `READ_TOKEN_HEADER`, and `LUNCH_HEADLINE` are defined in Task 2 and consumed later.
-- `getTodayRecommendations`, `rankRestaurantCandidates`, `getOfficeDate`, and `fetchTodayRecommendations` signatures are consistent across tasks.
+- `getTodayRecommendations`, `rankRestaurantCandidates`, `getOfficeDate`, `getOfficeWeekdayTag`, `fetchTodayRecommendations`, `postFeedback`, `signSessionToken`, and `requireAdminSession` signatures are consistent across tasks.
 - `RestaurantStatus` and `FeedbackType` string values match the spec.
 
 Execution note:

@@ -1,6 +1,6 @@
 # 中午吃点啥 Chrome 插件设计
 
-Status: `Draft Accepted for Prototype`
+Status: `Prototype Design Skipped; Ready for Engineering Vertical Slice`
 
 ## 概述
 
