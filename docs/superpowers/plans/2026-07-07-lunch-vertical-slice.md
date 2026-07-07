@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Revised after P0/P1 plan review. Do not execute earlier revisions of this plan.
+**Status:** Approved for Execution.
 
 **Goal:** Build the first runnable engineering vertical slice of “中午吃点啥”: shared API types, Fastify recommendation API with seeded PostgreSQL data, and a Chrome MV3 extension that can fetch, cache, display, and notify today’s recommendations.
 
@@ -37,7 +37,9 @@
 - Extension manifest must be emitted to `apps/extension/dist/manifest.json`.
 - Extension tests must not import side-effectful `background.ts`; pure scheduling logic lives in `alarmSchedule.ts`.
 - Notification click opens popup when available and falls back to a `detail.html` extension page.
-- Weather snapshots must be read/written through PostgreSQL before falling back to mock weather.
+- Task 4 may use mock weather to get the vertical slice running.
+- After Task 8, weather uses `weather_snapshots` plus Open-Meteo.
+- If neither cached nor fetched weather is available after Task 8, do not use mock weather for scoring; return `weatherUnavailable=true` and score with `weatherMatch=0`.
 - Recommendation batch creation must use a transaction to avoid duplicate current batches at 11:30.
 - First runnable slice may seed 5-10 restaurants manually.
 
@@ -52,7 +54,7 @@
 - P0.5 accepted: notification click uses `chrome.action.openPopup()` when available and falls back to `chrome.tabs.create({ url: chrome.runtime.getURL("detail.html") })`.
 - P0.6 accepted: admin session tokens are HMAC signed, include `teammateId`, `name`, and `exp`, and are verified on every management write.
 - P0.7 accepted: management write APIs require a valid admin session token; feedback requires read token or admin session token.
-- P0.8 accepted: weather uses `weather_snapshots` cache, returns `weatherUnavailable`, and only falls back when neither cached nor fetched weather is available.
+- P0.8 accepted: weather uses `weather_snapshots` cache, returns `weatherUnavailable`, and Task 8 avoids mock weather when neither cached nor fetched weather is available.
 - P0.9 accepted: daily recommendation batch creation uses a serializable Prisma transaction and rechecks existing current batches inside the transaction.
 - P1.10 accepted: server computes office weekday tag and uses `recommendation.weekdayTags`.
 - P1.11 accepted: candidates are generated at `restaurant + recommendation` granularity, then deduped by restaurant.
@@ -69,6 +71,19 @@
 - Second review P1.3 accepted: admin API base URL uses `VITE_API_BASE_URL` for local dev and same-origin requests in production.
 - Second review P1.4 accepted: `detail.ts` uses DOM text APIs and avoids HTML string insertion.
 - Second review P1.5 accepted: shared and caller optional response fields explicitly allow `undefined` under `exactOptionalPropertyTypes`.
+- Final preflight P0.1 accepted: root `tsconfig.base.json` does not define `@lunch/shared` source-level `paths`; apps consume the workspace package build output.
+- Final preflight P0.2 accepted: Prisma writes and Chrome notification options avoid explicit `undefined` in external typed objects.
+- Final preflight P1 accepted: File Structure uses `alarmSchedule.test.ts`, removes unplanned route tests, clarifies weather fallback, and marks Fastify static admin hosting as later deploy-hardening work.
+
+## Final Preflight Patch
+
+Before Task 1 execution, this plan applies these final execution-safety rules:
+
+1. Root `tsconfig.base.json` must not set `compilerOptions.paths` for `@lunch/shared`. Apps rely on workspace package resolution and the existing shared-before-app build scripts.
+2. Prisma writes and Chrome notification options must not pass explicit `undefined` into external typed objects. Use `?? null`, conditional property assignment, or a typed local object before calling external APIs.
+3. Extension scheduling tests use `apps/extension/tests/alarmSchedule.test.ts`; tests must not import side-effectful service worker files.
+4. After Task 8, unavailable weather means `weatherMatch = 0`, not rainy mock scoring.
+5. Fastify static hosting of the admin production build is intentionally out of this vertical slice. Local admin uses the Vite dev server; add `@fastify/static` and admin build copying in a later deploy-hardening task.
 
 ## File Structure
 
@@ -102,7 +117,7 @@ Create this structure during Task 1:
         icon-48.png
         icon-128.png
       tests/
-        background.test.ts
+        alarmSchedule.test.ts
         storage.test.ts
     server/
       package.json
@@ -136,7 +151,6 @@ Create this structure during Task 1:
       tests/
         dates.test.ts
         recommendation.test.ts
-        recommendations-route.test.ts
     admin/
       package.json
       src/
@@ -158,7 +172,7 @@ Create this structure during Task 1:
   vitest.config.ts
 ```
 
-`apps/admin` is scaffolded lightly in Task 1 but not built out until Task 7. This keeps the first vertical slice focused.
+`apps/admin` is scaffolded lightly in Task 1 but not built out until Task 7. This keeps the first vertical slice focused. Fastify static hosting of the production admin build is a later deploy-hardening task, not part of this vertical slice.
 
 ---
 
@@ -262,11 +276,7 @@ Create `/Users/claus/chidianma/tsconfig.base.json`:
     "isolatedModules": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-    "baseUrl": ".",
-    "paths": {
-      "@lunch/shared": ["packages/shared/src/index.ts"],
-      "@lunch/shared/*": ["packages/shared/src/*"]
-    }
+    "baseUrl": "."
   }
 }
 ```
@@ -1508,7 +1518,7 @@ export async function getTodayRecommendations(input: {
             date,
             batchId,
             restaurantId: item.restaurantId,
-            recommendationId: item.recommendationId,
+            recommendationId: item.recommendationId ?? null,
             score: item.score,
             reason: item.reason,
             isCurrent: true
@@ -2374,14 +2384,20 @@ export async function scheduleLunchAlarm(): Promise<void> {
 export async function showLunchNotification(): Promise<void> {
   const recommendation = await fetchTodayRecommendations();
   const names = recommendation.items.map((item) => item.restaurantName).join("、");
-  await chrome.notifications.create(NOTIFICATION_ID, {
+
+  const options: chrome.notifications.NotificationOptions<true> = {
     type: "basic",
     iconUrl: "icon-128.png",
     title: LUNCH_HEADLINE,
     message: names || "还没有可用推荐，先去管理页添加几家饭馆。",
-    contextMessage: recommendation.weatherSummary,
     priority: 1
-  });
+  };
+
+  if (recommendation.weatherSummary) {
+    options.contextMessage = recommendation.weatherSummary;
+  }
+
+  await chrome.notifications.create(NOTIFICATION_ID, options);
 }
 
 async function openRecommendationDetail(): Promise<void> {
@@ -2608,11 +2624,11 @@ export async function registerRestaurantRoutes(app: FastifyInstance, env: AppEnv
     return prisma.restaurant.create({
       data: {
         name: request.body.name,
-        area: request.body.area,
-        address: request.body.address,
-        distanceMinutes: request.body.distanceMinutes,
-        cuisine: request.body.cuisine,
-        priceBand: request.body.priceBand,
+        area: request.body.area ?? null,
+        address: request.body.address ?? null,
+        distanceMinutes: request.body.distanceMinutes ?? null,
+        cuisine: request.body.cuisine ?? null,
+        priceBand: request.body.priceBand ?? null,
         tags: request.body.tags ?? [],
         status: "active"
       }
@@ -2658,7 +2674,7 @@ export async function registerRecommendationAdminRoutes(app: FastifyInstance, en
       data: {
         restaurantId: request.body.restaurantId,
         teammateId: session.teammateId,
-        dish: request.body.dish,
+        dish: request.body.dish ?? null,
         reason: request.body.reason,
         weatherTags: request.body.weatherTags ?? [],
         weekdayTags: request.body.weekdayTags ?? [],
@@ -2958,7 +2974,7 @@ export async function registerFeedbackRoutes(app: FastifyInstance, env: AppEnv) 
       data: {
         date: request.body.date,
         restaurantId: request.body.restaurantId,
-        recommendationId: request.body.recommendationId,
+        recommendationId: request.body.recommendationId ?? null,
         type: request.body.type
       }
     });
@@ -3188,7 +3204,7 @@ for (const [type, label] of [["want", "想吃"], ["skip", "不想吃"], ["ate", 
     await postFeedback({
       date: dateEl.textContent?.slice(0, 10) ?? "",
       restaurantId: item.restaurantId,
-      recommendationId: item.recommendationId,
+      ...(item.recommendationId ? { recommendationId: item.recommendationId } : {}),
       type
     });
     button.textContent = "已记录";
