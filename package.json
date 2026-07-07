@@ -1,0 +1,22 @@
+{
+  "name": "lunch-what",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dev:server": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/server dev",
+    "dev:extension": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/extension dev",
+    "dev:admin": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/admin dev",
+    "icons:extension": "node scripts/create-extension-icons.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "pngjs": "^7.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
