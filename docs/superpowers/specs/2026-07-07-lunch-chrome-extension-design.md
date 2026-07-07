@@ -4,11 +4,12 @@
 
 “中午吃点啥”是一个面向小团队的 Chrome 插件和轻量后端系统。它在工作日午饭前提醒同事，并根据星期、天气、距离、历史推荐和同事积累的饭馆数据给出 2-3 个午饭建议。第一版目标不是做复杂餐饮平台，而是让团队每天少纠结几分钟，并把大家的真实推荐沉淀下来。
 
-第一版由一个 monorepo 管理三部分：
+第一版由一个 monorepo 管理三个应用和一个共享包：
 
-- `extension/`：Chrome Manifest V3 插件。
-- `server/`：Railway 上部署的 Fastify API，同时托管管理网页静态资源。
-- `shared/`：插件、后端、管理网页共享的 TypeScript 类型和少量纯函数。
+- `apps/extension/`：Chrome Manifest V3 插件。
+- `apps/server/`：Railway 上部署的 Fastify API，生产环境托管管理网页静态资源。
+- `apps/admin/`：React + Vite 管理网页，构建后复制给 server 托管。
+- `packages/shared/`：插件、后端、管理网页共享的 TypeScript 类型和少量纯函数。
 
 后端部署在 Railway，数据库使用 Railway PostgreSQL。正式分发目标是 Chrome Web Store 不公开发布，开发和内测阶段使用 unpacked extension。
 
@@ -39,7 +40,7 @@
 
 ### Chrome 插件
 
-插件在工作日 11:30 通过 `chrome.alarms` 触发提醒。Service worker 调用后端 `GET /api/today-recommendations`，拿到当天推荐后使用 `chrome.notifications` 弹出系统通知。
+插件在办公室时区的工作日 11:30 通过 `chrome.alarms` 触发提醒。Service worker 调用后端 `GET /api/today-recommendations`，拿到当天推荐后使用 `chrome.notifications` 弹出系统通知。Manifest V3 service worker 不能依赖常驻后台进程或全局变量；状态必须持久化到 `chrome.storage`，alarm 和 notification listener 在 background 脚本顶层注册。
 
 通知标题使用固定基调：
 
@@ -88,7 +89,7 @@ Management Web App
 Fastify API on Railway
 ```
 
-### `extension/`
+### `apps/extension/`
 
 职责：
 
@@ -97,11 +98,13 @@ Fastify API on Railway
 - 到点后请求后端推荐。
 - 展示 Chrome 系统通知。
 - 提供 popup 查看今日详情和手动刷新。
-- 使用 `chrome.storage` 保存 API 地址、提醒时间、开关和最近一次推荐。
+- 使用 `chrome.storage` 保存 API 地址、只读 team token、提醒时间、开关和最近一次推荐。
+- 使用 `chrome.alarms`，不使用 `setTimeout` 或 `setInterval` 作为长期定时机制。
+- 创建通知时提供扩展图标，确保系统通知在 Chrome 支持的平台上可见。
 
 插件不负责核心推荐算法，也不持久保存饭馆库。
 
-### `server/`
+### `apps/server/`
 
 职责：
 
@@ -112,10 +115,23 @@ Fastify API on Railway
 - 校验团队邀请码。
 - 托管管理网页构建产物。
 - 为 Railway 提供健康检查接口。
+- 在 Railway 上监听 `process.env.PORT`，Fastify `host` 固定为 `::`，避免 public/private network 访问异常。
 
 Fastify 是第一版后端框架。选择 Fastify 的原因是插件、管理网页、共享类型和后端都可以保持 TypeScript 生态，减少语言边界和部署复杂度。
 
-### `shared/`
+### `apps/admin/`
+
+职责：
+
+- 提供团队邀请码和同事姓名登录页面。
+- 提供饭馆列表、搜索和状态切换。
+- 提供新增/编辑饭馆表单。
+- 提供新增/编辑同事推荐表单。
+- 调用 Fastify API，不直接连接数据库。
+
+管理网页独立开发，生产构建产物由 `apps/server/` 静态托管。
+
+### `packages/shared/`
 
 职责：
 
@@ -123,7 +139,43 @@ Fastify 是第一版后端框架。选择 Fastify 的原因是插件、管理网
 - 存放无副作用的推荐评分辅助函数。
 - 存放 API contract 常量和轻量 schema。
 
-`shared/` 不连接数据库、不调用网络，避免变成跨层杂物区。
+`packages/shared` 不连接数据库、不调用网络，避免变成跨层杂物区。
+
+## 仓库结构
+
+```text
+lunch-what/
+  apps/
+    extension/
+      manifest.json
+      src/
+        background.ts
+        popup/
+        options/
+    server/
+      src/
+        index.ts
+        routes/
+        services/
+        recommendation/
+        weather/
+      prisma/
+        schema.prisma
+        migrations/
+    admin/
+      src/
+        pages/
+        components/
+  packages/
+    shared/
+      src/
+        types.ts
+        api.ts
+        scoring.ts
+  package.json
+  pnpm-workspace.yaml
+  tsconfig.base.json
+```
 
 ## 数据模型
 
@@ -175,15 +227,17 @@ Fastify 是第一版后端框架。选择 Fastify 的原因是插件、管理网
 
 - `id`
 - `date`
+- `batch_id`
 - `restaurant_id`
 - `recommendation_id`
 - `score`
 - `reason`
+- `is_current`
 - `created_at`
 
 ### `weather_snapshots`
 
-天气缓存。第一版天气适配器按办公室经纬度查询，默认面向 Open-Meteo 这类无需账号的天气 API；如后续需要更本地化的天气源，可以替换适配器而不改推荐算法。
+天气缓存。第一版天气适配器按办公室经纬度和办公室时区查询，默认使用 Open-Meteo Forecast API。天气只在后端调用并缓存，插件不直接请求天气 API。Open-Meteo 非商业免费层无需 API key，但需要保留 attribution；如后续需要更本地化的天气源，可以替换适配器而不改推荐算法。
 
 - `id`
 - `date`
@@ -211,6 +265,8 @@ Fastify 是第一版后端框架。选择 Fastify 的原因是插件、管理网
 
 第一版使用可解释的加权评分，不使用黑盒模型。
 
+`GET /api/today-recommendations` 默认是幂等接口：同一办公室日期第一次请求时生成并写入 `daily_recommendations`，当天后续请求返回当前批次，避免不同同事看到完全不同的建议。手动刷新使用 `forceRefresh=true`，后端重新计算并追加一条新的当天推荐批次，将新批次标记为 `is_current=true`，旧批次保留用于复盘。
+
 候选饭馆需要满足：
 
 - 饭馆状态为 `active`。
@@ -228,6 +284,53 @@ Fastify 是第一版后端框架。选择 Fastify 的原因是插件、管理网
 
 推荐 API 返回 2-3 个结果，并包含一句可读解释。
 
+第一版评分可以从朴素公式开始：
+
+```text
+score =
+  weekdayMatch * 20 +
+  weatherMatch * 25 +
+  distanceScore * 20 +
+  teammateRecommendationScore * 10 -
+  recentDuplicatePenalty -
+  negativeFeedbackPenalty
+```
+
+真实权重在测试和内测反馈后调整，但每个推荐必须能生成可读 `reason`。
+
+## Shared Contract
+
+`packages/shared` 先固定跨端共享的核心类型，避免插件、后端、管理页各自发明响应结构。
+
+```ts
+export type RestaurantStatus = "active" | "paused" | "blocked";
+export type FeedbackType = "want" | "skip" | "ate" | "blocked";
+export type WeatherTag = "rainy" | "hot" | "cold" | "clear" | "windy";
+export type WeekdayTag =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday";
+
+export interface TodayRecommendationResponse {
+  date: string;
+  headline: string;
+  weatherSummary?: string;
+  weatherUnavailable?: boolean;
+  fromCache?: boolean;
+  items: Array<{
+    restaurantId: string;
+    recommendationId?: string;
+    restaurantName: string;
+    dish?: string;
+    reason: string;
+    distanceMinutes?: number;
+    tags: string[];
+  }>;
+}
+```
+
 示例响应：
 
 ```json
@@ -237,9 +340,12 @@ Fastify 是第一版后端框架。选择 Fastify 的原因是插件、管理网
   "weatherSummary": "今天有雨，优先推荐近一点、热乎一点的选择。",
   "items": [
     {
+      "restaurantId": "restaurant_123",
+      "recommendationId": "recommendation_456",
       "restaurantName": "某某牛肉面",
       "dish": "红烧牛肉面",
       "reason": "雨天热乎，离办公室近，李雷推荐过。",
+      "distanceMinutes": 8,
       "tags": ["雨天", "热乎", "近"]
     }
   ]
@@ -252,6 +358,7 @@ Fastify 是第一版后端框架。选择 Fastify 的原因是插件、管理网
 
 - `GET /api/health`
 - `GET /api/today-recommendations`
+- `GET /api/today-recommendations?forceRefresh=true`
 - `POST /api/feedback`
 
 管理网页 API：
@@ -265,14 +372,22 @@ Fastify 是第一版后端框架。选择 Fastify 的原因是插件、管理网
 - `POST /api/recommendations`
 - `PATCH /api/recommendations/:id`
 
-第一版使用后端签发的 session token。用户提交团队邀请码和姓名后，后端创建或复用 `teammates` 记录，并返回带签名的 token；管理网页把 token 保存在浏览器本地。团队邀请码只在创建 session 时提交，后续写操作用 token 识别推荐人。
+第一版使用后端签发的 session token。用户提交团队邀请码和姓名后，后端创建或复用 `teammates` 记录，并返回带签名的短期 token；管理网页把 token 保存在浏览器本地。团队邀请码只在创建 session 时提交，不能写入前端 bundle，后续写操作用 token 识别推荐人。
+
+插件查看推荐不要求同事登录，但请求需要带只读 token：
+
+```http
+X-Lunch-Read-Token: <EXTENSION_READ_TOKEN>
+```
+
+这不是账号系统，也不能被视为强保密凭据；它只用于降低公网 API 被随意调用或扫描的风险。
 
 ## 错误处理
 
 天气 API 失败：
 
 - 后端使用当天已有 `weather_snapshots`。
-- 没有缓存时退化为按星期、距离、历史去重推荐。
+- 没有缓存时退化为按星期、距离、历史去重推荐。开发早期可以用固定 mock weather 跑通推荐闭环，再接入真实天气适配器。
 - 响应中标记天气不可用，popup 显示温和提示。
 
 后端不可用：
@@ -302,16 +417,21 @@ Railway 环境变量：
 - `DATABASE_URL`
 - `TEAM_INVITE_CODE`
 - `SESSION_SECRET`
+- `EXTENSION_READ_TOKEN`
 - `WEATHER_API_BASE_URL`
 - `OFFICE_CITY`
 - `OFFICE_LATITUDE`
 - `OFFICE_LONGITUDE`
+- `OFFICE_TIMEZONE`
 - `PUBLIC_API_BASE_URL`
 - `NODE_ENV`
+
+`OFFICE_TIMEZONE` 是日期边界的唯一依据。工作日判断、11:30 推荐日期、天气快照日期和 `daily_recommendations.date` 都按办公室当地日期计算，不依赖 Railway 服务器时区或同事电脑时区。
 
 插件配置：
 
 - API base URL。
+- 只读 team token。
 - 提醒时间，默认 `11:30`。
 - 是否启用工作日提醒。
 - 最近一次推荐缓存。
@@ -321,22 +441,24 @@ Railway 环境变量：
 本地开发：
 
 - 使用 monorepo scripts 分别启动后端、管理页和插件构建。
-- 插件开发阶段加载 `extension/dist`。
+- 插件开发阶段加载 `apps/extension/dist`。
 - 后端可连接本地 PostgreSQL 或 Railway PostgreSQL 开发环境。
 
 Railway 部署：
 
-- Railway 部署 `server/` 服务。
+- Railway 部署 `apps/server/` 服务。
 - Railway PostgreSQL 作为同一 project 内数据库。
 - `DATABASE_URL` 引用 PostgreSQL 服务变量。
 - 迁移在部署流程中执行。
 - Railway public domain 作为插件 API 地址。
+- Fastify listen 使用 `port: Number(process.env.PORT ?? 3000)` 和 `host: "::"`。
 
 插件分发：
 
 - 开发阶段：开发者模式加载 unpacked extension。
 - 内测阶段：同事加载同一个构建产物。
-- 正式阶段：Chrome Web Store 不公开发布，通过链接分发并获得自动更新。
+- 正式阶段：Chrome Web Store 使用 unlisted 发布，通过链接分发并获得自动更新。
+- 如果需要限制指定测试者或 Google Group，再使用 private 发布；unlisted 和 private 都需要经过 Chrome Web Store 审核。
 
 插件权限保持最小化：
 
@@ -378,14 +500,17 @@ Railway 部署：
 ## 里程碑
 
 1. 建立 monorepo、TypeScript、基础 lint/test/build。
-2. 实现 Prisma schema 和数据库迁移。
-3. 实现 Fastify API 和推荐算法第一版。
-4. 实现管理网页基础录入和维护流程。
-5. 实现 Chrome 插件 alarm、通知、popup。
-6. 接入天气 API 和缓存。
-7. 完成本地测试和 Railway 部署文档。
-8. 内测分发 unpacked extension。
-9. 准备 Chrome Web Store 不公开发布材料。
+2. 固定 `packages/shared` API contract 和推荐响应结构。
+3. 实现 Prisma schema、迁移和 seed 数据，先手动放入 5-10 家饭馆。
+4. 实现 Fastify API 的最短闭环：`GET /api/today-recommendations` 返回 2-3 个推荐，并写入 `daily_recommendations`。
+5. 实现插件 popup 展示推荐、缓存最近一次结果、后端不可用时展示缓存。
+6. 实现插件 alarm、notification 和通知点击后的详情入口。
+7. 实现管理页登录、饭馆列表、新增饭馆、新增推荐。
+8. 接入真实 Open-Meteo 天气适配器和天气缓存。
+9. 实现反馈 API 和 popup 反馈入口。
+10. 完成本地测试和 Railway 部署文档。
+11. 内测分发 unpacked extension。
+12. 准备 Chrome Web Store unlisted 发布材料，包括图标、截图、隐私说明和权限说明。
 
 ## 成功标准
 
@@ -395,3 +520,14 @@ Railway 部署：
 - 后端数据持久化在 Railway PostgreSQL。
 - 天气 API 失败、后端短暂不可用、数据较少时都有可用退化路径。
 - 第一版可以通过开发者模式给同事内测，并具备后续上架 Chrome Web Store 的路径。
+
+## 参考资料
+
+- [Chrome extension service worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)
+- [Chrome MV3 service worker migration](https://developer.chrome.com/docs/extensions/develop/migrate/to-service-workers)
+- [chrome.alarms API](https://developer.chrome.com/docs/extensions/reference/api/alarms)
+- [chrome.notifications API](https://developer.chrome.com/docs/extensions/reference/api/notifications)
+- [Railway Fastify guide](https://docs.railway.com/guides/fastify)
+- [Railway PostgreSQL guide](https://docs.railway.com/databases/postgresql)
+- [Open-Meteo](https://open-meteo.com/)
+- [Chrome Web Store distribution](https://developer.chrome.com/docs/webstore/cws-dashboard-distribution)
