@@ -60,6 +60,15 @@
 - P1.13 accepted: manifest host permissions cover localhost and Railway generated domains without using `<all_urls>`.
 - P1.14 accepted: dev scripts build `@lunch/shared` before starting server, extension, or admin.
 - P1.15 accepted: seed data uses unique restaurant names and upsert to avoid duplicate rows.
+- Second review P0.1 accepted: `alarmSchedule.ts` contains only pure scheduling functions; notification logic stays in `background.ts`.
+- Second review P0.2 accepted: `session.ts` imports `signSessionToken` and rejects blank teammate names.
+- Second review P0.3 accepted: server runtime loads `.env` through `dotenv/config`.
+- Second review P0.4 accepted: Open-Meteo URL construction preserves the `/v1` base path.
+- Second review P1.1 accepted: unavailable weather does not use rainy mock data for scoring.
+- Second review P1.2 accepted: alarm handler reschedules in `finally`.
+- Second review P1.3 accepted: admin API base URL uses `VITE_API_BASE_URL` for local dev and same-origin requests in production.
+- Second review P1.4 accepted: `detail.ts` uses DOM text APIs and avoids HTML string insertion.
+- Second review P1.5 accepted: shared and caller optional response fields explicitly allow `undefined` under `exactOptionalPropertyTypes`.
 
 ## File Structure
 
@@ -318,6 +327,7 @@ Create `/Users/claus/chidianma/apps/server/package.json`:
     "@fastify/cors": "^10.0.2",
     "@lunch/shared": "workspace:*",
     "@prisma/client": "^6.1.0",
+    "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
     "zod": "^3.24.1"
   },
@@ -580,20 +590,20 @@ export type WeekdayTag = "monday" | "tuesday" | "wednesday" | "thursday" | "frid
 
 export interface RecommendationItem {
   restaurantId: string;
-  recommendationId?: string;
+  recommendationId?: string | undefined;
   restaurantName: string;
-  dish?: string;
+  dish?: string | undefined;
   reason: string;
-  distanceMinutes?: number;
+  distanceMinutes?: number | undefined;
   tags: string[];
 }
 
 export interface TodayRecommendationResponse {
   date: string;
   headline: string;
-  weatherSummary?: string;
-  weatherUnavailable?: boolean;
-  fromCache?: boolean;
+  weatherSummary?: string | undefined;
+  weatherUnavailable?: boolean | undefined;
+  fromCache?: boolean | undefined;
   items: RecommendationItem[];
 }
 ```
@@ -621,7 +631,7 @@ Create `/Users/claus/chidianma/packages/shared/src/scoring.ts`:
 export interface ScoreInput {
   weekdayMatch: 0 | 1;
   weatherMatch: 0 | 1;
-  distanceMinutes?: number;
+  distanceMinutes?: number | undefined;
   teammateRecommendationCount: number;
   recentlyRecommended: boolean;
   negativeFeedbackCount: number;
@@ -1192,6 +1202,7 @@ describe("rankRestaurantCandidates", () => {
 Create `/Users/claus/chidianma/apps/server/src/env.ts`:
 
 ```ts
+import "dotenv/config";
 import { z } from "zod";
 
 const EnvSchema = z.object({
@@ -1245,10 +1256,10 @@ import { calculateRestaurantScore, type RecommendationItem } from "@lunch/shared
 
 export interface Candidate {
   restaurantId: string;
-  recommendationId?: string;
+  recommendationId?: string | undefined;
   name: string;
-  dish?: string;
-  distanceMinutes?: number;
+  dish?: string | undefined;
+  distanceMinutes?: number | undefined;
   tags: string[];
   weekdayMatch: 0 | 1;
   weatherMatch: 0 | 1;
@@ -2078,13 +2089,17 @@ const root = document.querySelector<HTMLElement>("#detail-root")!;
 
 void fetchTodayRecommendations()
   .then((response) => {
-    root.innerHTML = "";
+    root.replaceChildren();
     const summary = document.createElement("p");
     summary.textContent = response.weatherSummary ?? "今天先按距离和历史推荐来挑。";
     root.appendChild(summary);
     for (const item of response.items) {
       const article = document.createElement("article");
-      article.innerHTML = `<h2>${item.restaurantName}</h2><p>${item.reason}</p>`;
+      const title = document.createElement("h2");
+      title.textContent = item.restaurantName;
+      const reason = document.createElement("p");
+      reason.textContent = item.reason;
+      article.append(title, reason);
       root.appendChild(article);
     }
   })
@@ -2238,9 +2253,9 @@ git commit -m "feat: show server recommendations in extension"
 
 **Interfaces:**
 - Consumes: `fetchTodayRecommendations`.
-- Produces: `getNextAlarmTime(now, reminderTime): number`.
-- Produces: `scheduleLunchAlarm(): Promise<void>`.
-- Produces: `showLunchNotification(): Promise<void>`.
+- Produces in `alarmSchedule.ts`: `getNextAlarmTime(now, reminderTime): number`.
+- Produces in `background.ts`: `scheduleLunchAlarm(): Promise<void>`.
+- Produces in `background.ts`: `showLunchNotification(): Promise<void>`.
 
 - [ ] **Step 1: Write alarm scheduling test**
 
@@ -2285,19 +2300,6 @@ export function getNextAlarmTime(now: Date, reminderTime: string): number {
   return fallback.getTime();
 }
 
-export async function showLunchNotification(): Promise<void> {
-  const recommendation = await fetchTodayRecommendations();
-  const names = recommendation.items.map((item) => item.restaurantName).join("、");
-  await chrome.notifications.create(NOTIFICATION_ID, {
-    type: "basic",
-    iconUrl: "icon-128.png",
-    title: LUNCH_HEADLINE,
-    message: names || "还没有可用推荐，先去管理页添加几家饭馆。",
-    contextMessage: recommendation.weatherSummary,
-    priority: 1
-  });
-}
-
 function parseReminderTime(value: string): [number, number] {
   const match = value.match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return [11, 30];
@@ -2337,7 +2339,13 @@ chrome.runtime.onMessage.addListener((message) => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== ALARM_NAME) return;
-  void showLunchNotification().then(scheduleLunchAlarm);
+  void showLunchNotification()
+    .catch((error) => {
+      console.error("Failed to show lunch notification", error);
+    })
+    .finally(() => {
+      void scheduleLunchAlarm();
+    });
 });
 
 chrome.notifications.onClicked.addListener((notificationId) => {
@@ -2537,6 +2545,7 @@ Create `/Users/claus/chidianma/apps/server/src/routes/session.ts`:
 import type { FastifyInstance } from "fastify";
 import type { AppEnv } from "../env";
 import { prisma } from "../plugins/prisma";
+import { signSessionToken } from "../services/auth/sessionToken";
 
 export async function registerSessionRoutes(app: FastifyInstance, env: AppEnv) {
   app.post<{ Body: { inviteCode: string; name: string } }>("/api/session", async (request, reply) => {
@@ -2545,10 +2554,16 @@ export async function registerSessionRoutes(app: FastifyInstance, env: AppEnv) {
       return { error: "Invalid invite code" };
     }
 
+    const name = request.body.name.trim();
+    if (!name) {
+      reply.code(400);
+      return { error: "Name is required" };
+    }
+
     const teammate = await prisma.teammate.upsert({
-      where: { name: request.body.name.trim() },
+      where: { name },
       update: { lastSeenAt: new Date() },
-      create: { name: request.body.name.trim(), lastSeenAt: new Date() }
+      create: { name, lastSeenAt: new Date() }
     });
 
     return {
@@ -2583,7 +2598,7 @@ export async function registerRestaurantRoutes(app: FastifyInstance, env: AppEnv
       name: string;
       area?: string;
       address?: string;
-      distanceMinutes?: number;
+      distanceMinutes?: number | undefined;
       cuisine?: string;
       priceBand?: string;
       tags?: string[];
@@ -2631,7 +2646,7 @@ export async function registerRecommendationAdminRoutes(app: FastifyInstance, en
   app.post<{
     Body: {
       restaurantId: string;
-      dish?: string;
+      dish?: string | undefined;
       reason: string;
       weatherTags?: string[];
       weekdayTags?: string[];
@@ -2673,7 +2688,7 @@ await registerRecommendationAdminRoutes(app, env);
 Create `/Users/claus/chidianma/apps/admin/src/api.ts`:
 
 ```ts
-const API_BASE_URL = "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const TOKEN_KEY = "lunchAdminSessionToken";
 
 export function saveAdminToken(token: string): void {
@@ -2711,7 +2726,7 @@ interface Restaurant {
   id: string;
   name: string;
   area?: string;
-  distanceMinutes?: number;
+  distanceMinutes?: number | undefined;
   cuisine?: string;
   priceBand?: string;
   tags: string[];
@@ -2881,6 +2896,7 @@ Expected: PASS.
 Manual test:
 
 ```bash
+export VITE_API_BASE_URL=http://localhost:3000
 pnpm dev:server
 pnpm dev:admin
 ```
@@ -2929,7 +2945,7 @@ export async function registerFeedbackRoutes(app: FastifyInstance, env: AppEnv) 
     Body: {
       date: string;
       restaurantId: string;
-      recommendationId?: string;
+      recommendationId?: string | undefined;
       type: FeedbackType;
     };
   }>("/api/feedback", async (request, reply) => {
@@ -2970,7 +2986,7 @@ import type { AppEnv } from "../../env";
 import type { WeatherSummary } from "./mockWeather";
 
 export async function fetchWeatherSummary(env: AppEnv): Promise<WeatherSummary> {
-  const url = new URL("/forecast", env.WEATHER_API_BASE_URL);
+  const url = buildWeatherUrl(env.WEATHER_API_BASE_URL);
   url.searchParams.set("latitude", String(env.OFFICE_LATITUDE));
   url.searchParams.set("longitude", String(env.OFFICE_LONGITUDE));
   url.searchParams.set("current", "temperature_2m,precipitation,rain,wind_speed_10m");
@@ -3003,6 +3019,11 @@ export async function fetchWeatherSummary(env: AppEnv): Promise<WeatherSummary> 
         : "今天天气稳定，按距离和同事推荐来挑。"
   };
 }
+
+function buildWeatherUrl(baseUrl: string): URL {
+  const normalized = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL("forecast", normalized);
+}
 ```
 
 - [ ] **Step 3: Register feedback route**
@@ -3012,7 +3033,7 @@ Create `/Users/claus/chidianma/apps/server/src/services/weather/officeWeather.ts
 ```ts
 import type { PrismaClient } from "@prisma/client";
 import type { AppEnv } from "../../env";
-import { getMockWeather, type WeatherSummary } from "./mockWeather";
+import type { WeatherSummary } from "./mockWeather";
 import { fetchWeatherSummary } from "./openMeteo";
 
 export async function getWeatherForOfficeDate(input: {
@@ -3059,13 +3080,6 @@ export async function getWeatherForOfficeDate(input: {
   }
 }
 
-export function weatherOrFallback(result: {
-  weather: WeatherSummary | null;
-  weatherUnavailable: boolean;
-}): WeatherSummary {
-  return result.weather ?? getMockWeather();
-}
-
 function weatherSummaryText(condition: string): string {
   if (condition === "rainy") return "今天有雨，优先推荐近一点、热乎一点的选择。";
   if (condition === "hot") return "今天偏热，优先推荐清爽、近一点的选择。";
@@ -3086,17 +3100,24 @@ await registerFeedbackRoutes(app, env);
 Modify `/Users/claus/chidianma/apps/server/src/services/recommendation/today.ts` so weather is loaded like this:
 
 ```ts
-import { getWeatherForOfficeDate, weatherOrFallback } from "../weather/officeWeather";
+import { getWeatherForOfficeDate } from "../weather/officeWeather";
 
 const weatherResult = await getWeatherForOfficeDate({
   prisma: input.prisma,
   env: input.env,
   date
 });
-const weather = weatherOrFallback(weatherResult);
+const weatherCondition = weatherResult.weather?.condition ?? null;
+const weatherSummary = weatherResult.weather
+  ? weatherResult.weather.summary
+  : "现在拿不到天气，先按距离、星期和同事推荐来挑。";
 ```
 
-Use `weather` in both existing-response and newly-generated-response branches, and set `weatherUnavailable: weatherResult.weatherUnavailable` on every `TodayRecommendationResponse`.
+Use `weatherSummary` in both existing-response and newly-generated-response branches, set `weatherUnavailable: weatherResult.weatherUnavailable` on every `TodayRecommendationResponse`, and compute weather match like this:
+
+```ts
+weatherMatch: weatherCondition && recommendation.weatherTags.includes(weatherCondition) ? 1 : 0
+```
 
 - [ ] **Step 5: Add configured feedback client**
 
@@ -3133,7 +3154,7 @@ export async function fetchTodayRecommendations(options: {
 export async function postFeedback(input: {
   date: string;
   restaurantId: string;
-  recommendationId?: string;
+  recommendationId?: string | undefined;
   type: FeedbackType;
 }): Promise<void> {
   const settings = await getSettings();
@@ -3255,6 +3276,13 @@ Chrome MV3 extension + Fastify + PostgreSQL lunch recommendation tool.
    ```
 
 6. Load `apps/extension/dist` in `chrome://extensions`.
+
+7. Start admin locally:
+
+   ```bash
+   export VITE_API_BASE_URL=http://localhost:3000
+   pnpm dev:admin
+   ```
 
 ## Railway deploy checklist
 
@@ -3387,7 +3415,7 @@ Spec coverage:
 
 Placeholder scan:
 
-- No TBD, TODO, “implement later”, or vague “handle errors” steps remain.
+- No placeholder markers or vague error-handling steps remain.
 - No known hard-coded invite code, unsigned admin token, side-effectful background import test, rootDir/test mismatch, or manifest-copy gap remains.
 
 Type consistency:

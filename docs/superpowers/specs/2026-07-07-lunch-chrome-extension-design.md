@@ -15,6 +15,8 @@ Status: `Prototype Design Skipped; Ready for Engineering Vertical Slice`
 
 后端部署在 Railway，数据库使用 Railway PostgreSQL。正式分发目标是 Chrome Web Store 不公开发布，开发和内测阶段使用 unpacked extension。
 
+本阶段跳过 Open Design HTML 原型，优先执行工程竖切；后续如果 popup 或 admin 使用体验不佳，再补 prototype review。
+
 ## 已确认的产品决策
 
 - 推荐数据使用后端稳定存储，而不是只放在插件本地。
