@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RestaurantStatus {
+  active
+  paused
+  blocked
+}
+
+enum FeedbackType {
+  want
+  skip
+  ate
+  blocked
+}
+
+model Teammate {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  createdAt       DateTime         @default(now()) @map("created_at")
+  lastSeenAt      DateTime?        @map("last_seen_at")
+  recommendations Recommendation[]
+  feedback        Feedback[]
+
+  @@map("teammates")
+}
+
+model Restaurant {
+  id                   String                @id @default(cuid())
+  name                 String                @unique
+  area                 String?
+  address              String?
+  distanceMinutes      Int?                  @map("distance_minutes")
+  cuisine              String?
+  priceBand            String?               @map("price_band")
+  supportsDineIn       Boolean               @default(true) @map("supports_dine_in")
+  supportsTakeout      Boolean               @default(false) @map("supports_takeout")
+  tags                 String[]
+  status               RestaurantStatus      @default(active)
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  recommendations      Recommendation[]
+  dailyRecommendations DailyRecommendation[]
+  feedback             Feedback[]
+
+  @@map("restaurants")
+}
+
+model Recommendation {
+  id                   String                @id @default(cuid())
+  restaurantId         String                @map("restaurant_id")
+  teammateId           String                @map("teammate_id")
+  dish                 String?
+  reason               String
+  weatherTags          String[]              @map("weather_tags")
+  weekdayTags          String[]              @map("weekday_tags")
+  moodTags             String[]              @map("mood_tags")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  restaurant           Restaurant            @relation(fields: [restaurantId], references: [id])
+  teammate             Teammate              @relation(fields: [teammateId], references: [id])
+  dailyRecommendations DailyRecommendation[]
+  feedback             Feedback[]
+
+  @@map("recommendations")
+}
+
+model DailyRecommendation {
+  id               String          @id @default(cuid())
+  date             String
+  batchId          String          @map("batch_id")
+  restaurantId     String          @map("restaurant_id")
+  recommendationId String?         @map("recommendation_id")
+  score            Int
+  reason           String
+  isCurrent        Boolean         @default(true) @map("is_current")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  restaurant       Restaurant      @relation(fields: [restaurantId], references: [id])
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
+
+  @@index([date, isCurrent])
+  @@map("daily_recommendations")
+}
+
+model WeatherSnapshot {
+  id                       String   @id @default(cuid())
+  date                     String
+  city                     String
+  temperatureC             Float?   @map("temperature_c")
+  condition                String
+  precipitationProbability Int?     @map("precipitation_probability")
+  windLevel                String?  @map("wind_level")
+  rawPayload               Json?    @map("raw_payload")
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  @@unique([date, city])
+  @@map("weather_snapshots")
+}
+
+model Feedback {
+  id               String          @id @default(cuid())
+  date             String
+  restaurantId     String          @map("restaurant_id")
+  recommendationId String?         @map("recommendation_id")
+  teammateId       String?         @map("teammate_id")
+  type             FeedbackType
+  createdAt        DateTime        @default(now()) @map("created_at")
+  restaurant       Restaurant      @relation(fields: [restaurantId], references: [id])
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
+  teammate         Teammate?       @relation(fields: [teammateId], references: [id])
+
+  @@index([date, type])
+  @@map("feedback")
+}
