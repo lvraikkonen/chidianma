@@ -1,5 +1,5 @@
 import type { RecommendationItem, TodayRecommendationResponse } from "@lunch/shared";
-import { fetchTodayRecommendations } from "./recommendationClient";
+import { fetchTodayRecommendations, postFeedback } from "./recommendationClient";
 
 const dateEl = document.querySelector<HTMLSpanElement>("#date")!;
 const statusEl = document.querySelector<HTMLElement>("#status")!;
@@ -74,6 +74,26 @@ function createCard(item: RecommendationItem): HTMLElement {
     tags.appendChild(chip);
   }
   card.appendChild(tags);
+
+  const feedback = document.createElement("div");
+  feedback.className = "tags";
+  for (const [type, label] of [["want", "想吃"], ["skip", "不想吃"], ["ate", "已吃过"]] as const) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", async () => {
+      await postFeedback({
+        date: dateEl.textContent?.slice(0, 10) ?? "",
+        restaurantId: item.restaurantId,
+        ...(item.recommendationId ? { recommendationId: item.recommendationId } : {}),
+        type
+      });
+      button.textContent = "已记录";
+      button.disabled = true;
+    });
+    feedback.appendChild(button);
+  }
+  card.appendChild(feedback);
 
   return card;
 }

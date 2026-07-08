@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { loadEnv } from "./env.js";
+import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerRecommendationAdminRoutes } from "./routes/recommendations-admin.js";
 import { registerRecommendationRoutes } from "./routes/recommendations.js";
@@ -19,6 +20,7 @@ export async function buildApp() {
   await registerSessionRoutes(app, env);
   await registerRestaurantRoutes(app, env);
   await registerRecommendationAdminRoutes(app, env);
+  await registerFeedbackRoutes(app, env);
 
   return app;
 }

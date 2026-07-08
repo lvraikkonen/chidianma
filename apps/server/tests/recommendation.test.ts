@@ -21,6 +21,7 @@ const env: AppEnv = {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("rankRestaurantCandidates", () => {
@@ -99,6 +100,16 @@ describe("getTodayRecommendations", () => {
       }
     };
     const prisma = {
+      weatherSnapshot: {
+        findUnique: vi.fn().mockResolvedValue({
+          date: "2026-07-07",
+          city: "Shanghai",
+          temperatureC: 28,
+          condition: "rainy",
+          precipitationProbability: 70
+        }),
+        create: vi.fn()
+      },
       $transaction: vi.fn(async (callback: (tx: typeof tx) => Promise<unknown>) => callback(tx))
     } as unknown as PrismaClient;
 
@@ -161,6 +172,16 @@ describe("getTodayRecommendations", () => {
       }
     };
     const prisma = {
+      weatherSnapshot: {
+        findUnique: vi.fn().mockResolvedValue({
+          date: "2026-07-07",
+          city: "Shanghai",
+          temperatureC: 28,
+          condition: "rainy",
+          precipitationProbability: 70
+        }),
+        create: vi.fn()
+      },
       $transaction: vi.fn(async (callback: (tx: typeof tx) => Promise<unknown>) => callback(tx))
     } as unknown as PrismaClient;
 
@@ -188,6 +209,62 @@ describe("getTodayRecommendations", () => {
       restaurantId: "restaurant-2",
       recommendationId: "recommendation-2",
       tags: ["近", "下饭"]
+    });
+  });
+
+  it("does not apply weather match scoring when office weather is unavailable", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-07T04:00:00.000Z"));
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("weather unavailable")));
+
+    const tx = {
+      dailyRecommendation: {
+        findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      restaurant: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "restaurant-3",
+            name: "雨天拉面",
+            distanceMinutes: 8,
+            tags: ["近"],
+            recommendations: [
+              {
+                id: "recommendation-3",
+                dish: "叉烧拉面",
+                weatherTags: ["rainy"],
+                weekdayTags: [],
+                moodTags: ["热乎"]
+              }
+            ],
+            feedback: []
+          }
+        ])
+      }
+    };
+    const prisma = {
+      weatherSnapshot: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn()
+      },
+      $transaction: vi.fn(async (callback: (tx: typeof tx) => Promise<unknown>) => callback(tx))
+    } as unknown as PrismaClient;
+
+    const response = await getTodayRecommendations({ prisma, env, forceRefresh: true });
+
+    expect(response.weatherUnavailable).toBe(true);
+    expect(response.weatherSummary).toBe("现在拿不到天气，先按距离、星期和同事推荐来挑。");
+    expect(tx.dailyRecommendation.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          restaurantId: "restaurant-3",
+          recommendationId: "recommendation-3",
+          score: 20,
+          reason: "离办公室近"
+        })
+      ]
     });
   });
 });

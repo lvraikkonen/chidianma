@@ -3,7 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import type { AppEnv } from "../../env.js";
 import { getOfficeDate, getOfficeWeekdayTag } from "../dates.js";
-import { getMockWeather } from "../weather/mockWeather.js";
+import { getWeatherForOfficeDate } from "../weather/officeWeather.js";
 import { rankRestaurantCandidates } from "./scorer.js";
 
 export async function getTodayRecommendations(input: {
@@ -13,7 +13,15 @@ export async function getTodayRecommendations(input: {
 }): Promise<TodayRecommendationResponse> {
   const now = new Date();
   const date = getOfficeDate(now, input.env.OFFICE_TIMEZONE);
-  const weather = getMockWeather();
+  const weatherResult = await getWeatherForOfficeDate({
+    prisma: input.prisma,
+    env: input.env,
+    date
+  });
+  const weatherCondition = weatherResult.weather?.condition ?? null;
+  const weatherSummary = weatherResult.weather
+    ? weatherResult.weather.summary
+    : "现在拿不到天气，先按距离、星期和同事推荐来挑。";
   const todayWeekday = getOfficeWeekdayTag(now, input.env.OFFICE_TIMEZONE);
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -29,8 +37,8 @@ export async function getTodayRecommendations(input: {
           return {
             date,
             headline: LUNCH_HEADLINE,
-            weatherSummary: weather.summary,
-            weatherUnavailable: false,
+            weatherSummary,
+            weatherUnavailable: weatherResult.weatherUnavailable,
             items: existing.map((item) => ({
               restaurantId: item.restaurantId,
               recommendationId: item.recommendationId ?? undefined,
@@ -79,7 +87,7 @@ export async function getTodayRecommendations(input: {
               distanceMinutes: restaurant.distanceMinutes ?? undefined,
               tags: [...new Set([...restaurant.tags, ...recommendation.moodTags])],
               weekdayMatch: todayWeekday && recommendation.weekdayTags.includes(todayWeekday) ? 1 : 0,
-              weatherMatch: recommendation.weatherTags.includes(weather.condition) ? 1 : 0,
+              weatherMatch: weatherCondition && recommendation.weatherTags.includes(weatherCondition) ? 1 : 0,
               teammateRecommendationCount: restaurant.recommendations.length,
               recentlyRecommended: recentIds.has(restaurant.id),
               negativeFeedbackCount: restaurant.feedback.length
@@ -108,8 +116,8 @@ export async function getTodayRecommendations(input: {
         return {
           date,
           headline: LUNCH_HEADLINE,
-          weatherSummary: weather.summary,
-          weatherUnavailable: false,
+          weatherSummary,
+          weatherUnavailable: weatherResult.weatherUnavailable,
           items: ranked.map(({ score: _score, ...item }) => item)
         };
       }, {

@@ -1,4 +1,4 @@
-import { READ_TOKEN_HEADER, type TodayRecommendationResponse } from "@lunch/shared";
+import { READ_TOKEN_HEADER, type FeedbackType, type TodayRecommendationResponse } from "@lunch/shared";
 import { getRecommendationCache, getSettings, saveRecommendationCache } from "./storage";
 
 export async function fetchTodayRecommendations(options: {
@@ -23,4 +23,23 @@ export async function fetchTodayRecommendations(options: {
     if (cached) return { ...cached, fromCache: true };
     throw error;
   }
+}
+
+export async function postFeedback(input: {
+  date: string;
+  restaurantId: string;
+  recommendationId?: string | undefined;
+  type: FeedbackType;
+}): Promise<void> {
+  const settings = await getSettings();
+  const url = new URL("/api/feedback", settings.apiBaseUrl);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      [READ_TOKEN_HEADER]: settings.readToken
+    },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }
