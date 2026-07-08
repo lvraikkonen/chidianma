@@ -1493,6 +1493,6 @@ Subagents:
 If README or plan checkboxes were updated during execution:
 
 ```bash
-git add apps/server/README.md plans/2026-07-08-multi-group-foundation.md
+git add apps/server/README.md plans/2026-07-08-multi-group-foundation-stage1.md
 git commit -m "docs: record multi-group foundation verification"
 ```
