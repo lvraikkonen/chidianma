@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>中午吃点啥设置</title>
+    <link rel="stylesheet" href="/styles/options.css" />
+  </head>
+  <body>
+    <main class="options">
+      <h1>中午吃点啥设置</h1>
+      <form id="settings-form">
+        <label>API 地址<input id="apiBaseUrl" type="url" required /></label>
+        <label>只读 Team Token<input id="readToken" type="text" required /></label>
+        <label>提醒时间<input id="reminderTime" type="time" required /></label>
+        <label><input id="enabled" type="checkbox" /> 启用工作日提醒</label>
+        <button type="submit">保存</button>
+      </form>
+      <p id="message"></p>
+    </main>
+    <script type="module" src="/src/options.ts"></script>
+  </body>
+</html>
