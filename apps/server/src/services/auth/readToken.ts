@@ -1,6 +1,6 @@
 import { READ_TOKEN_HEADER } from "@lunch/shared";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import type { AppEnv } from "../../env";
+import type { AppEnv } from "../../env.js";
 
 export function hasReadToken(request: FastifyRequest, env: AppEnv): boolean {
   const token = request.headers[READ_TOKEN_HEADER];

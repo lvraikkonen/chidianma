@@ -1,8 +1,8 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
-import { loadEnv } from "./env";
-import { registerHealthRoutes } from "./routes/health";
-import { registerRecommendationRoutes } from "./routes/recommendations";
+import { loadEnv } from "./env.js";
+import { registerHealthRoutes } from "./routes/health.js";
+import { registerRecommendationRoutes } from "./routes/recommendations.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });

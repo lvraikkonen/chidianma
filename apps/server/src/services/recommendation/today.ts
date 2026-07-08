@@ -1,10 +1,10 @@
 import { LUNCH_HEADLINE, type TodayRecommendationResponse } from "@lunch/shared";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { randomUUID } from "node:crypto";
-import type { AppEnv } from "../../env";
-import { getOfficeDate, getOfficeWeekdayTag } from "../dates";
-import { getMockWeather } from "../weather/mockWeather";
-import { rankRestaurantCandidates } from "./scorer";
+import type { AppEnv } from "../../env.js";
+import { getOfficeDate, getOfficeWeekdayTag } from "../dates.js";
+import { getMockWeather } from "../weather/mockWeather.js";
+import { rankRestaurantCandidates } from "./scorer.js";
 
 export async function getTodayRecommendations(input: {
   prisma: PrismaClient;
