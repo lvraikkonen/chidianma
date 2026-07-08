@@ -98,4 +98,45 @@ describe("getWeatherForOfficeDate", () => {
     expect(result).toEqual({ weather: null, weatherUnavailable: true });
     expect(prisma.weatherSnapshot.create).not.toHaveBeenCalled();
   });
+
+  it("reuses a concurrently-created snapshot after a unique constraint conflict", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        current: {
+          temperature_2m: 18,
+          precipitation: 0,
+          rain: 0,
+          wind_speed_10m: 8
+        }
+      })
+    } as Response)));
+    const prisma = {
+      weatherSnapshot: {
+        findUnique: vi.fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            date: "2026-07-07",
+            city: "Shanghai",
+            temperatureC: 31,
+            condition: "hot",
+            precipitationProbability: 10
+          }),
+        create: vi.fn().mockRejectedValue({ code: "P2002" })
+      }
+    } as unknown as PrismaClient;
+
+    const result = await getWeatherForOfficeDate({ prisma, env, date: "2026-07-07" });
+
+    expect(result).toEqual({
+      weather: {
+        temperatureC: 31,
+        condition: "hot",
+        precipitationProbability: 10,
+        summary: "今天偏热，优先推荐清爽、近一点的选择。"
+      },
+      weatherUnavailable: false
+    });
+    expect(prisma.weatherSnapshot.findUnique).toHaveBeenCalledTimes(2);
+  });
 });

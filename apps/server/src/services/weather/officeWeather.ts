@@ -8,43 +8,71 @@ export async function getWeatherForOfficeDate(input: {
   env: AppEnv;
   date: string;
 }): Promise<{ weather: WeatherSummary | null; weatherUnavailable: boolean }> {
-  const existing = await input.prisma.weatherSnapshot.findUnique({
-    where: {
-      date_city: {
-        date: input.date,
-        city: input.env.OFFICE_CITY
-      }
+  const snapshotWhere = {
+    date_city: {
+      date: input.date,
+      city: input.env.OFFICE_CITY
     }
+  };
+  const existing = await input.prisma.weatherSnapshot.findUnique({
+    where: snapshotWhere
   });
 
   if (existing) {
     return {
-      weather: {
-        temperatureC: existing.temperatureC ?? 20,
-        condition: existing.condition as WeatherSummary["condition"],
-        precipitationProbability: existing.precipitationProbability ?? 0,
-        summary: weatherSummaryText(existing.condition)
-      },
+      weather: snapshotToWeather(existing),
       weatherUnavailable: false
     };
   }
 
   try {
     const weather = await fetchWeatherSummary(input.env);
-    await input.prisma.weatherSnapshot.create({
-      data: {
-        date: input.date,
-        city: input.env.OFFICE_CITY,
-        temperatureC: weather.temperatureC,
-        condition: weather.condition,
-        precipitationProbability: weather.precipitationProbability,
-        rawPayload: { source: "open-meteo" }
+    try {
+      await input.prisma.weatherSnapshot.create({
+        data: {
+          date: input.date,
+          city: input.env.OFFICE_CITY,
+          temperatureC: weather.temperatureC,
+          condition: weather.condition,
+          precipitationProbability: weather.precipitationProbability,
+          rawPayload: { source: "open-meteo" }
+        }
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        const concurrent = await input.prisma.weatherSnapshot.findUnique({
+          where: snapshotWhere
+        });
+        if (concurrent) {
+          return { weather: snapshotToWeather(concurrent), weatherUnavailable: false };
+        }
       }
-    });
+      throw error;
+    }
     return { weather, weatherUnavailable: false };
   } catch {
     return { weather: null, weatherUnavailable: true };
   }
+}
+
+function snapshotToWeather(snapshot: {
+  temperatureC: number | null;
+  condition: string;
+  precipitationProbability: number | null;
+}): WeatherSummary {
+  return {
+    temperatureC: snapshot.temperatureC ?? 20,
+    condition: snapshot.condition as WeatherSummary["condition"],
+    precipitationProbability: snapshot.precipitationProbability ?? 0,
+    summary: weatherSummaryText(snapshot.condition)
+  };
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "P2002";
 }
 
 function weatherSummaryText(condition: string): string {
