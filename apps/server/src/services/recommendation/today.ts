@@ -11,9 +11,10 @@ export async function getTodayRecommendations(input: {
   env: AppEnv;
   forceRefresh: boolean;
 }): Promise<TodayRecommendationResponse> {
-  const date = getOfficeDate(new Date(), input.env.OFFICE_TIMEZONE);
+  const now = new Date();
+  const date = getOfficeDate(now, input.env.OFFICE_TIMEZONE);
   const weather = getMockWeather();
-  const todayWeekday = getOfficeWeekdayTag(new Date(), input.env.OFFICE_TIMEZONE);
+  const todayWeekday = getOfficeWeekdayTag(now, input.env.OFFICE_TIMEZONE);
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -37,7 +38,7 @@ export async function getTodayRecommendations(input: {
               dish: item.recommendation?.dish ?? undefined,
               reason: item.reason,
               distanceMinutes: item.restaurant.distanceMinutes ?? undefined,
-              tags: item.restaurant.tags
+              tags: [...new Set([...item.restaurant.tags, ...(item.recommendation?.moodTags ?? [])])]
             }))
           };
         }
