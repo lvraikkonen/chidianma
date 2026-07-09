@@ -52,7 +52,13 @@ export async function assertNotLastActiveAdmin(input: {
   membershipId: string;
 }): Promise<void> {
   const membership = await input.prisma.groupMembership.findUnique({ where: { id: input.membershipId } });
-  if (!membership || membership.role !== "admin" || membership.status !== "active") {
+  if (!membership) {
+    return;
+  }
+  if (membership.groupId !== input.groupId) {
+    throw new AuthError("bad_request", "membership_group_mismatch", "Membership does not belong to route group");
+  }
+  if (membership.role !== "admin" || membership.status !== "active") {
     return;
   }
 

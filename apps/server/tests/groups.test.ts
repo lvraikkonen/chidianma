@@ -169,4 +169,19 @@ describe("group membership authorization", () => {
       "last_admin"
     );
   });
+
+  it("rejects last-admin checks for memberships outside the route group before counting admins", async () => {
+    const prisma = prismaWithMemberships([
+      { id: "membership-1", groupId: "group-2", identityId: "identity-1", role: "admin", status: "active" },
+      { id: "membership-2", groupId: "group-1", identityId: "identity-2", role: "admin", status: "active" },
+      { id: "membership-3", groupId: "group-1", identityId: "identity-3", role: "admin", status: "active" }
+    ]);
+
+    await expectAuthError(
+      () => assertNotLastActiveAdmin({ prisma: prisma as never, groupId: "group-1", membershipId: "membership-1" }),
+      "bad_request",
+      "membership_group_mismatch"
+    );
+    expect(prisma.groupMembership.count).not.toHaveBeenCalled();
+  });
 });
