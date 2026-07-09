@@ -314,6 +314,56 @@ describe("group knowledge restaurant routes", () => {
     await app.close();
   });
 
+  it("returns stable 400 errors for missing or null restaurant patch bodies", async () => {
+    prisma.__seedRestaurant(baseRestaurant);
+    const app = await buildTestApp();
+
+    const missingBody = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/restaurants/restaurant-1",
+      headers: { authorization: `Bearer ${groupToken()}` }
+    });
+    const nullBody = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/restaurants/restaurant-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: null
+    });
+
+    expect(missingBody.statusCode).toBe(400);
+    expect(missingBody.json()).toEqual({
+      error: "empty_restaurant_patch",
+      message: "At least one restaurant field is required"
+    });
+    expect(nullBody.statusCode).toBe(400);
+    expect(nullBody.json()).toEqual({
+      error: "empty_restaurant_patch",
+      message: "At least one restaurant field is required"
+    });
+
+    await app.close();
+  });
+
+  it("validates restaurant status before member status permissions", async () => {
+    prisma.__seedRestaurant(baseRestaurant);
+    const app = await buildTestApp();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/restaurants/restaurant-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { status: "not-a-status" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: "invalid_restaurant_status",
+      message: "Restaurant status is invalid"
+    });
+
+    await app.close();
+  });
+
   it("blocks a member from editing another member's restaurant", async () => {
     prisma.__seedMembership({
       id: "membership-2",

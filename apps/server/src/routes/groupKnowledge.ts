@@ -131,6 +131,10 @@ function restaurantStatus(value: unknown): "active" | "paused" | "blocked" {
   return value as "active" | "paused" | "blocked";
 }
 
+function restaurantPatchBody(body: unknown): PatchRestaurantRequest {
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as PatchRestaurantRequest) : {};
+}
+
 function toRecommendationSummary(recommendation: IncludedRecommendation) {
   return {
     id: recommendation.id,
@@ -291,7 +295,9 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
           reply.code(404);
           return { error: "restaurant_not_found", message: "Restaurant not found" };
         }
-        const wantsStatusChange = request.body.status !== undefined;
+        const body = restaurantPatchBody(request.body);
+        const wantsStatusChange = body.status !== undefined;
+        const data = buildRestaurantPatch(body, membership.role === "admin");
         if (wantsStatusChange && membership.role !== "admin") {
           reply.code(403);
           return {
@@ -303,7 +309,6 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
           reply.code(403);
           return { error: "restaurant_owner_required", message: "Only the creator or an admin can edit restaurant" };
         }
-        const data = buildRestaurantPatch(request.body, membership.role === "admin");
         if (Object.keys(data).length === 0) {
           reply.code(400);
           return { error: "empty_restaurant_patch", message: "At least one restaurant field is required" };
