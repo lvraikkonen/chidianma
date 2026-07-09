@@ -315,6 +315,26 @@ describe("group knowledge restaurant routes", () => {
     await app.close();
   });
 
+  it("rejects unknown restaurant creation fields before writing", async () => {
+    const app = await buildTestApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/restaurants",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { name: "状态偷渡", status: "blocked" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: "invalid_restaurant_request",
+      message: "Restaurant request body is invalid"
+    });
+    expect(prisma.restaurant.create).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
   it("lets a member edit their own base restaurant fields but not status", async () => {
     prisma.__seedRestaurant(baseRestaurant);
     const app = await buildTestApp();
@@ -360,14 +380,36 @@ describe("group knowledge restaurant routes", () => {
 
     expect(missingBody.statusCode).toBe(400);
     expect(missingBody.json()).toEqual({
-      error: "empty_restaurant_patch",
-      message: "At least one restaurant field is required"
+      error: "invalid_restaurant_request",
+      message: "Restaurant request body is invalid"
     });
     expect(nullBody.statusCode).toBe(400);
     expect(nullBody.json()).toEqual({
-      error: "empty_restaurant_patch",
-      message: "At least one restaurant field is required"
+      error: "invalid_restaurant_request",
+      message: "Restaurant request body is invalid"
     });
+    expect(prisma.restaurant.update).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("rejects unknown restaurant patch fields before writing", async () => {
+    prisma.__seedRestaurant(baseRestaurant);
+    const app = await buildTestApp();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/restaurants/restaurant-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { area: "二楼", typoField: "oops" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: "invalid_restaurant_request",
+      message: "Restaurant request body is invalid"
+    });
+    expect(prisma.restaurant.update).not.toHaveBeenCalled();
 
     await app.close();
   });
@@ -1246,7 +1288,7 @@ describe("group knowledge route auth and validation matrix", () => {
     await app.close();
   });
 
-  it("rejects invalid feedback type and malformed office date before writing", async () => {
+  it("rejects invalid feedback type and invalid office dates before writing", async () => {
     const app = await buildTestApp();
 
     const badType = await app.inject({
@@ -1261,11 +1303,19 @@ describe("group knowledge route auth and validation matrix", () => {
       headers: { authorization: `Bearer ${groupToken()}` },
       payload: { officeDate: "07/09/2026", restaurantId: "restaurant-1", type: "want" }
     });
+    const impossibleDate = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { officeDate: "2026-99-99", restaurantId: "restaurant-1", type: "want" }
+    });
 
     expect(badType.statusCode).toBe(400);
     expect(badType.json()).toMatchObject({ error: "invalid_feedback_type" });
     expect(badDate.statusCode).toBe(400);
     expect(badDate.json()).toMatchObject({ error: "invalid_office_date" });
+    expect(impossibleDate.statusCode).toBe(400);
+    expect(impossibleDate.json()).toMatchObject({ error: "invalid_office_date" });
     expect(prisma.feedback.create).not.toHaveBeenCalled();
 
     await app.close();

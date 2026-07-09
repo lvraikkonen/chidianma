@@ -80,6 +80,19 @@ const createRecommendationFields = new Set([
 ]);
 const patchRecommendationFields = new Set(["dish", "reason", "weatherTags", "weekdayTags", "moodTags"]);
 const createFeedbackFields = new Set(["officeDate", "restaurantId", "recommendationId", "type"]);
+const createRestaurantFields = new Set([
+  "name",
+  "area",
+  "address",
+  "distanceMinutes",
+  "cuisine",
+  "priceBand",
+  "averagePriceCents",
+  "supportsDineIn",
+  "supportsTakeout",
+  "tags"
+]);
+const patchRestaurantFields = new Set([...createRestaurantFields, "status"]);
 
 function membershipAuthInput(groupId: string, authorization: string | undefined) {
   return authorization ? { groupId, authorization } : { groupId };
@@ -159,8 +172,19 @@ function restaurantStatus(value: unknown): "active" | "paused" | "blocked" {
   return value as "active" | "paused" | "blocked";
 }
 
-function restaurantPatchBody(body: unknown): PatchRestaurantRequest {
-  return body && typeof body === "object" && !Array.isArray(body) ? (body as PatchRestaurantRequest) : {};
+function invalidRestaurantRequest(): ValidationError {
+  return new ValidationError("invalid_restaurant_request", "Restaurant request body is invalid");
+}
+
+function restaurantBody(body: unknown, allowedFields: Set<string>): Record<string, unknown> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw invalidRestaurantRequest();
+  }
+  const record = body as Record<string, unknown>;
+  if (Object.keys(record).some((field) => !allowedFields.has(field))) {
+    throw invalidRestaurantRequest();
+  }
+  return record;
 }
 
 type RecommendationRow = IncludedRecommendation;
@@ -194,6 +218,15 @@ function weekdayTagArray(value: unknown): string[] {
 
 function officeDate(value: unknown): string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new ValidationError("invalid_office_date", "Office date is invalid");
+  }
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const isRealDate =
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  if (!isRealDate) {
     throw new ValidationError("invalid_office_date", "Office date is invalid");
   }
   return value;
@@ -395,8 +428,9 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
           env,
           ...membershipAuthInput(request.params.groupId, request.headers.authorization)
         });
+        const body = restaurantBody(request.body, createRestaurantFields);
         const name = requiredNonBlankString(
-          request.body,
+          body,
           "name",
           "restaurant_name_required",
           "Restaurant name is required"
@@ -405,25 +439,25 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
           data: {
             groupId: request.params.groupId,
             name,
-            area: optionalString(request.body.area) ?? null,
-            address: optionalString(request.body.address) ?? null,
+            area: optionalString(body.area) ?? null,
+            address: optionalString(body.address) ?? null,
             distanceMinutes:
               optionalNonNegativeNumber(
-                request.body.distanceMinutes,
+                body.distanceMinutes,
                 "invalid_distance_minutes",
                 "distanceMinutes must be a non-negative number"
               ) ?? null,
-            cuisine: optionalString(request.body.cuisine) ?? null,
-            priceBand: optionalString(request.body.priceBand) ?? null,
+            cuisine: optionalString(body.cuisine) ?? null,
+            priceBand: optionalString(body.priceBand) ?? null,
             averagePriceCents:
               optionalNonNegativeNumber(
-                request.body.averagePriceCents,
+                body.averagePriceCents,
                 "invalid_average_price_cents",
                 "averagePriceCents must be a non-negative number"
               ) ?? null,
-            supportsDineIn: optionalBoolean(request.body.supportsDineIn) ?? true,
-            supportsTakeout: optionalBoolean(request.body.supportsTakeout) ?? false,
-            tags: stringArray(request.body.tags) ?? [],
+            supportsDineIn: optionalBoolean(body.supportsDineIn) ?? true,
+            supportsTakeout: optionalBoolean(body.supportsTakeout) ?? false,
+            tags: stringArray(body.tags) ?? [],
             status: "active",
             createdByMembershipId: membership.membershipId
           },
@@ -456,7 +490,7 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
           reply.code(404);
           return { error: "restaurant_not_found", message: "Restaurant not found" };
         }
-        const body = restaurantPatchBody(request.body);
+        const body = restaurantBody(request.body, patchRestaurantFields) as unknown as PatchRestaurantRequest;
         const wantsStatusChange = body.status !== undefined;
         const data = buildRestaurantPatch(body, membership.role === "admin");
         if (wantsStatusChange && membership.role !== "admin") {
