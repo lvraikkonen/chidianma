@@ -28,6 +28,15 @@ Responsibilities:
 - Update relevant documentation after implementation.
 - Summarize changed files, tests added, tests run, and known issues before handoff.
 
+### Codex Subagent Model Selection
+
+Codex and Superpowers may create subagents through the controls exposed by the active platform.
+
+- When a dispatch interface exposes a model selector, choose a suitable model according to the active workflow and user instructions.
+- When a dispatch interface does not expose a model selector, the platform-selected, inherited, or default subagent model is allowed.
+- The absence of a per-dispatch model parameter must not by itself block Subagent-Driven Development.
+- Do not claim a specific subagent model unless it was explicitly selected or otherwise verifiable.
+
 ## Claude Code / gstack Role
 
 Claude Code with gstack is primarily used for:

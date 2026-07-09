@@ -1,8 +1,6 @@
 # Today Recommendation Batch + Participation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
->
-> Project override: Codex-created subagents are allowed only if the tool can explicitly enforce GPT-5.5. If GPT-5.5 cannot be enforced, do not create subagents; use inline execution with `superpowers:executing-plans`.
 
 **Goal:** Build Stage 3 of the multi-group roadmap: a group-scoped daily recommendation batch loop with participation, decision, feedback, and a minimal Chrome extension path that proves the real lunch flow.
 
@@ -42,7 +40,6 @@
 - Plugin permissions stay minimal: `alarms`, `notifications`, `storage`, and specific API host permissions.
 - Shared API contracts belong in `packages/shared`.
 - Keep Fastify on Railway compatible with `host: "::"` and `port: Number(process.env.PORT ?? 3000)`.
-- Do not create Codex subagents unless GPT-5.5 can be explicitly enforced.
 
 ---
 
@@ -2919,7 +2916,9 @@ Source-of-truth updates:
 - `roadmap.md`.
 
 Subagent disclosure:
-- No subagents were used unless the executor can explicitly enforce GPT-5.5.
+- State whether subagents were used.
+- Name a subagent model only when it was explicitly selected or otherwise verifiable.
+- State any platform limitation relevant to model selection.
 ```
 
 - [ ] **Step 7: Commit**
@@ -2939,4 +2938,4 @@ git commit -m "docs: update stage 3 roadmap status"
 - Participation decision references validate path group ownership.
 - Extension cache is keyed by active group.
 - Legacy MVP behavior remains covered by regression tests.
-- No Codex subagent is required unless GPT-5.5 enforcement is available.
+- Subagent use and any verifiable model-selection details are disclosed truthfully.

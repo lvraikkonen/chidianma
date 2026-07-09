@@ -25,17 +25,13 @@ If specs, plans, tests, and implementation conflict, document the conflict befor
 
 ## Model Policy for Codex Subagents
 
-Codex and Superpowers may create subagents only when every created subagent uses GPT-5.5.
+Codex and Superpowers may create subagents through the model-selection controls provided by the active platform.
 
-This is mandatory.
-
-- GPT-5.5 is the only allowed model for Codex-created subagents.
-- Do not create subagents with GPT-4.x, GPT-5, GPT-5 mini, Claude, Gemini, local models, or any other model.
-- Do not silently fall back to a different model.
-- If a tool or workflow cannot explicitly enforce GPT-5.5 for subagents, do not create subagents. Continue with a non-subagent workflow or document the limitation for reviewer attention.
-- Any Codex handoff that used subagents must state that all subagents used GPT-5.5.
-
-Claude Code / gstack review must treat violation of this rule as a blocking process issue.
+- If the dispatch interface exposes a model selector, select a suitable model according to the active workflow and user instructions.
+- If the dispatch interface does not expose a model selector, the platform-selected, inherited, or default subagent model is allowed.
+- The absence of a per-dispatch model parameter must not by itself block Subagent-Driven Development.
+- No specific model vendor or version is mandatory unless the user explicitly requires one for the current task and the platform can enforce it.
+- Handoffs disclose whether subagents were used and only name a model when that model was explicitly selected or otherwise verifiable.
 
 ## Workflow
 
@@ -58,7 +54,7 @@ Claude Code / gstack review must treat violation of this rule as a blocking proc
 - Do-not-do list
 - Test expectations
 - Review requested after implementation
-- Non-negotiable model rule: Codex-created subagents must use GPT-5.5 only
+- Any task-specific subagent model requirement and whether the active platform can enforce it
 
 ## Required Handoff: Codex to Claude/gstack
 
@@ -72,8 +68,8 @@ Claude Code / gstack review must treat violation of this rule as a blocking proc
 - Review requested
 - Subagent disclosure:
   - Whether subagents were used
-  - Confirmation that every Codex-created subagent used GPT-5.5
-  - If no subagents were used, state that explicitly
+  - Which model was used only when explicitly selected or otherwise verifiable
+  - Any platform limitation relevant to model selection
 
 ## Conflict Resolution
 
@@ -171,4 +167,4 @@ A task is ready for Claude/gstack review when:
 - Relevant commands have been run.
 - Untested areas are disclosed.
 - Documentation is updated where behavior changed.
-- Any use of Codex subagents is disclosed and confirmed GPT-5.5-only.
+- Any use of Codex subagents is disclosed without unverifiable model claims.
