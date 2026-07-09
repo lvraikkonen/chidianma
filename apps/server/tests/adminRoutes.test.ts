@@ -157,4 +157,37 @@ describe("admin routes", () => {
 
     await app.close();
   });
+
+  it("scopes legacy restaurant status updates to the default group", async () => {
+    prisma.teammate.upsert.mockResolvedValue({ id: "teammate-1", name: "Demo 同事" });
+    prisma.restaurant.update.mockResolvedValue({
+      id: "restaurant-1",
+      groupId: "seed-group-default",
+      name: "米饭小馆",
+      status: "paused"
+    });
+
+    const app = await buildTestApp();
+    const session = await app.inject({
+      method: "POST",
+      url: "/api/session",
+      payload: { inviteCode: "team-code", name: "Demo 同事" }
+    });
+    const { token } = session.json() as { token: string };
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/restaurants/restaurant-1",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { status: "paused" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(prisma.restaurant.update).toHaveBeenCalledWith({
+      where: { id: "restaurant-1", groupId: "seed-group-default" },
+      data: { status: "paused" }
+    });
+
+    await app.close();
+  });
 });

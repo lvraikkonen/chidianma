@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import type { AppEnv } from "../env.js";
 import { prisma } from "../plugins/prisma.js";
@@ -43,10 +44,17 @@ export async function registerRestaurantRoutes(app: FastifyInstance, env: AppEnv
     "/api/restaurants/:id",
     async (request, reply) => {
       requireAdminSession(request, reply, env);
-      return prisma.restaurant.update({
-        where: { id: request.params.id },
-        data: { status: request.body.status }
-      });
+      try {
+        return await prisma.restaurant.update({
+          where: { id: request.params.id, groupId: DEFAULT_GROUP_ID },
+          data: { status: request.body.status }
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+          return reply.code(404).send({ error: "Restaurant not found" });
+        }
+        throw error;
+      }
     }
   );
 }
