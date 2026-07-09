@@ -1,10 +1,155 @@
 import type { GroupRole, MembershipStatus } from "@lunch/shared";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildApp } from "../src/app";
 import type { AppEnv } from "../src/env";
 import { AuthError } from "../src/services/auth/errors";
-import { signGroupSessionToken } from "../src/services/auth/tokens";
+import { signGroupSessionToken, signIdentityToken } from "../src/services/auth/tokens";
 import { generateInviteCode, hashInviteCode, verifyInviteCode } from "../src/services/groups/inviteCodes";
 import { assertNotLastActiveAdmin, requireActiveMembership } from "../src/services/groups/memberships";
+
+type MockIdentity = {
+  id: string;
+  displayName: string;
+  lastSeenAt: Date | null;
+};
+
+type MockLunchGroup = {
+  id: string;
+  name: string;
+  subtitle: string | null;
+  inviteCodeHash: string;
+  createdByIdentityId: string;
+  officeTimezone: string;
+  officeCity: string;
+  officeLatitude: number;
+  officeLongitude: number;
+};
+
+type MockGroupMembership = {
+  id: string;
+  groupId: string;
+  identityId: string;
+  role: GroupRole;
+  status: MembershipStatus;
+  joinedAt: Date;
+  group?: MockLunchGroup;
+};
+
+const prisma = vi.hoisted(() => {
+  const store = {
+    identities: [] as MockIdentity[],
+    groups: [] as MockLunchGroup[],
+    memberships: [] as MockGroupMembership[],
+    nextIdentityId: 1,
+    nextGroupId: 1,
+    nextMembershipId: 1
+  };
+
+  const includeGroup = (membership: MockGroupMembership) => ({
+    ...membership,
+    group: store.groups.find((group) => group.id === membership.groupId) ?? membership.group
+  });
+
+  const client = {
+    __reset: () => {
+      store.identities = [];
+      store.groups = [];
+      store.memberships = [];
+      store.nextIdentityId = 1;
+      store.nextGroupId = 1;
+      store.nextMembershipId = 1;
+    },
+    __setMembershipStatus: (membershipId: string, status: MembershipStatus) => {
+      const membership = store.memberships.find((candidate) => candidate.id === membershipId);
+      if (!membership) {
+        throw new Error(`Missing membership ${membershipId}`);
+      }
+      membership.status = status;
+    },
+    identity: {
+      create: vi.fn(async ({ data }: { data: { displayName: string; lastSeenAt: Date } }) => {
+        const identity = { id: `identity-${store.nextIdentityId++}`, ...data };
+        store.identities.push(identity);
+        return identity;
+      }),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        return store.identities.find((identity) => identity.id === where.id) ?? null;
+      }),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: { lastSeenAt: Date } }) => {
+        const identity = store.identities.find((candidate) => candidate.id === where.id);
+        if (!identity) {
+          throw new Error(`Missing identity ${where.id}`);
+        }
+        Object.assign(identity, data);
+        return identity;
+      })
+    },
+    lunchGroup: {
+      create: vi.fn(async ({ data }: { data: Omit<MockLunchGroup, "id"> }) => {
+        const group = { id: `group-${store.nextGroupId++}`, ...data };
+        store.groups.push(group);
+        return group;
+      }),
+      findMany: vi.fn(async () => store.groups)
+    },
+    groupMembership: {
+      create: vi.fn(async ({ data }: { data: Omit<MockGroupMembership, "id" | "joinedAt"> }) => {
+        const membership = { id: `membership-${store.nextMembershipId++}`, joinedAt: new Date(), ...data };
+        store.memberships.push(membership);
+        return includeGroup(membership);
+      }),
+      findMany: vi.fn(
+        async ({
+          where
+        }: {
+          where: { identityId?: string; status?: MembershipStatus };
+          include?: { group: true };
+          orderBy?: { joinedAt: "asc" };
+        }) => {
+          return store.memberships
+            .filter((membership) => {
+              return Object.entries(where).every(
+                ([key, value]) => membership[key as keyof MockGroupMembership] === value
+              );
+            })
+            .map(includeGroup);
+        }
+      ),
+      findUnique: vi.fn(
+        async ({
+          where
+        }: {
+          where:
+            | { id: string }
+            | { groupId_identityId: { groupId: string; identityId: string } };
+          include?: { group: true };
+        }) => {
+          const membership =
+            "id" in where
+              ? store.memberships.find((candidate) => candidate.id === where.id)
+              : store.memberships.find(
+                  (candidate) =>
+                    candidate.groupId === where.groupId_identityId.groupId &&
+                    candidate.identityId === where.groupId_identityId.identityId
+                );
+          return membership ? includeGroup(membership) : null;
+        }
+      ),
+      count: vi.fn()
+    },
+    groupSettings: {
+      create: vi.fn(async ({ data }: { data: { groupId: string; notificationGroupLabel: string } }) => data)
+    },
+    scoringWeights: {
+      create: vi.fn(async ({ data }: { data: { groupId: string } }) => data)
+    },
+    $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(client))
+  };
+
+  return client;
+});
+
+vi.mock("../src/plugins/prisma", () => ({ prisma }));
 
 interface MembershipRecord {
   id: string;
@@ -15,6 +160,33 @@ interface MembershipRecord {
 }
 
 const env = { SESSION_SECRET: "session-secret" } as AppEnv;
+
+const routeEnv = {
+  DATABASE_URL: "postgresql://example",
+  TEAM_INVITE_CODE: "team-code",
+  SESSION_SECRET: "session-secret",
+  EXTENSION_READ_TOKEN: "read-token",
+  WEATHER_API_BASE_URL: "https://api.open-meteo.com/v1",
+  OFFICE_CITY: "Shanghai",
+  OFFICE_LATITUDE: "31.2304",
+  OFFICE_LONGITUDE: "121.4737",
+  OFFICE_TIMEZONE: "Asia/Shanghai",
+  PUBLIC_API_BASE_URL: "http://localhost:3000",
+  NODE_ENV: "test",
+  PORT: "3000"
+};
+
+beforeEach(() => {
+  Object.assign(process.env, routeEnv);
+  prisma.__reset();
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  for (const key of Object.keys(routeEnv)) {
+    delete process.env[key];
+  }
+});
 
 function signMembershipToken(input: {
   identityId?: string;
@@ -183,5 +355,195 @@ describe("group membership authorization", () => {
       "membership_group_mismatch"
     );
     expect(prisma.groupMembership.count).not.toHaveBeenCalled();
+  });
+});
+
+describe("group routes", () => {
+  it("creates an identity and group, then lists active memberships", async () => {
+    const app = await buildApp();
+
+    const createGroup = await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "李雷", groupName: "前端干饭组", subtitle: "楼下约饭" }
+    });
+    expect(createGroup.statusCode).toBe(200);
+    const created = createGroup.json();
+    expect(created.identityToken).toEqual(expect.any(String));
+    expect(created.groupSessionToken).toEqual(expect.any(String));
+    expect(created.group.name).toBe("前端干饭组");
+    expect(created.inviteCode).toMatch(/^LUNCH-[A-Z0-9]{6}$/);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${created.identityToken}` }
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().groups).toEqual([
+      expect.objectContaining({ groupId: created.group.groupId, role: "admin", membershipId: expect.any(String) })
+    ]);
+  });
+
+  it("reuses an existing identity when creating a second group", async () => {
+    const app = await buildApp();
+
+    const first = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "李雷", groupName: "前端干饭组" }
+    })).json();
+
+    const secondResponse = await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${first.identityToken}` },
+      payload: { groupName: "后端干饭组" }
+    });
+    expect(secondResponse.statusCode).toBe(200);
+    const second = secondResponse.json();
+    expect(second.identityToken).toEqual(expect.any(String));
+    expect(second.group.groupId).not.toBe(first.group.groupId);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${second.identityToken}` }
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().groups.map((group: { groupId: string }) => group.groupId).sort()).toEqual(
+      [first.group.groupId, second.group.groupId].sort()
+    );
+  });
+
+  it("returns 401 for missing and tampered identity tokens", async () => {
+    const app = await buildApp();
+
+    const missing = await app.inject({ method: "GET", url: "/api/groups" });
+    expect(missing.statusCode).toBe(401);
+    expect(missing.json().error).toBe("missing_token");
+
+    const tampered = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: "Bearer bad.token" }
+    });
+    expect(tampered.statusCode).toBe(401);
+    expect(tampered.json().error).toBe("invalid_token");
+  });
+
+  it("returns 401 for expired identity tokens", async () => {
+    const app = await buildApp();
+    const expiredIdentityToken = signIdentityToken(
+      { identityId: "identity-expired", exp: Date.now() - 1_000 },
+      "session-secret"
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${expiredIdentityToken}` }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("expired_token");
+  });
+
+  it("joins a group with invite code and exchanges identity token for group session", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+
+    const joinedResponse = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      payload: { displayName: "小赵", inviteCode: created.inviteCode }
+    });
+    expect(joinedResponse.statusCode).toBe(200);
+    const joined = joinedResponse.json();
+    expect(joined.group.groupId).toBe(created.group.groupId);
+    expect(joined.group.role).toBe("member");
+
+    const sessionResponse = await app.inject({
+      method: "POST",
+      url: `/api/groups/${created.group.groupId}/session`,
+      headers: { authorization: `Bearer ${joined.identityToken}` }
+    });
+    expect(sessionResponse.statusCode).toBe(200);
+    expect(sessionResponse.json().groupSessionToken).toEqual(expect.any(String));
+  });
+
+  it("reuses an existing identity when joining another group", async () => {
+    const app = await buildApp();
+
+    const groupA = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "小王", groupName: "A 组" }
+    })).json();
+    const groupB = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "小张", groupName: "B 组" }
+    })).json();
+
+    const join = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      headers: { authorization: `Bearer ${groupA.identityToken}` },
+      payload: { inviteCode: groupB.inviteCode }
+    });
+    expect(join.statusCode).toBe(200);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${join.json().identityToken}` }
+    });
+    expect(list.json().groups.map((group: { groupId: string }) => group.groupId).sort()).toEqual(
+      [groupA.group.groupId, groupB.group.groupId].sort()
+    );
+  });
+
+  it("joining an already-active group is idempotent and returns a fresh session", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+
+    const joinAgain = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      headers: { authorization: `Bearer ${created.identityToken}` },
+      payload: { inviteCode: created.inviteCode }
+    });
+    expect(joinAgain.statusCode).toBe(200);
+    expect(joinAgain.json().group.membershipId).toBe(created.group.membershipId);
+    expect(joinAgain.json().groupSessionToken).toEqual(expect.any(String));
+  });
+
+  it("rejects removed members when joining an existing group", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+    prisma.__setMembershipStatus(created.group.membershipId, "removed");
+
+    const joinAgain = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      headers: { authorization: `Bearer ${created.identityToken}` },
+      payload: { inviteCode: created.inviteCode }
+    });
+
+    expect(joinAgain.statusCode).toBe(403);
+    expect(joinAgain.json().error).toBe("removed_member");
   });
 });
