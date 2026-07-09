@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { AuthError } from "../src/services/auth/errors";
 import {
@@ -6,6 +7,24 @@ import {
   verifyGroupSessionToken,
   verifyIdentityToken
 } from "../src/services/auth/tokens";
+
+function signRawJson(json: string, secret: string): string {
+  const encoded = Buffer.from(json).toString("base64url");
+  const signature = createHmac("sha256", secret).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function expectAuthError(fn: () => unknown, code: AuthError["code"], error: string): void {
+  let thrown: unknown;
+  try {
+    fn();
+  } catch (err) {
+    thrown = err;
+  }
+
+  expect(thrown).toBeInstanceOf(AuthError);
+  expect(thrown).toMatchObject({ code, error });
+}
 
 describe("multi-group signed tokens", () => {
   it("verifies signed identity and group tokens before expiry", () => {
@@ -55,16 +74,41 @@ describe("multi-group signed tokens", () => {
     );
     const [payload] = token.split(".");
 
-    expect(() => verifyGroupSessionToken(`${payload}.bad-signature`, "session-secret")).toThrow(AuthError);
+    expectAuthError(
+      () => verifyGroupSessionToken(`${payload}.bad-signature`, "session-secret"),
+      "unauthorized",
+      "invalid_token"
+    );
 
     vi.setSystemTime(new Date("2026-07-08T04:02:00.000Z"));
-    expect(() => verifyGroupSessionToken(token, "session-secret")).toThrow(AuthError);
+    expectAuthError(() => verifyGroupSessionToken(token, "session-secret"), "unauthorized", "expired_token");
 
     vi.useRealTimers();
   });
 
   it("rejects malformed claim shapes", () => {
     const malformed = signIdentityToken({ identityId: "", exp: Date.now() + 60_000 }, "session-secret");
-    expect(() => verifyIdentityToken(malformed, "session-secret")).toThrow(AuthError);
+    expectAuthError(() => verifyIdentityToken(malformed, "session-secret"), "unauthorized", "invalid_token");
+  });
+
+  it("rejects extra token segments with a stable invalid-token error", () => {
+    const token = signGroupSessionToken(
+      {
+        identityId: "identity-1",
+        groupId: "group-1",
+        membershipId: "membership-1",
+        role: "member",
+        exp: Date.now() + 60_000
+      },
+      "session-secret"
+    );
+
+    expectAuthError(() => verifyGroupSessionToken(`${token}.extra`, "session-secret"), "unauthorized", "invalid_token");
+  });
+
+  it("rejects signed null payloads with a stable invalid-token error", () => {
+    const token = signRawJson("null", "session-secret");
+
+    expectAuthError(() => verifyIdentityToken(token, "session-secret"), "unauthorized", "invalid_token");
   });
 });

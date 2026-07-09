@@ -22,7 +22,12 @@ function signPayload(payload: object, secret: string): string {
 }
 
 function verifyPayload<T>(token: string, secret: string): T {
-  const [payload, signature] = token.split(".");
+  const parts = token.split(".");
+  if (parts.length !== 2) {
+    throw new AuthError("unauthorized", "invalid_token", "Invalid token");
+  }
+
+  const [payload, signature] = parts;
   if (!payload || !signature) {
     throw new AuthError("unauthorized", "invalid_token", "Invalid token");
   }
@@ -34,17 +39,22 @@ function verifyPayload<T>(token: string, secret: string): T {
     throw new AuthError("unauthorized", "invalid_token", "Invalid token signature");
   }
 
-  let claims: T & { exp?: number };
+  let claims: unknown;
   try {
-    claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T & { exp?: number };
+    claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   } catch {
     throw new AuthError("unauthorized", "invalid_token", "Invalid token payload");
   }
 
-  if (typeof claims.exp !== "number" || claims.exp <= Date.now()) {
+  if (claims === null || typeof claims !== "object" || Array.isArray(claims)) {
+    throw new AuthError("unauthorized", "invalid_token", "Invalid token payload");
+  }
+
+  const claimsWithExpiry = claims as T & { exp?: unknown };
+  if (typeof claimsWithExpiry.exp !== "number" || claimsWithExpiry.exp <= Date.now()) {
     throw new AuthError("unauthorized", "expired_token", "Token expired");
   }
-  return claims as T;
+  return claimsWithExpiry as T;
 }
 
 function assertString(value: unknown, field: string): asserts value is string {
