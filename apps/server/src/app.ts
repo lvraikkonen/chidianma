@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { loadEnv } from "./env.js";
 import { registerFeedbackRoutes } from "./routes/feedback.js";
+import { registerGroupKnowledgeRoutes } from "./routes/groupKnowledge.js";
 import { registerGroupRoutes } from "./routes/groups.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerRecommendationAdminRoutes } from "./routes/recommendations-admin.js";
@@ -18,6 +19,7 @@ export async function buildApp() {
 
   await registerHealthRoutes(app);
   await registerGroupRoutes(app, env);
+  await registerGroupKnowledgeRoutes(app, env);
   await registerRecommendationRoutes(app, env);
   await registerSessionRoutes(app, env);
   await registerRestaurantRoutes(app, env);
