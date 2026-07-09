@@ -337,6 +337,8 @@ identity 与 group 的关系。
 
 新 UI 应使用多小组 API。路径采用 `/api/groups/:groupId/...`，服务端必须校验当前 session 是否拥有该 group 的 active membership。
 
+`POST /api/groups` 和 `POST /api/groups/join` 可以携带 `Authorization: Bearer <identityToken>`。如果 identity token 有效，服务端必须复用该 identity；如果没有 identity token，则根据 `displayName` 创建新 identity。成功后总是返回新的 identity token 和对应 group session token。
+
 `GET /api/groups` 使用 identity token，返回该 identity 的 active memberships。`POST /api/groups/:groupId/session` 使用 identity token 为指定 active membership 换取 group session。group session 只授权访问一个 group。
 
 核心 API：
@@ -386,6 +388,38 @@ interface GroupSessionResponse {
   groupSessionToken: string;
   group: GroupSummary;
 }
+
+interface CreateIdentityRequest {
+  displayName: string;
+}
+
+interface CreateIdentityResponse {
+  identityId: string;
+  identityToken: string;
+}
+
+interface CreateGroupRequest {
+  displayName?: string;
+  groupName: string;
+  subtitle?: string;
+}
+
+interface CreateGroupResponse extends GroupSessionResponse {
+  inviteCode: string;
+}
+
+interface JoinGroupRequest {
+  displayName?: string;
+  inviteCode: string;
+}
+
+type JoinGroupResponse = GroupSessionResponse;
+
+interface GroupsListResponse {
+  groups: GroupSummary[];
+}
+
+type RefreshGroupSessionResponse = GroupSessionResponse;
 
 interface TodayRecommendationsResponse {
   groupId: string;

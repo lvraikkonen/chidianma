@@ -10,6 +10,8 @@
 
 **Tech Stack:** TypeScript, pnpm workspaces, Fastify, Prisma, PostgreSQL, Vitest, HMAC signed tokens, `packages/shared` API contracts.
 
+**Status:** Approved for Execution
+
 ## Global Constraints
 
 - Source spec: `specs/2026-07-08-multi-group-prototype-implementation-design.md`.
@@ -23,6 +25,9 @@
 - Each active group must keep at least one active admin.
 - New group GET APIs must not create recommendation batches.
 - `identityToken` and `groupSessionToken` must be signed and expiring.
+- `POST /api/groups` and `POST /api/groups/join` must reuse a valid optional `Authorization: Bearer <identityToken>` instead of always creating a new identity.
+- Missing, invalid, tampered, or expired tokens must return 401, not 500.
+- Removed memberships and insufficient roles must return 403 with stable error codes, not 500.
 - Shared API contracts belong in `packages/shared`.
 - Keep Fastify on Railway compatible with `host: "::"` and `port: Number(process.env.PORT ?? 3000)`.
 - Do not create Codex subagents unless GPT-5.5 can be explicitly enforced.
@@ -51,6 +56,23 @@ This plan does not implement:
 
 Those should be separate plans after this foundation is merged.
 
+## Stage 1 Acceptance Criteria
+
+Stage 1 is complete only when:
+
+- A browser identity can create two groups and `GET /api/groups` returns both.
+- The same identity can join another group by invite code.
+- `POST /api/groups/:groupId/session` returns a group-scoped session only for active memberships.
+- Removed membership cannot rejoin with the same `identityToken` and receives 403/`removed_member`.
+- Joining an already-active group is idempotent and returns a fresh session.
+- Last active admin cannot be removed or downgraded.
+- Stale group session tokens with old admin role claims lose admin access immediately after database role downgrade.
+- Token missing, tampered, and expired cases return 401, not 500.
+- Non-admin member patch returns 403.
+- Existing legacy routes still pass existing tests.
+- Legacy data is assigned to the default group or the migration explicitly documents what is deferred.
+- `EXTENSION_READ_TOKEN` is not accepted by any new `/api/groups/:groupId/*` route.
+
 ## File Structure
 
 - Modify: `packages/shared/src/types.ts`
@@ -71,6 +93,8 @@ Those should be separate plans after this foundation is merged.
   - Seed default group and migrated sample data.
 - Modify: `apps/server/src/env.ts`
   - Add `ALLOW_PUBLIC_GROUP_CREATION` and token TTL defaults.
+- Create: `apps/server/src/services/auth/errors.ts`
+  - Stable auth/domain errors mapped to HTTP 401/403/400.
 - Create: `apps/server/src/services/auth/tokens.ts`
   - Signed token helpers for identity and group sessions.
 - Create: `apps/server/src/services/groups/inviteCodes.ts`
@@ -108,6 +132,14 @@ Those should be separate plans after this foundation is merged.
   - `MembershipStatus = "active" | "removed"`
   - `GroupSummary`
   - `GroupSessionResponse`
+  - `CreateIdentityRequest`
+  - `CreateIdentityResponse`
+  - `CreateGroupRequest`
+  - `CreateGroupResponse`
+  - `JoinGroupRequest`
+  - `JoinGroupResponse`
+  - `GroupsListResponse`
+  - `RefreshGroupSessionResponse`
   - `ApiErrorResponse`
   - `FeedbackType = "want" | "skip" | "ate" | "avoid"`
   - `GROUP_ROUTES`
@@ -182,6 +214,38 @@ export interface GroupSessionResponse {
   groupSessionToken: string;
   group: GroupSummary;
 }
+
+export interface CreateIdentityRequest {
+  displayName: string;
+}
+
+export interface CreateIdentityResponse {
+  identityId: string;
+  identityToken: string;
+}
+
+export interface CreateGroupRequest {
+  displayName?: string | undefined;
+  groupName: string;
+  subtitle?: string | undefined;
+}
+
+export interface CreateGroupResponse extends GroupSessionResponse {
+  inviteCode: string;
+}
+
+export interface JoinGroupRequest {
+  displayName?: string | undefined;
+  inviteCode: string;
+}
+
+export type JoinGroupResponse = GroupSessionResponse;
+
+export interface GroupsListResponse {
+  groups: GroupSummary[];
+}
+
+export type RefreshGroupSessionResponse = GroupSessionResponse;
 
 export interface ApiErrorResponse {
   error: string;
@@ -290,6 +354,13 @@ enum RecommendationBatchSource {
   manual
   legacy
 }
+
+enum ParticipationStatus {
+  undecided
+  joining
+  away
+  decided
+}
 ```
 
 - [ ] **Step 2: Add group models**
@@ -328,6 +399,7 @@ model LunchGroup {
   scoringWeights      ScoringWeights?
   restaurants         Restaurant[]
   recommendations     Recommendation[]
+  dailyRecommendations DailyRecommendation[]
   batches             DailyRecommendationBatch[]
   participation       DailyParticipation[]
   feedback            Feedback[]
@@ -346,6 +418,11 @@ model GroupMembership {
   removedAt   DateTime?        @map("removed_at")
   group       LunchGroup       @relation(fields: [groupId], references: [id])
   identity    Identity         @relation(fields: [identityId], references: [id])
+  createdRestaurants Restaurant[]
+  createdRecommendations Recommendation[]
+  participation DailyParticipation[]
+  feedback     Feedback[]
+  generatedBatches DailyRecommendationBatch[]
 
   @@unique([groupId, identityId])
   @@index([identityId])
@@ -405,6 +482,7 @@ model Restaurant {
   createdAt            DateTime              @default(now()) @map("created_at")
   updatedAt            DateTime              @updatedAt @map("updated_at")
   group                LunchGroup            @relation(fields: [groupId], references: [id])
+  createdByMembership  GroupMembership?      @relation(fields: [createdByMembershipId], references: [id])
   recommendations      Recommendation[]
   dailyRecommendations DailyRecommendation[]
   dailyRecommendationItems DailyRecommendationItem[]
@@ -415,7 +493,92 @@ model Restaurant {
 }
 ```
 
-Apply the same group relation pattern to `Recommendation`, `Feedback`, `WeatherSnapshot`, and the existing `DailyRecommendation` model. Keep `Teammate` and `DailyRecommendation` temporarily for legacy route compatibility until a later recommendation-batch plan removes or stops using them.
+Also update these existing models explicitly. Keep `Teammate`, nullable legacy teammate links, and `DailyRecommendation` temporarily for legacy route compatibility until a later recommendation-batch plan rewires reads/writes to the new batch tables:
+
+```prisma
+model Recommendation {
+  id                    String                @id @default(cuid())
+  groupId               String                @map("group_id")
+  restaurantId          String                @map("restaurant_id")
+  teammateId            String?               @map("teammate_id")
+  createdByMembershipId String?               @map("created_by_membership_id")
+  dish                  String?
+  reason                String
+  weatherTags           String[]              @map("weather_tags")
+  weekdayTags           String[]              @map("weekday_tags")
+  moodTags              String[]              @map("mood_tags")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  group                 LunchGroup            @relation(fields: [groupId], references: [id])
+  restaurant            Restaurant            @relation(fields: [restaurantId], references: [id])
+  teammate              Teammate?             @relation(fields: [teammateId], references: [id])
+  createdByMembership   GroupMembership?      @relation(fields: [createdByMembershipId], references: [id])
+  dailyRecommendations  DailyRecommendation[]
+  dailyRecommendationItems DailyRecommendationItem[]
+  feedback              Feedback[]
+
+  @@index([groupId, restaurantId])
+  @@index([groupId, createdByMembershipId])
+  @@map("recommendations")
+}
+
+model DailyRecommendation {
+  id               String          @id @default(cuid())
+  groupId          String          @map("group_id")
+  date             String
+  batchId          String          @map("batch_id")
+  restaurantId     String          @map("restaurant_id")
+  recommendationId String?         @map("recommendation_id")
+  score            Int
+  reason           String
+  isCurrent        Boolean         @default(true) @map("is_current")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  group            LunchGroup      @relation(fields: [groupId], references: [id])
+  restaurant       Restaurant      @relation(fields: [restaurantId], references: [id])
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
+
+  @@index([groupId, date, isCurrent])
+  @@map("daily_recommendations")
+}
+
+model WeatherSnapshot {
+  id                       String   @id @default(cuid())
+  groupId                  String   @map("group_id")
+  date                     String
+  city                     String
+  temperatureC             Float?   @map("temperature_c")
+  condition                String
+  precipitationProbability Int?     @map("precipitation_probability")
+  windLevel                String?  @map("wind_level")
+  rawPayload               Json?    @map("raw_payload")
+  createdAt                DateTime @default(now()) @map("created_at")
+  group                    LunchGroup @relation(fields: [groupId], references: [id])
+
+  @@unique([groupId, date, city])
+  @@map("weather_snapshots")
+}
+
+model Feedback {
+  id               String          @id @default(cuid())
+  groupId          String          @map("group_id")
+  officeDate       String          @map("office_date")
+  restaurantId     String          @map("restaurant_id")
+  recommendationId String?         @map("recommendation_id")
+  teammateId       String?         @map("teammate_id")
+  membershipId     String?         @map("membership_id")
+  type             FeedbackType
+  createdAt        DateTime        @default(now()) @map("created_at")
+  group            LunchGroup      @relation(fields: [groupId], references: [id])
+  restaurant       Restaurant      @relation(fields: [restaurantId], references: [id])
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
+  teammate         Teammate?       @relation(fields: [teammateId], references: [id])
+  membership       GroupMembership? @relation(fields: [membershipId], references: [id])
+
+  @@index([groupId, officeDate, restaurantId])
+  @@index([groupId, officeDate, type])
+  @@map("feedback")
+}
+```
 
 - [ ] **Step 4: Add batch and participation models**
 
@@ -427,12 +590,13 @@ model DailyParticipation {
   groupId          String    @map("group_id")
   officeDate       String    @map("office_date")
   membershipId     String    @map("membership_id")
-  status           String
+  status           ParticipationStatus @default(undecided)
   restaurantId     String?   @map("restaurant_id")
   recommendationId String?   @map("recommendation_id")
   decidedAt        DateTime? @map("decided_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
   group            LunchGroup @relation(fields: [groupId], references: [id])
+  membership       GroupMembership @relation(fields: [membershipId], references: [id])
 
   @@unique([groupId, officeDate, membershipId])
   @@map("daily_participation")
@@ -451,6 +615,7 @@ model DailyRecommendationBatch {
   isCurrent                Boolean                   @default(true) @map("is_current")
   createdAt                DateTime                  @default(now()) @map("created_at")
   group                    LunchGroup                @relation(fields: [groupId], references: [id])
+  generatedByMembership    GroupMembership?          @relation(fields: [generatedByMembershipId], references: [id])
   items                    DailyRecommendationItem[]
 
   @@unique([groupId, officeDate, batchNo])
@@ -470,6 +635,7 @@ model DailyRecommendationItem {
   createdAt        DateTime @default(now()) @map("created_at")
   batch            DailyRecommendationBatch @relation(fields: [batchId], references: [id])
   restaurant       Restaurant @relation(fields: [restaurantId], references: [id])
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
 
   @@unique([batchId, rank])
   @@index([batchId])
@@ -477,7 +643,7 @@ model DailyRecommendationItem {
 }
 ```
 
-- [ ] **Step 5: Generate migration**
+- [ ] **Step 5: Generate migration and inspect legacy backfill**
 
 Run:
 
@@ -486,6 +652,21 @@ pnpm --filter @lunch/server prisma migrate dev --name multi_group_foundation
 ```
 
 Expected: Prisma creates a migration under `apps/server/prisma/migrations/*_multi_group_foundation/`.
+
+Before committing, inspect the generated SQL and edit it if needed so existing MVP data is migrated safely:
+
+```sql
+-- Required migration shape:
+-- 1. create default identity/group/membership/settings/weights if not exists
+-- 2. add group_id columns to legacy tables as nullable
+-- 3. backfill old rows with seed-group-default
+-- 4. migrate feedback.type = 'blocked' to 'avoid'
+-- 5. add foreign keys and indexes
+-- 6. set group_id NOT NULL after backfill
+```
+
+Do not commit a migration that adds non-null `group_id` foreign keys to populated
+legacy tables before backfilling them.
 
 - [ ] **Step 6: Update env example**
 
@@ -520,6 +701,7 @@ git commit -m "feat: add multi-group prisma foundation"
 ### Task 3: Signed Identity And Group Tokens
 
 **Files:**
+- Create: `apps/server/src/services/auth/errors.ts`
 - Create: `apps/server/src/services/auth/tokens.ts`
 - Create: `apps/server/tests/groupTokens.test.ts`
 - Modify: `apps/server/src/env.ts`
@@ -531,6 +713,7 @@ git commit -m "feat: add multi-group prisma foundation"
   - `verifyIdentityToken(token, secret): IdentityTokenClaims`
   - `signGroupSessionToken(payload, secret): string`
   - `verifyGroupSessionToken(token, secret): GroupSessionClaims`
+  - `AuthError` for stable HTTP error mapping
 
 - [ ] **Step 1: Add env fields**
 
@@ -554,14 +737,44 @@ const EnvSchema = z.object({
   NODE_ENV: z.string().default("development"),
   PORT: z.coerce.number().default(3000)
 });
+
+export type AppEnv = z.infer<typeof EnvSchema>;
+
+export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
+  const env = EnvSchema.parse(source);
+  if (env.NODE_ENV === "production" && env.SESSION_SECRET.length < 32) {
+    throw new Error("SESSION_SECRET must be at least 32 chars in production");
+  }
+  return env;
+}
 ```
 
-- [ ] **Step 2: Write token tests**
+- [ ] **Step 2: Add auth error type**
+
+Create `apps/server/src/services/auth/errors.ts`:
+
+```ts
+export type AuthErrorCode = "unauthorized" | "forbidden" | "bad_request";
+
+export class AuthError extends Error {
+  constructor(
+    public readonly code: AuthErrorCode,
+    public readonly error: string,
+    message: string
+  ) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+```
+
+- [ ] **Step 3: Write token tests**
 
 Create `apps/server/tests/groupTokens.test.ts`:
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
+import { AuthError } from "../src/services/auth/errors";
 import {
   signGroupSessionToken,
   signIdentityToken,
@@ -617,19 +830,22 @@ describe("multi-group signed tokens", () => {
     );
     const [payload] = token.split(".");
 
-    expect(() => verifyGroupSessionToken(`${payload}.bad-signature`, "session-secret")).toThrow(
-      "Invalid token signature"
-    );
+    expect(() => verifyGroupSessionToken(`${payload}.bad-signature`, "session-secret")).toThrow(AuthError);
 
     vi.setSystemTime(new Date("2026-07-08T04:02:00.000Z"));
-    expect(() => verifyGroupSessionToken(token, "session-secret")).toThrow("Token expired");
+    expect(() => verifyGroupSessionToken(token, "session-secret")).toThrow(AuthError);
 
     vi.useRealTimers();
+  });
+
+  it("rejects malformed claim shapes", () => {
+    const malformed = signIdentityToken({ identityId: "", exp: Date.now() + 60_000 }, "session-secret");
+    expect(() => verifyIdentityToken(malformed, "session-secret")).toThrow(AuthError);
   });
 });
 ```
 
-- [ ] **Step 3: Run failing token tests**
+- [ ] **Step 4: Run failing token tests**
 
 Run:
 
@@ -639,13 +855,14 @@ pnpm --filter @lunch/server test -- groupTokens.test.ts
 
 Expected: FAIL because `services/auth/tokens.ts` does not exist.
 
-- [ ] **Step 4: Implement signed token helpers**
+- [ ] **Step 5: Implement signed token helpers**
 
 Create `apps/server/src/services/auth/tokens.ts`:
 
 ```ts
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { GroupRole } from "@lunch/shared";
+import { AuthError } from "./errors.js";
 
 export interface IdentityTokenClaims {
   identityId: string;
@@ -668,18 +885,40 @@ function signPayload(payload: object, secret: string): string {
 
 function verifyPayload<T>(token: string, secret: string): T {
   const [payload, signature] = token.split(".");
-  if (!payload || !signature) throw new Error("Invalid token");
+  if (!payload || !signature) {
+    throw new AuthError("unauthorized", "invalid_token", "Invalid token");
+  }
 
   const expected = createHmac("sha256", secret).update(payload).digest("base64url");
   const providedBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);
   if (providedBuffer.length !== expectedBuffer.length || !timingSafeEqual(providedBuffer, expectedBuffer)) {
-    throw new Error("Invalid token signature");
+    throw new AuthError("unauthorized", "invalid_token", "Invalid token signature");
   }
 
-  const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T & { exp?: number };
-  if (typeof claims.exp !== "number" || claims.exp <= Date.now()) throw new Error("Token expired");
+  let claims: T & { exp?: number };
+  try {
+    claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T & { exp?: number };
+  } catch {
+    throw new AuthError("unauthorized", "invalid_token", "Invalid token payload");
+  }
+
+  if (typeof claims.exp !== "number" || claims.exp <= Date.now()) {
+    throw new AuthError("unauthorized", "expired_token", "Token expired");
+  }
   return claims as T;
+}
+
+function assertString(value: unknown, field: string): asserts value is string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new AuthError("unauthorized", "invalid_token", `Invalid token ${field}`);
+  }
+}
+
+function assertGroupRole(value: unknown): asserts value is GroupRole {
+  if (value !== "admin" && value !== "member") {
+    throw new AuthError("unauthorized", "invalid_token", "Invalid token role");
+  }
 }
 
 export function signIdentityToken(claims: IdentityTokenClaims, secret: string): string {
@@ -687,7 +926,9 @@ export function signIdentityToken(claims: IdentityTokenClaims, secret: string): 
 }
 
 export function verifyIdentityToken(token: string, secret: string): IdentityTokenClaims {
-  return verifyPayload<IdentityTokenClaims>(token, secret);
+  const claims = verifyPayload<IdentityTokenClaims>(token, secret);
+  assertString(claims.identityId, "identityId");
+  return claims;
 }
 
 export function signGroupSessionToken(claims: GroupSessionClaims, secret: string): string {
@@ -695,7 +936,12 @@ export function signGroupSessionToken(claims: GroupSessionClaims, secret: string
 }
 
 export function verifyGroupSessionToken(token: string, secret: string): GroupSessionClaims {
-  return verifyPayload<GroupSessionClaims>(token, secret);
+  const claims = verifyPayload<GroupSessionClaims>(token, secret);
+  assertString(claims.identityId, "identityId");
+  assertString(claims.groupId, "groupId");
+  assertString(claims.membershipId, "membershipId");
+  assertGroupRole(claims.role);
+  return claims;
 }
 
 export function addDays(date: Date, days: number): number {
@@ -703,7 +949,7 @@ export function addDays(date: Date, days: number): number {
 }
 ```
 
-- [ ] **Step 5: Run token tests**
+- [ ] **Step 6: Run token tests**
 
 Run:
 
@@ -714,10 +960,10 @@ pnpm --filter @lunch/server typecheck
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add apps/server/src/env.ts apps/server/src/services/auth/tokens.ts apps/server/tests/groupTokens.test.ts
+git add apps/server/src/env.ts apps/server/src/services/auth/errors.ts apps/server/src/services/auth/tokens.ts apps/server/tests/groupTokens.test.ts
 git commit -m "feat: add signed multi-group tokens"
 ```
 
@@ -808,6 +1054,7 @@ Create `apps/server/src/services/groups/memberships.ts`:
 import type { PrismaClient } from "@prisma/client";
 import type { GroupRole } from "@lunch/shared";
 import type { AppEnv } from "../../env.js";
+import { AuthError } from "../auth/errors.js";
 import { verifyGroupSessionToken } from "../auth/tokens.js";
 
 export interface MembershipContext {
@@ -825,17 +1072,22 @@ export async function requireActiveMembership(input: {
   requiredRole?: GroupRole;
 }): Promise<MembershipContext> {
   const token = input.authorization?.startsWith("Bearer ") ? input.authorization.slice("Bearer ".length) : "";
+  if (!token) {
+    throw new AuthError("unauthorized", "missing_token", "Authorization bearer token is required");
+  }
   const claims = verifyGroupSessionToken(token, input.env.SESSION_SECRET);
-  if (claims.groupId !== input.groupId) throw new Error("Group session does not match route group");
+  if (claims.groupId !== input.groupId) {
+    throw new AuthError("forbidden", "group_session_mismatch", "Group session does not match route group");
+  }
 
   const membership = await input.prisma.groupMembership.findUnique({
     where: { id: claims.membershipId }
   });
   if (!membership || membership.groupId !== input.groupId || membership.status !== "active") {
-    throw new Error("Active membership required");
+    throw new AuthError("forbidden", "active_membership_required", "Active membership is required");
   }
   if (input.requiredRole === "admin" && membership.role !== "admin") {
-    throw new Error("Admin membership required");
+    throw new AuthError("forbidden", "admin_membership_required", "Admin membership is required");
   }
 
   return {
@@ -857,7 +1109,9 @@ export async function assertNotLastActiveAdmin(input: {
   const activeAdminCount = await input.prisma.groupMembership.count({
     where: { groupId: input.groupId, role: "admin", status: "active" }
   });
-  if (activeAdminCount <= 1) throw new Error("Cannot remove or downgrade the last active admin");
+  if (activeAdminCount <= 1) {
+    throw new AuthError("bad_request", "last_admin", "Cannot remove or downgrade the last active admin");
+  }
 }
 ```
 
@@ -897,12 +1151,13 @@ git commit -m "feat: add group invite and membership helpers"
   - `GET /api/groups`
   - `POST /api/groups/:groupId/session`
 
-- [ ] **Step 1: Add route tests for create and list**
+- [ ] **Step 1: Add route tests for create, identity reuse, and list**
 
 Append to `apps/server/tests/groups.test.ts`:
 
 ```ts
 import { buildApp } from "../src/app";
+import { signGroupSessionToken, signIdentityToken } from "../src/services/auth/tokens";
 
 describe("group routes", () => {
   it("creates an identity and group, then lists active memberships", async () => {
@@ -930,6 +1185,70 @@ describe("group routes", () => {
       expect.objectContaining({ groupId: created.group.groupId, role: "admin", membershipId: expect.any(String) })
     ]);
   });
+
+  it("reuses an existing identity when creating a second group", async () => {
+    const app = await buildApp();
+
+    const first = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "李雷", groupName: "前端干饭组" }
+    })).json();
+
+    const secondResponse = await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${first.identityToken}` },
+      payload: { groupName: "后端干饭组" }
+    });
+    expect(secondResponse.statusCode).toBe(200);
+    const second = secondResponse.json();
+    expect(second.identityToken).toEqual(expect.any(String));
+    expect(second.group.groupId).not.toBe(first.group.groupId);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${second.identityToken}` }
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().groups.map((group: { groupId: string }) => group.groupId).sort()).toEqual(
+      [first.group.groupId, second.group.groupId].sort()
+    );
+  });
+
+  it("returns 401 for missing and tampered identity tokens", async () => {
+    const app = await buildApp();
+
+    const missing = await app.inject({ method: "GET", url: "/api/groups" });
+    expect(missing.statusCode).toBe(401);
+    expect(missing.json().error).toBe("missing_token");
+
+    const tampered = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: "Bearer bad.token" }
+    });
+    expect(tampered.statusCode).toBe(401);
+    expect(tampered.json().error).toBe("invalid_token");
+  });
+
+  it("returns 401 for expired identity tokens", async () => {
+    const app = await buildApp();
+    const expiredIdentityToken = signIdentityToken(
+      { identityId: "identity-expired", exp: Date.now() - 1_000 },
+      "session-secret"
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${expiredIdentityToken}` }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("expired_token");
+  });
 });
 ```
 
@@ -945,15 +1264,29 @@ Expected: FAIL because group routes are not registered.
 
 - [ ] **Step 3: Implement group routes**
 
-Create `apps/server/src/routes/groups.ts` with these route bodies:
+Create `apps/server/src/routes/groups.ts` with these route bodies. The important rule is that `POST /api/groups` and `POST /api/groups/join` accept optional `Authorization: Bearer <identityToken>` and reuse that identity when valid. Only requests without an identity token create a new identity from `displayName`.
 
 ```ts
 import type { FastifyInstance } from "fastify";
-import type { GroupSessionResponse } from "@lunch/shared";
+import type { CreateGroupRequest, CreateGroupResponse, GroupSessionResponse } from "@lunch/shared";
 import type { AppEnv } from "../env.js";
 import { prisma } from "../plugins/prisma.js";
+import { AuthError } from "../services/auth/errors.js";
 import { addDays, signGroupSessionToken, signIdentityToken, verifyIdentityToken } from "../services/auth/tokens.js";
 import { generateInviteCode, hashInviteCode, verifyInviteCode } from "../services/groups/inviteCodes.js";
+
+function bearerToken(authorization?: string): string {
+  return authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+}
+
+function authErrorResponse(reply: { code(statusCode: number): unknown }, error: unknown) {
+  if (error instanceof AuthError) {
+    const statusCode = error.code === "unauthorized" ? 401 : error.code === "forbidden" ? 403 : 400;
+    reply.code(statusCode);
+    return { error: error.error, message: error.message };
+  }
+  throw error;
+}
 
 function groupSummary(membership: { id: string; role: "admin" | "member"; group: { id: string; name: string; subtitle: string | null } }) {
   return {
@@ -963,6 +1296,28 @@ function groupSummary(membership: { id: string; role: "admin" | "member"; group:
     role: membership.role,
     membershipId: membership.id
   };
+}
+
+async function resolveIdentityForRequest(input: {
+  authorization?: string;
+  displayName?: string;
+  env: AppEnv;
+}) {
+  const token = bearerToken(input.authorization);
+  if (token) {
+    const claims = verifyIdentityToken(token, input.env.SESSION_SECRET);
+    const identity = await prisma.identity.findUnique({ where: { id: claims.identityId } });
+    if (!identity) {
+      throw new AuthError("unauthorized", "invalid_token", "Identity token is no longer valid");
+    }
+    return prisma.identity.update({ where: { id: identity.id }, data: { lastSeenAt: new Date() } });
+  }
+
+  const displayName = input.displayName?.trim();
+  if (!displayName) {
+    throw new AuthError("bad_request", "display_name_required", "Display name is required");
+  }
+  return prisma.identity.create({ data: { displayName, lastSeenAt: new Date() } });
 }
 
 function signTokens(input: {
@@ -1008,62 +1363,74 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
     };
   });
 
-  app.post<{ Body: { displayName: string; groupName: string; subtitle?: string } }>("/api/groups", async (request, reply) => {
-    if (!env.ALLOW_PUBLIC_GROUP_CREATION) {
-      reply.code(403);
-      return { error: "group_creation_disabled", message: "Group creation is disabled" };
-    }
-    const displayName = request.body.displayName.trim();
-    const groupName = request.body.groupName.trim();
-    if (!displayName || !groupName) {
-      reply.code(400);
-      return { error: "invalid_group_create_request", message: "Display name and group name are required" };
-    }
+  app.post<{ Body: CreateGroupRequest }>("/api/groups", async (request, reply) => {
+    try {
+      if (!env.ALLOW_PUBLIC_GROUP_CREATION) {
+        reply.code(403);
+        return { error: "group_creation_disabled", message: "Group creation is disabled" };
+      }
+      const groupName = request.body.groupName?.trim();
+      if (!groupName) {
+        reply.code(400);
+        return { error: "invalid_group_create_request", message: "Group name is required" };
+      }
 
-    const inviteCode = generateInviteCode();
-    const result = await prisma.$transaction(async (tx) => {
-      const identity = await tx.identity.create({ data: { displayName, lastSeenAt: new Date() } });
-      const group = await tx.lunchGroup.create({
-        data: {
-          name: groupName,
-          subtitle: request.body.subtitle?.trim() || null,
-          inviteCodeHash: hashInviteCode(inviteCode, env.SESSION_SECRET),
-          createdByIdentityId: identity.id,
-          officeTimezone: env.OFFICE_TIMEZONE,
-          officeCity: env.OFFICE_CITY,
-          officeLatitude: env.OFFICE_LATITUDE,
-          officeLongitude: env.OFFICE_LONGITUDE
-        }
+      const identity = await resolveIdentityForRequest({
+        authorization: request.headers.authorization,
+        displayName: request.body.displayName,
+        env
       });
-      const membership = await tx.groupMembership.create({
-        data: { groupId: group.id, identityId: identity.id, role: "admin", status: "active" },
-        include: { group: true }
-      });
-      await tx.groupSettings.create({ data: { groupId: group.id, notificationGroupLabel: group.name } });
-      await tx.scoringWeights.create({ data: { groupId: group.id } });
-      return { identity, group, membership };
-    });
 
-    const tokens = signTokens({
-      identityId: result.identity.id,
-      groupId: result.group.id,
-      membershipId: result.membership.id,
-      role: result.membership.role,
-      env
-    });
-    return { ...tokens, group: groupSummary(result.membership), inviteCode } satisfies GroupSessionResponse & { inviteCode: string };
+      const inviteCode = generateInviteCode();
+      const result = await prisma.$transaction(async (tx) => {
+        const group = await tx.lunchGroup.create({
+          data: {
+            name: groupName,
+            subtitle: request.body.subtitle?.trim() || null,
+            inviteCodeHash: hashInviteCode(inviteCode, env.SESSION_SECRET),
+            createdByIdentityId: identity.id,
+            officeTimezone: env.OFFICE_TIMEZONE,
+            officeCity: env.OFFICE_CITY,
+            officeLatitude: env.OFFICE_LATITUDE,
+            officeLongitude: env.OFFICE_LONGITUDE
+          }
+        });
+        const membership = await tx.groupMembership.create({
+          data: { groupId: group.id, identityId: identity.id, role: "admin", status: "active" },
+          include: { group: true }
+        });
+        await tx.groupSettings.create({ data: { groupId: group.id, notificationGroupLabel: group.name } });
+        await tx.scoringWeights.create({ data: { groupId: group.id } });
+        return { group, membership };
+      });
+
+      const tokens = signTokens({
+        identityId: identity.id,
+        groupId: result.group.id,
+        membershipId: result.membership.id,
+        role: result.membership.role,
+        env
+      });
+      return { ...tokens, group: groupSummary(result.membership), inviteCode } satisfies CreateGroupResponse;
+    } catch (error) {
+      return authErrorResponse(reply, error);
+    }
   });
 
   app.get("/api/groups", async (request, reply) => {
-    const authorization = request.headers.authorization;
-    const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
-    const claims = verifyIdentityToken(token, env.SESSION_SECRET);
-    const memberships = await prisma.groupMembership.findMany({
-      where: { identityId: claims.identityId, status: "active" },
-      include: { group: true },
-      orderBy: { joinedAt: "asc" }
-    });
-    return { groups: memberships.map(groupSummary) };
+    try {
+      const token = bearerToken(request.headers.authorization);
+      if (!token) throw new AuthError("unauthorized", "missing_token", "Authorization bearer token is required");
+      const claims = verifyIdentityToken(token, env.SESSION_SECRET);
+      const memberships = await prisma.groupMembership.findMany({
+        where: { identityId: claims.identityId, status: "active" },
+        include: { group: true },
+        orderBy: { joinedAt: "asc" }
+      });
+      return { groups: memberships.map(groupSummary) };
+    } catch (error) {
+      return authErrorResponse(reply, error);
+    }
   });
 }
 ```
@@ -1087,7 +1454,7 @@ await registerGroupRoutes(app, env);
 
 - [ ] **Step 5: Add join and session route tests**
 
-Append tests for join removed behavior and session exchange:
+Append tests for join identity reuse, idempotent join, removed behavior, and session exchange:
 
 ```ts
 it("joins a group with invite code and exchanges identity token for group session", async () => {
@@ -1116,6 +1483,57 @@ it("joins a group with invite code and exchanges identity token for group sessio
   expect(sessionResponse.statusCode).toBe(200);
   expect(sessionResponse.json().groupSessionToken).toEqual(expect.any(String));
 });
+
+it("reuses an existing identity when joining another group", async () => {
+  const app = await buildApp();
+
+  const groupA = (await app.inject({
+    method: "POST",
+    url: "/api/groups",
+    payload: { displayName: "小王", groupName: "A 组" }
+  })).json();
+  const groupB = (await app.inject({
+    method: "POST",
+    url: "/api/groups",
+    payload: { displayName: "小张", groupName: "B 组" }
+  })).json();
+
+  const join = await app.inject({
+    method: "POST",
+    url: "/api/groups/join",
+    headers: { authorization: `Bearer ${groupA.identityToken}` },
+    payload: { inviteCode: groupB.inviteCode }
+  });
+  expect(join.statusCode).toBe(200);
+
+  const list = await app.inject({
+    method: "GET",
+    url: "/api/groups",
+    headers: { authorization: `Bearer ${join.json().identityToken}` }
+  });
+  expect(list.json().groups.map((group: { groupId: string }) => group.groupId).sort()).toEqual(
+    [groupA.group.groupId, groupB.group.groupId].sort()
+  );
+});
+
+it("joining an already-active group is idempotent and returns a fresh session", async () => {
+  const app = await buildApp();
+  const created = (await app.inject({
+    method: "POST",
+    url: "/api/groups",
+    payload: { displayName: "组长", groupName: "午饭组" }
+  })).json();
+
+  const joinAgain = await app.inject({
+    method: "POST",
+    url: "/api/groups/join",
+    headers: { authorization: `Bearer ${created.identityToken}` },
+    payload: { inviteCode: created.inviteCode }
+  });
+  expect(joinAgain.statusCode).toBe(200);
+  expect(joinAgain.json().group.membershipId).toBe(created.group.membershipId);
+  expect(joinAgain.json().groupSessionToken).toEqual(expect.any(String));
+});
 ```
 
 - [ ] **Step 6: Implement join and session routes**
@@ -1123,63 +1541,78 @@ it("joins a group with invite code and exchanges identity token for group sessio
 Add to `registerGroupRoutes`:
 
 ```ts
-app.post<{ Body: { displayName: string; inviteCode: string } }>("/api/groups/join", async (request, reply) => {
-  const displayName = request.body.displayName.trim();
-  if (!displayName) {
-    reply.code(400);
-    return { error: "display_name_required", message: "Display name is required" };
-  }
+app.post<{ Body: { displayName?: string; inviteCode: string } }>("/api/groups/join", async (request, reply) => {
+  try {
+    const groups = await prisma.lunchGroup.findMany();
+    const group = groups.find((candidate) =>
+      verifyInviteCode(request.body.inviteCode, candidate.inviteCodeHash, env.SESSION_SECRET)
+    );
+    if (!group) {
+      reply.code(401);
+      return { error: "invalid_invite_code", message: "Invite code is invalid" };
+    }
 
-  const groups = await prisma.lunchGroup.findMany();
-  const group = groups.find((candidate) => verifyInviteCode(request.body.inviteCode, candidate.inviteCodeHash, env.SESSION_SECRET));
-  if (!group) {
-    reply.code(401);
-    return { error: "invalid_invite_code", message: "Invite code is invalid" };
-  }
-
-  const result = await prisma.$transaction(async (tx) => {
-    const identity = await tx.identity.create({ data: { displayName, lastSeenAt: new Date() } });
-    const existingRemoved = await tx.groupMembership.findUnique({
-      where: { groupId_identityId: { groupId: group.id, identityId: identity.id } }
+    const identity = await resolveIdentityForRequest({
+      authorization: request.headers.authorization,
+      displayName: request.body.displayName,
+      env
     });
-    if (existingRemoved?.status === "removed") throw new Error("removed_member");
-    const membership = await tx.groupMembership.create({
-      data: { groupId: group.id, identityId: identity.id, role: "member", status: "active" },
-      include: { group: true }
-    });
-    return { identity, membership };
-  });
 
-  const tokens = signTokens({
-    identityId: result.identity.id,
-    groupId: result.membership.groupId,
-    membershipId: result.membership.id,
-    role: result.membership.role,
-    env
-  });
-  return { ...tokens, group: groupSummary(result.membership) };
+    const membership = await prisma.$transaction(async (tx) => {
+      const existing = await tx.groupMembership.findUnique({
+        where: { groupId_identityId: { groupId: group.id, identityId: identity.id } },
+        include: { group: true }
+      });
+
+      if (existing?.status === "removed") {
+        throw new AuthError("forbidden", "removed_member", "Removed member must be restored by an admin");
+      }
+      if (existing?.status === "active") {
+        return existing;
+      }
+
+      return tx.groupMembership.create({
+        data: { groupId: group.id, identityId: identity.id, role: "member", status: "active" },
+        include: { group: true }
+      });
+    });
+
+    const tokens = signTokens({
+      identityId: identity.id,
+      groupId: membership.groupId,
+      membershipId: membership.id,
+      role: membership.role,
+      env
+    });
+    return { ...tokens, group: groupSummary(membership) } satisfies GroupSessionResponse;
+  } catch (error) {
+    return authErrorResponse(reply, error);
+  }
 });
 
 app.post<{ Params: { groupId: string } }>("/api/groups/:groupId/session", async (request, reply) => {
-  const authorization = request.headers.authorization;
-  const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
-  const claims = verifyIdentityToken(token, env.SESSION_SECRET);
-  const membership = await prisma.groupMembership.findUnique({
-    where: { groupId_identityId: { groupId: request.params.groupId, identityId: claims.identityId } },
-    include: { group: true }
-  });
-  if (!membership || membership.status !== "active") {
-    reply.code(403);
-    return { error: "active_membership_required", message: "Active membership is required" };
+  try {
+    const token = bearerToken(request.headers.authorization);
+    if (!token) throw new AuthError("unauthorized", "missing_token", "Authorization bearer token is required");
+    const claims = verifyIdentityToken(token, env.SESSION_SECRET);
+    const membership = await prisma.groupMembership.findUnique({
+      where: { groupId_identityId: { groupId: request.params.groupId, identityId: claims.identityId } },
+      include: { group: true }
+    });
+    if (!membership || membership.status !== "active") {
+      throw new AuthError("forbidden", "active_membership_required", "Active membership is required");
+    }
+    const tokens = signTokens({
+      identityId: membership.identityId,
+      groupId: membership.groupId,
+      membershipId: membership.id,
+      role: membership.role,
+      env
+    });
+    return { ...tokens, group: groupSummary(membership) } satisfies GroupSessionResponse;
+  } catch (error) {
+    return authErrorResponse(reply, error);
   }
-  const tokens = signTokens({
-    identityId: membership.identityId,
-    groupId: membership.groupId,
-    membershipId: membership.id,
-    role: membership.role,
-    env
-  });
-  return { ...tokens, group: groupSummary(membership) };
 });
 ```
 
@@ -1215,7 +1648,7 @@ git commit -m "feat: add group identity and join routes"
 - Consumes: group routes and membership helpers.
 - Produces: last-admin invariant enforcement, removed-member guard, legacy `/api/session` compatibility through default group.
 
-- [ ] **Step 1: Add last-admin tests**
+- [ ] **Step 1: Add authorization invariant tests**
 
 Append to `apps/server/tests/groups.test.ts`:
 
@@ -1237,6 +1670,161 @@ it("rejects removing or downgrading the last active admin", async () => {
   expect(response.statusCode).toBe(400);
   expect(response.json().error).toBe("last_admin");
 });
+
+it("returns 403 when a non-admin patches members", async () => {
+  const app = await buildApp();
+  const created = (await app.inject({
+    method: "POST",
+    url: "/api/groups",
+    payload: { displayName: "组长", groupName: "午饭组" }
+  })).json();
+  const joined = (await app.inject({
+    method: "POST",
+    url: "/api/groups/join",
+    payload: { displayName: "成员", inviteCode: created.inviteCode }
+  })).json();
+
+  const response = await app.inject({
+    method: "PATCH",
+    url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+    headers: { authorization: `Bearer ${joined.groupSessionToken}` },
+    payload: { role: "member" }
+  });
+  expect(response.statusCode).toBe(403);
+  expect(response.json().error).toBe("admin_membership_required");
+});
+
+it("does not allow a removed membership to rejoin with the same identity token", async () => {
+  const app = await buildApp();
+  const created = (await app.inject({
+    method: "POST",
+    url: "/api/groups",
+    payload: { displayName: "组长", groupName: "午饭组" }
+  })).json();
+  const joined = (await app.inject({
+    method: "POST",
+    url: "/api/groups/join",
+    payload: { displayName: "成员", inviteCode: created.inviteCode }
+  })).json();
+
+  const remove = await app.inject({
+    method: "PATCH",
+    url: `/api/groups/${created.group.groupId}/members/${joined.group.membershipId}`,
+    headers: { authorization: `Bearer ${created.groupSessionToken}` },
+    payload: { status: "removed" }
+  });
+  expect(remove.statusCode).toBe(200);
+
+  const rejoin = await app.inject({
+    method: "POST",
+    url: "/api/groups/join",
+    headers: { authorization: `Bearer ${joined.identityToken}` },
+    payload: { inviteCode: created.inviteCode }
+  });
+  expect(rejoin.statusCode).toBe(403);
+  expect(rejoin.json().error).toBe("removed_member");
+
+  const session = await app.inject({
+    method: "POST",
+    url: `/api/groups/${created.group.groupId}/session`,
+    headers: { authorization: `Bearer ${joined.identityToken}` }
+  });
+  expect(session.statusCode).toBe(403);
+  expect(session.json().error).toBe("active_membership_required");
+});
+
+it("does not trust stale admin role in an old group session token", async () => {
+  const app = await buildApp();
+  const created = (await app.inject({
+    method: "POST",
+    url: "/api/groups",
+    payload: { displayName: "组长", groupName: "午饭组" }
+  })).json();
+  const oldAdminSession = created.groupSessionToken;
+  const joined = (await app.inject({
+    method: "POST",
+    url: "/api/groups/join",
+    payload: { displayName: "成员", inviteCode: created.inviteCode }
+  })).json();
+
+  const promote = await app.inject({
+    method: "PATCH",
+    url: `/api/groups/${created.group.groupId}/members/${joined.group.membershipId}`,
+    headers: { authorization: `Bearer ${created.groupSessionToken}` },
+    payload: { role: "admin" }
+  });
+  expect(promote.statusCode).toBe(200);
+
+  const refreshedMemberSession = await app.inject({
+    method: "POST",
+    url: `/api/groups/${created.group.groupId}/session`,
+    headers: { authorization: `Bearer ${joined.identityToken}` }
+  });
+  expect(refreshedMemberSession.statusCode).toBe(200);
+
+  const downgradeOriginalAdmin = await app.inject({
+    method: "PATCH",
+    url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+    headers: { authorization: `Bearer ${refreshedMemberSession.json().groupSessionToken}` },
+    payload: { role: "member" }
+  });
+  expect(downgradeOriginalAdmin.statusCode).toBe(200);
+
+  const staleAdminAttempt = await app.inject({
+    method: "PATCH",
+    url: `/api/groups/${created.group.groupId}/members/${joined.group.membershipId}`,
+    headers: { authorization: `Bearer ${oldAdminSession}` },
+    payload: { role: "member" }
+  });
+  expect(staleAdminAttempt.statusCode).toBe(403);
+  expect(staleAdminAttempt.json().error).toBe("admin_membership_required");
+});
+
+it("returns 401 for expired group session tokens on group-scoped routes", async () => {
+  const app = await buildApp();
+  const created = (await app.inject({
+    method: "POST",
+    url: "/api/groups",
+    payload: { displayName: "组长", groupName: "午饭组" }
+  })).json();
+  const expiredGroupSessionToken = signGroupSessionToken(
+    {
+      identityId: "identity-expired",
+      groupId: created.group.groupId,
+      membershipId: created.group.membershipId,
+      role: "admin",
+      exp: Date.now() - 1_000
+    },
+    "session-secret"
+  );
+
+  const response = await app.inject({
+    method: "PATCH",
+    url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+    headers: { authorization: `Bearer ${expiredGroupSessionToken}` },
+    payload: { role: "member" }
+  });
+  expect(response.statusCode).toBe(401);
+  expect(response.json().error).toBe("expired_token");
+});
+
+it("does not accept EXTENSION_READ_TOKEN on new group routes", async () => {
+  const app = await buildApp();
+  const created = (await app.inject({
+    method: "POST",
+    url: "/api/groups",
+    payload: { displayName: "组长", groupName: "午饭组" }
+  })).json();
+
+  const response = await app.inject({
+    method: "PATCH",
+    url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+    headers: { "x-lunch-read-token": "read-token" },
+    payload: { role: "member" }
+  });
+  expect(response.statusCode).toBe(401);
+  expect(response.json().error).toBe("missing_token");
+});
 ```
 
 - [ ] **Step 2: Implement member patch route**
@@ -1248,40 +1836,50 @@ app.patch<{
   Params: { groupId: string; membershipId: string };
   Body: { role?: "admin" | "member"; status?: "active" | "removed" };
 }>("/api/groups/:groupId/members/:membershipId", async (request, reply) => {
-  await requireActiveMembership({
-    prisma,
-    env,
-    groupId: request.params.groupId,
-    authorization: request.headers.authorization,
-    requiredRole: "admin"
-  });
-
-  const target = await prisma.groupMembership.findUnique({ where: { id: request.params.membershipId } });
-  if (!target || target.groupId !== request.params.groupId) {
-    reply.code(404);
-    return { error: "member_not_found", message: "Member not found" };
-  }
-
-  if ((request.body.role === "member" || request.body.status === "removed") && target.role === "admin") {
-    try {
-      await assertNotLastActiveAdmin({ prisma, groupId: request.params.groupId, membershipId: target.id });
-    } catch {
+  try {
+    if (request.body.role && request.body.role !== "admin" && request.body.role !== "member") {
       reply.code(400);
-      return { error: "last_admin", message: "Cannot remove or downgrade the last active admin" };
+      return { error: "invalid_member_role", message: "Role must be admin or member" };
     }
-  }
+    if (request.body.status && request.body.status !== "active" && request.body.status !== "removed") {
+      reply.code(400);
+      return { error: "invalid_membership_status", message: "Status must be active or removed" };
+    }
 
-  return prisma.groupMembership.update({
-    where: { id: target.id },
-    data: {
-      ...(request.body.role ? { role: request.body.role } : {}),
-      ...(request.body.status ? { status: request.body.status, removedAt: request.body.status === "removed" ? new Date() : null } : {})
+    await requireActiveMembership({
+      prisma,
+      env,
+      groupId: request.params.groupId,
+      authorization: request.headers.authorization,
+      requiredRole: "admin"
+    });
+
+    const target = await prisma.groupMembership.findUnique({ where: { id: request.params.membershipId } });
+    if (!target || target.groupId !== request.params.groupId) {
+      reply.code(404);
+      return { error: "member_not_found", message: "Member not found" };
     }
-  });
+
+    if ((request.body.role === "member" || request.body.status === "removed") && target.role === "admin") {
+      await assertNotLastActiveAdmin({ prisma, groupId: request.params.groupId, membershipId: target.id });
+    }
+
+    return prisma.groupMembership.update({
+      where: { id: target.id },
+      data: {
+        ...(request.body.role ? { role: request.body.role } : {}),
+        ...(request.body.status
+          ? { status: request.body.status, removedAt: request.body.status === "removed" ? new Date() : null }
+          : {})
+      }
+    });
+  } catch (error) {
+    return authErrorResponse(reply, error);
+  }
 });
 ```
 
-Ensure `routes/groups.ts` imports `requireActiveMembership` and `assertNotLastActiveAdmin`.
+Ensure `routes/groups.ts` imports `requireActiveMembership`, `assertNotLastActiveAdmin`, and uses the `authErrorResponse` helper from Task 5.
 
 - [ ] **Step 3: Keep legacy session route working**
 
@@ -1332,22 +1930,39 @@ git commit -m "feat: enforce group membership invariants"
 Create `apps/server/tests/defaultGroupMigration.test.ts`:
 
 ```ts
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("default group migration", () => {
-  it("documents required migrated defaults", () => {
-    const defaultGroupName = "Dev团队";
-    const defaultSubtitle = "干饭小分队";
-    const legacyAlgorithmVersion = "legacy-v1";
+  it("backfills legacy rows before enforcing non-null group ids", () => {
+    const migrationsDir = join(process.cwd(), "prisma", "migrations");
+    const migrationDir = readdirSync(migrationsDir).find((name) => name.endsWith("_multi_group_foundation"));
+    expect(migrationDir).toBeTruthy();
 
-    expect(defaultGroupName).toBe("Dev团队");
-    expect(defaultSubtitle).toBe("干饭小分队");
-    expect(legacyAlgorithmVersion).toBe("legacy-v1");
+    const migrationPath = join(migrationsDir, migrationDir!, "migration.sql");
+    expect(existsSync(migrationPath)).toBe(true);
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(sql).toContain("seed-group-default");
+    expect(sql).toMatch(/UPDATE\s+"?restaurants"?\s+SET\s+"?group_id"?/i);
+    expect(sql).toMatch(/UPDATE\s+"?recommendations"?\s+SET\s+"?group_id"?/i);
+    expect(sql).toMatch(/UPDATE\s+"?feedback"?\s+SET\s+"?group_id"?/i);
+    expect(sql).toMatch(/UPDATE\s+"?daily_recommendations"?\s+SET\s+"?group_id"?/i);
+    expect(sql).toMatch(/blocked/i);
+    expect(sql).toMatch(/avoid/i);
+
+    const firstBackfill = sql.search(/UPDATE\s+"?restaurants"?\s+SET\s+"?group_id"?/i);
+    const firstNotNull = sql.search(/ALTER\s+COLUMN\s+"?group_id"?\s+SET\s+NOT\s+NULL/i);
+    expect(firstBackfill).toBeGreaterThanOrEqual(0);
+    expect(firstNotNull).toBeGreaterThan(firstBackfill);
   });
 });
 ```
 
-This test is intentionally light until the migration is run against a real PostgreSQL database in execution. The important server behavior tests are in `groups.test.ts`.
+This test is not a replacement for running the migration against PostgreSQL, but
+it prevents the most dangerous plan failure: adding non-null `group_id` columns
+to populated legacy tables before backfilling them.
 
 - [ ] **Step 2: Update seed to create default group**
 
@@ -1377,7 +1992,7 @@ const defaultGroup = await prisma.lunchGroup.upsert({
 });
 ```
 
-Then create default membership, settings, and weights with upserts. Existing seeded restaurants must include `groupId: defaultGroup.id`.
+Then create default membership, settings, and weights with upserts. Existing seeded restaurants, recommendations, feedback, weather snapshots, and legacy daily recommendations must include `groupId: defaultGroup.id`.
 
 - [ ] **Step 3: Document migration expectations**
 
@@ -1394,6 +2009,8 @@ The multi-group foundation migrates old single-team data into a default group:
 - later recommendation-batch migration copies legacy rows into `daily_recommendation_batches/items`
 - copied legacy batch source: `legacy`
 - copied legacy algorithm version: `legacy-v1`
+- legacy feedback type `blocked` is migrated to member feedback type `avoid`
+- migration SQL must backfill legacy `group_id` values before setting `group_id NOT NULL`
 
 New `/api/groups/:groupId/*` routes require group session tokens. `EXTENSION_READ_TOKEN` is retained only for legacy read compatibility and readiness/debug use.
 ```
