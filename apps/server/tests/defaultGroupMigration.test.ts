@@ -41,4 +41,15 @@ describe("default group migration", () => {
     expect(seed).toContain("prisma.scoringWeights.upsert");
     expect(seed).toMatch(/groupId:\s*defaultGroup\.id/g);
   });
+
+  it("does not upsert restaurants by non-unique global name in the dev seed", () => {
+    const seedPath = join(process.cwd(), "prisma", "seed.ts");
+    const seed = readFileSync(seedPath, "utf8");
+
+    expect(seed).not.toContain("prisma.restaurant.upsert");
+    expect(seed).toContain("prisma.restaurant.findFirst");
+    expect(seed).toContain("prisma.restaurant.update");
+    expect(seed).toContain("prisma.restaurant.create");
+    expect(seed).toMatch(/where:\s*{\s*groupId:\s*defaultGroup\.id,[\s\S]*name:\s*item\.name/);
+  });
 });

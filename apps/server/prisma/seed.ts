@@ -128,36 +128,30 @@ async function main() {
   });
 
   for (const item of restaurants) {
-    const restaurant = await prisma.restaurant.upsert({
-      where: { name: item.name },
-      update: {
-        groupId: defaultGroup.id,
-        area: item.area,
-        address: item.address,
-        distanceMinutes: item.distanceMinutes,
-        cuisine: item.cuisine,
-        priceBand: item.priceBand,
-        supportsDineIn: true,
-        supportsTakeout: true,
-        tags: item.tags,
-        status: "active",
-        createdByMembershipId: defaultMembership.id
-      },
-      create: {
-        groupId: defaultGroup.id,
-        name: item.name,
-        area: item.area,
-        address: item.address,
-        distanceMinutes: item.distanceMinutes,
-        cuisine: item.cuisine,
-        priceBand: item.priceBand,
-        supportsDineIn: true,
-        supportsTakeout: true,
-        tags: item.tags,
-        status: "active",
-        createdByMembershipId: defaultMembership.id
-      }
+    const restaurantData = {
+      groupId: defaultGroup.id,
+      area: item.area,
+      address: item.address,
+      distanceMinutes: item.distanceMinutes,
+      cuisine: item.cuisine,
+      priceBand: item.priceBand,
+      supportsDineIn: true,
+      supportsTakeout: true,
+      tags: item.tags,
+      status: "active" as const,
+      createdByMembershipId: defaultMembership.id
+    };
+    const existingRestaurant = await prisma.restaurant.findFirst({
+      where: { groupId: defaultGroup.id, name: item.name, area: item.area }
     });
+    const restaurant = existingRestaurant
+      ? await prisma.restaurant.update({
+          where: { id: existingRestaurant.id },
+          data: restaurantData
+        })
+      : await prisma.restaurant.create({
+          data: { ...restaurantData, name: item.name }
+        });
 
     const existingRecommendation = await prisma.recommendation.findFirst({
       where: {
