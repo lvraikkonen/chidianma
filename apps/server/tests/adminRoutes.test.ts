@@ -4,6 +4,21 @@ const prisma = vi.hoisted(() => ({
   teammate: {
     upsert: vi.fn()
   },
+  identity: {
+    upsert: vi.fn()
+  },
+  lunchGroup: {
+    upsert: vi.fn()
+  },
+  groupMembership: {
+    upsert: vi.fn()
+  },
+  groupSettings: {
+    upsert: vi.fn()
+  },
+  scoringWeights: {
+    upsert: vi.fn()
+  },
   restaurant: {
     findMany: vi.fn(),
     create: vi.fn(),
@@ -11,7 +26,8 @@ const prisma = vi.hoisted(() => ({
   },
   recommendation: {
     create: vi.fn()
-  }
+  },
+  $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma))
 }));
 
 vi.mock("../src/plugins/prisma", () => ({ prisma }));
@@ -72,6 +88,80 @@ describe("admin routes", () => {
       where: { name: "Demo 同事" },
       update: { lastSeenAt: expect.any(Date) },
       create: { name: "Demo 同事", lastSeenAt: expect.any(Date) }
+    });
+
+    await app.close();
+  });
+
+  it("creates or reuses the deterministic default group while preserving legacy session response shape", async () => {
+    prisma.teammate.upsert.mockResolvedValue({
+      id: "teammate-1",
+      name: "Demo 同事",
+      lastSeenAt: new Date("2026-07-07T04:00:00.000Z")
+    });
+
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/session",
+      payload: { inviteCode: "team-code", name: "  Demo 同事  " }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(Object.keys(response.json()).sort()).toEqual(["teammate", "token"]);
+    expect(response.json()).toMatchObject({
+      token: expect.any(String),
+      teammate: { id: "teammate-1", name: "Demo 同事" }
+    });
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.identity.upsert).toHaveBeenCalledWith({
+      where: { id: "seed-identity-admin" },
+      update: { displayName: "Demo 同事", lastSeenAt: expect.any(Date) },
+      create: { id: "seed-identity-admin", displayName: "Demo 同事", lastSeenAt: expect.any(Date) }
+    });
+    expect(prisma.lunchGroup.upsert).toHaveBeenCalledWith({
+      where: { id: "seed-group-default" },
+      update: expect.objectContaining({
+        name: "Dev团队",
+        subtitle: "干饭小分队",
+        inviteCodeHash: expect.any(String),
+        officeTimezone: "Asia/Shanghai",
+        officeCity: "Shanghai",
+        officeLatitude: 31.2304,
+        officeLongitude: 121.4737
+      }),
+      create: expect.objectContaining({
+        id: "seed-group-default",
+        name: "Dev团队",
+        subtitle: "干饭小分队",
+        inviteCodeHash: expect.any(String),
+        createdByIdentityId: "seed-identity-admin",
+        officeTimezone: "Asia/Shanghai",
+        officeCity: "Shanghai",
+        officeLatitude: 31.2304,
+        officeLongitude: 121.4737
+      })
+    });
+    expect(prisma.groupMembership.upsert).toHaveBeenCalledWith({
+      where: { id: "seed-membership-admin" },
+      update: { role: "admin", status: "active", removedAt: null },
+      create: {
+        id: "seed-membership-admin",
+        groupId: "seed-group-default",
+        identityId: "seed-identity-admin",
+        role: "admin",
+        status: "active"
+      }
+    });
+    expect(prisma.groupSettings.upsert).toHaveBeenCalledWith({
+      where: { groupId: "seed-group-default" },
+      update: { notificationGroupLabel: "Dev团队" },
+      create: { groupId: "seed-group-default", notificationGroupLabel: "Dev团队" }
+    });
+    expect(prisma.scoringWeights.upsert).toHaveBeenCalledWith({
+      where: { groupId: "seed-group-default" },
+      update: {},
+      create: { groupId: "seed-group-default" }
     });
 
     await app.close();

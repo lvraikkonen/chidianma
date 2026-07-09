@@ -4,6 +4,21 @@ const prisma = vi.hoisted(() => ({
   teammate: {
     upsert: vi.fn()
   },
+  identity: {
+    upsert: vi.fn()
+  },
+  lunchGroup: {
+    upsert: vi.fn()
+  },
+  groupMembership: {
+    upsert: vi.fn()
+  },
+  groupSettings: {
+    upsert: vi.fn()
+  },
+  scoringWeights: {
+    upsert: vi.fn()
+  },
   restaurant: {
     findMany: vi.fn(),
     create: vi.fn(),
@@ -14,7 +29,8 @@ const prisma = vi.hoisted(() => ({
   },
   feedback: {
     create: vi.fn()
-  }
+  },
+  $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma))
 }));
 
 vi.mock("../src/plugins/prisma", () => ({ prisma }));

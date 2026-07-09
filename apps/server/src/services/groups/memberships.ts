@@ -1,8 +1,10 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { GroupRole } from "@lunch/shared";
 import type { AppEnv } from "../../env.js";
 import { AuthError } from "../auth/errors.js";
 import { verifyGroupSessionToken } from "../auth/tokens.js";
+
+type MembershipPrisma = PrismaClient | Prisma.TransactionClient;
 
 export interface MembershipContext {
   identityId: string;
@@ -12,7 +14,7 @@ export interface MembershipContext {
 }
 
 export async function requireActiveMembership(input: {
-  prisma: PrismaClient;
+  prisma: MembershipPrisma;
   env: AppEnv;
   groupId: string;
   authorization?: string;
@@ -47,7 +49,7 @@ export async function requireActiveMembership(input: {
 }
 
 export async function assertNotLastActiveAdmin(input: {
-  prisma: PrismaClient;
+  prisma: MembershipPrisma;
   groupId: string;
   membershipId: string;
 }): Promise<void> {

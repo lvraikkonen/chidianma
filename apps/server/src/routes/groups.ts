@@ -277,25 +277,40 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
         requiredRole: "admin"
       });
 
-      const target = await prisma.groupMembership.findUnique({ where: { id: request.params.membershipId } });
-      if (!target || target.groupId !== request.params.groupId) {
+      const updated = await prisma.$transaction(async (tx) => {
+        const target = await tx.groupMembership.findUnique({ where: { id: request.params.membershipId } });
+        if (!target || target.groupId !== request.params.groupId) {
+          return null;
+        }
+
+        if ((body.role === "member" || body.status === "removed") && target.role === "admin") {
+          await tx.$queryRaw`
+            SELECT "id"
+            FROM "group_memberships"
+            WHERE "group_id" = ${request.params.groupId}
+              AND "role" = 'admin'
+              AND "status" = 'active'
+            FOR UPDATE
+          `;
+          await assertNotLastActiveAdmin({ prisma: tx, groupId: request.params.groupId, membershipId: target.id });
+        }
+
+        return tx.groupMembership.update({
+          where: { id: target.id },
+          data: {
+            ...(body.role ? { role: body.role } : {}),
+            ...(body.status
+              ? { status: body.status, removedAt: body.status === "removed" ? new Date() : null }
+              : {})
+          }
+        });
+      });
+
+      if (!updated) {
         reply.code(404);
         return { error: "member_not_found", message: "Member not found" };
       }
-
-      if ((body.role === "member" || body.status === "removed") && target.role === "admin") {
-        await assertNotLastActiveAdmin({ prisma, groupId: request.params.groupId, membershipId: target.id });
-      }
-
-      return prisma.groupMembership.update({
-        where: { id: target.id },
-        data: {
-          ...(body.role ? { role: body.role } : {}),
-          ...(body.status
-            ? { status: body.status, removedAt: body.status === "removed" ? new Date() : null }
-            : {})
-        }
-      });
+      return updated;
     } catch (error) {
       return authErrorResponse(reply, error);
     }

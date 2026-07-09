@@ -164,6 +164,7 @@ const prisma = vi.hoisted(() => {
     scoringWeights: {
       create: vi.fn(async ({ data }: { data: { groupId: string } }) => data)
     },
+    $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(client))
   };
 
@@ -820,6 +821,47 @@ describe("group routes", () => {
     });
     expect(staleAdminAttempt.statusCode).toBe(403);
     expect(staleAdminAttempt.json().error).toBe("admin_membership_required");
+  });
+
+  it("locks active admin rows inside the member update transaction before downgrading an admin", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+    const joined = (await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      payload: { displayName: "成员", inviteCode: created.inviteCode }
+    })).json();
+
+    const promote = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${joined.group.membershipId}`,
+      headers: { authorization: `Bearer ${created.groupSessionToken}` },
+      payload: { role: "admin" }
+    });
+    expect(promote.statusCode).toBe(200);
+
+    vi.mocked(prisma.$transaction).mockClear();
+    vi.mocked(prisma.$queryRaw).mockClear();
+    vi.mocked(prisma.groupMembership.update).mockClear();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+      headers: { authorization: `Bearer ${created.groupSessionToken}` },
+      payload: { role: "member" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(String(prisma.$queryRaw.mock.calls[0]?.[0])).toContain("FOR UPDATE");
+    expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.groupMembership.update.mock.invocationCallOrder[0]
+    );
   });
 
   it("returns 401 for expired group session tokens on group-scoped routes", async () => {
