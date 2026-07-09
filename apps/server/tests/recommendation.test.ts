@@ -188,12 +188,13 @@ describe("getTodayRecommendations", () => {
     const response = await getTodayRecommendations({ prisma, env, forceRefresh: true });
 
     expect(tx.dailyRecommendation.updateMany).toHaveBeenCalledWith({
-      where: { date: "2026-07-07", isCurrent: true },
+      where: { groupId: "seed-group-default", date: "2026-07-07", isCurrent: true },
       data: { isCurrent: false }
     });
     expect(tx.dailyRecommendation.createMany).toHaveBeenCalledWith({
       data: [
         expect.objectContaining({
+          groupId: "seed-group-default",
           date: "2026-07-07",
           batchId: expect.any(String),
           restaurantId: "restaurant-2",
@@ -259,6 +260,7 @@ describe("getTodayRecommendations", () => {
     expect(tx.dailyRecommendation.createMany).toHaveBeenCalledWith({
       data: [
         expect.objectContaining({
+          groupId: "seed-group-default",
           restaurantId: "restaurant-3",
           recommendationId: "recommendation-3",
           score: 20,

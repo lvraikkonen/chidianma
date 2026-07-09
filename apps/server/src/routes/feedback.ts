@@ -4,6 +4,7 @@ import type { AppEnv } from "../env.js";
 import { prisma } from "../plugins/prisma.js";
 import { hasReadToken } from "../services/auth/readToken.js";
 import { verifySessionToken } from "../services/auth/sessionToken.js";
+import { DEFAULT_GROUP_ID } from "../services/groups/defaultGroup.js";
 
 export async function registerFeedbackRoutes(app: FastifyInstance, env: AppEnv) {
   app.post<{
@@ -21,7 +22,8 @@ export async function registerFeedbackRoutes(app: FastifyInstance, env: AppEnv) 
 
     return prisma.feedback.create({
       data: {
-        date: request.body.date,
+        groupId: DEFAULT_GROUP_ID,
+        officeDate: request.body.date,
         restaurantId: request.body.restaurantId,
         recommendationId: request.body.recommendationId ?? null,
         type: request.body.type

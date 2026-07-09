@@ -17,7 +17,120 @@ enum FeedbackType {
   want
   skip
   ate
-  blocked
+  avoid
+}
+
+enum GroupRole {
+  admin
+  member
+}
+
+enum MembershipStatus {
+  active
+  removed
+}
+
+enum RecommendationBatchSource {
+  auto
+  manual
+  legacy
+}
+
+enum ParticipationStatus {
+  undecided
+  joining
+  away
+  decided
+}
+
+model Identity {
+  id            String            @id @default(cuid())
+  displayName   String            @map("display_name")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  lastSeenAt    DateTime?         @map("last_seen_at")
+  memberships   GroupMembership[]
+  createdGroups LunchGroup[]      @relation("CreatedGroups")
+
+  @@map("identities")
+}
+
+model LunchGroup {
+  id                   String                     @id @default(cuid())
+  name                 String
+  subtitle             String?
+  inviteCodeHash       String                     @map("invite_code_hash")
+  inviteCodeRotatedAt  DateTime                   @default(now()) @map("invite_code_rotated_at")
+  inviteCodeVersion    Int                        @default(1) @map("invite_code_version")
+  createdByIdentityId  String                     @map("created_by_identity_id")
+  officeTimezone       String                     @map("office_timezone")
+  officeCity           String                     @map("office_city")
+  officeLatitude       Float                      @map("office_latitude")
+  officeLongitude      Float                      @map("office_longitude")
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+  createdBy            Identity                   @relation("CreatedGroups", fields: [createdByIdentityId], references: [id])
+  memberships          GroupMembership[]
+  settings             GroupSettings?
+  scoringWeights       ScoringWeights?
+  restaurants          Restaurant[]
+  recommendations      Recommendation[]
+  dailyRecommendations DailyRecommendation[]
+  batches              DailyRecommendationBatch[]
+  participation        DailyParticipation[]
+  feedback             Feedback[]
+  weatherSnapshots     WeatherSnapshot[]
+
+  @@map("lunch_groups")
+}
+
+model GroupMembership {
+  id                     String                     @id @default(cuid())
+  groupId                String                     @map("group_id")
+  identityId             String                     @map("identity_id")
+  role                   GroupRole
+  status                 MembershipStatus           @default(active)
+  joinedAt               DateTime                   @default(now()) @map("joined_at")
+  removedAt              DateTime?                  @map("removed_at")
+  group                  LunchGroup                 @relation(fields: [groupId], references: [id])
+  identity               Identity                   @relation(fields: [identityId], references: [id])
+  createdRestaurants     Restaurant[]
+  createdRecommendations Recommendation[]
+  participation          DailyParticipation[]
+  feedback               Feedback[]
+  generatedBatches       DailyRecommendationBatch[]
+
+  @@unique([groupId, identityId])
+  @@index([identityId])
+  @@map("group_memberships")
+}
+
+model GroupSettings {
+  groupId                String     @id @map("group_id")
+  reminderTime           String     @default("11:30") @map("reminder_time")
+  weekdayReminderEnabled Boolean    @default(true) @map("weekday_reminder_enabled")
+  secondReminderEnabled  Boolean    @default(false) @map("second_reminder_enabled")
+  notificationTitle      String     @default("吃饭才是正事，中午吃点啥呢？") @map("notification_title")
+  notificationGroupLabel String?    @map("notification_group_label")
+  createdAt              DateTime   @default(now()) @map("created_at")
+  updatedAt              DateTime   @updatedAt @map("updated_at")
+  group                  LunchGroup @relation(fields: [groupId], references: [id])
+
+  @@map("group_settings")
+}
+
+model ScoringWeights {
+  groupId                 String     @id @map("group_id")
+  weekdayMatch            Int        @default(20) @map("weekday_match")
+  weatherMatch            Int        @default(25) @map("weather_match")
+  distance                Int        @default(20)
+  teammateRecommendation  Int        @default(10) @map("teammate_recommendation")
+  recentDuplicatePenalty  Int        @default(12) @map("recent_duplicate_penalty")
+  negativeFeedbackPenalty Int        @default(10) @map("negative_feedback_penalty")
+  createdAt               DateTime   @default(now()) @map("created_at")
+  updatedAt               DateTime   @updatedAt @map("updated_at")
+  group                   LunchGroup @relation(fields: [groupId], references: [id])
+
+  @@map("scoring_weights")
 }
 
 model Teammate {
@@ -32,47 +145,62 @@ model Teammate {
 }
 
 model Restaurant {
-  id                   String                @id @default(cuid())
-  name                 String                @unique
-  area                 String?
-  address              String?
-  distanceMinutes      Int?                  @map("distance_minutes")
-  cuisine              String?
-  priceBand            String?               @map("price_band")
-  supportsDineIn       Boolean               @default(true) @map("supports_dine_in")
-  supportsTakeout      Boolean               @default(false) @map("supports_takeout")
-  tags                 String[]
-  status               RestaurantStatus      @default(active)
-  createdAt            DateTime              @default(now()) @map("created_at")
-  updatedAt            DateTime              @updatedAt @map("updated_at")
-  recommendations      Recommendation[]
-  dailyRecommendations DailyRecommendation[]
-  feedback             Feedback[]
+  id                       String                    @id @default(cuid())
+  groupId                  String                    @map("group_id")
+  name                     String
+  area                     String?
+  address                  String?
+  distanceMinutes          Int?                      @map("distance_minutes")
+  cuisine                  String?
+  priceBand                String?                   @map("price_band")
+  averagePriceCents        Int?                      @map("average_price_cents")
+  supportsDineIn           Boolean                   @default(true) @map("supports_dine_in")
+  supportsTakeout          Boolean                   @default(false) @map("supports_takeout")
+  tags                     String[]
+  status                   RestaurantStatus          @default(active)
+  createdByMembershipId    String?                   @map("created_by_membership_id")
+  createdAt                DateTime                  @default(now()) @map("created_at")
+  updatedAt                DateTime                  @updatedAt @map("updated_at")
+  group                    LunchGroup                @relation(fields: [groupId], references: [id])
+  createdByMembership      GroupMembership?          @relation(fields: [createdByMembershipId], references: [id])
+  recommendations          Recommendation[]
+  dailyRecommendations     DailyRecommendation[]
+  dailyRecommendationItems DailyRecommendationItem[]
+  feedback                 Feedback[]
 
+  @@index([groupId, name, area])
   @@map("restaurants")
 }
 
 model Recommendation {
-  id                   String                @id @default(cuid())
-  restaurantId         String                @map("restaurant_id")
-  teammateId           String                @map("teammate_id")
-  dish                 String?
-  reason               String
-  weatherTags          String[]              @map("weather_tags")
-  weekdayTags          String[]              @map("weekday_tags")
-  moodTags             String[]              @map("mood_tags")
-  createdAt            DateTime              @default(now()) @map("created_at")
-  updatedAt            DateTime              @updatedAt @map("updated_at")
-  restaurant           Restaurant            @relation(fields: [restaurantId], references: [id])
-  teammate             Teammate              @relation(fields: [teammateId], references: [id])
-  dailyRecommendations DailyRecommendation[]
-  feedback             Feedback[]
+  id                       String                    @id @default(cuid())
+  groupId                  String                    @map("group_id")
+  restaurantId             String                    @map("restaurant_id")
+  teammateId               String?                   @map("teammate_id")
+  createdByMembershipId    String?                   @map("created_by_membership_id")
+  dish                     String?
+  reason                   String
+  weatherTags              String[]                  @map("weather_tags")
+  weekdayTags              String[]                  @map("weekday_tags")
+  moodTags                 String[]                  @map("mood_tags")
+  createdAt                DateTime                  @default(now()) @map("created_at")
+  updatedAt                DateTime                  @updatedAt @map("updated_at")
+  group                    LunchGroup                @relation(fields: [groupId], references: [id])
+  restaurant               Restaurant                @relation(fields: [restaurantId], references: [id])
+  teammate                 Teammate?                 @relation(fields: [teammateId], references: [id])
+  createdByMembership      GroupMembership?          @relation(fields: [createdByMembershipId], references: [id])
+  dailyRecommendations     DailyRecommendation[]
+  dailyRecommendationItems DailyRecommendationItem[]
+  feedback                 Feedback[]
 
+  @@index([groupId, restaurantId])
+  @@index([groupId, createdByMembershipId])
   @@map("recommendations")
 }
 
 model DailyRecommendation {
   id               String          @id @default(cuid())
+  groupId          String          @map("group_id")
   date             String
   batchId          String          @map("batch_id")
   restaurantId     String          @map("restaurant_id")
@@ -81,40 +209,105 @@ model DailyRecommendation {
   reason           String
   isCurrent        Boolean         @default(true) @map("is_current")
   createdAt        DateTime        @default(now()) @map("created_at")
+  group            LunchGroup      @relation(fields: [groupId], references: [id])
   restaurant       Restaurant      @relation(fields: [restaurantId], references: [id])
   recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
 
-  @@index([date, isCurrent])
+  @@index([groupId, date, isCurrent])
   @@map("daily_recommendations")
 }
 
 model WeatherSnapshot {
-  id                       String   @id @default(cuid())
+  id                       String     @id @default(cuid())
+  groupId                  String     @map("group_id")
   date                     String
   city                     String
-  temperatureC             Float?   @map("temperature_c")
+  temperatureC             Float?     @map("temperature_c")
   condition                String
-  precipitationProbability Int?     @map("precipitation_probability")
-  windLevel                String?  @map("wind_level")
-  rawPayload               Json?    @map("raw_payload")
-  createdAt                DateTime @default(now()) @map("created_at")
+  precipitationProbability Int?       @map("precipitation_probability")
+  windLevel                String?    @map("wind_level")
+  rawPayload               Json?      @map("raw_payload")
+  createdAt                DateTime   @default(now()) @map("created_at")
+  group                    LunchGroup @relation(fields: [groupId], references: [id])
 
-  @@unique([date, city])
+  @@unique([groupId, date, city])
   @@map("weather_snapshots")
 }
 
 model Feedback {
-  id               String          @id @default(cuid())
-  date             String
-  restaurantId     String          @map("restaurant_id")
-  recommendationId String?         @map("recommendation_id")
-  teammateId       String?         @map("teammate_id")
+  id               String           @id @default(cuid())
+  groupId          String           @map("group_id")
+  officeDate       String           @map("office_date")
+  restaurantId     String           @map("restaurant_id")
+  recommendationId String?          @map("recommendation_id")
+  teammateId       String?          @map("teammate_id")
+  membershipId     String?          @map("membership_id")
   type             FeedbackType
-  createdAt        DateTime        @default(now()) @map("created_at")
-  restaurant       Restaurant      @relation(fields: [restaurantId], references: [id])
-  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
-  teammate         Teammate?       @relation(fields: [teammateId], references: [id])
+  createdAt        DateTime         @default(now()) @map("created_at")
+  group            LunchGroup       @relation(fields: [groupId], references: [id])
+  restaurant       Restaurant       @relation(fields: [restaurantId], references: [id])
+  recommendation   Recommendation?  @relation(fields: [recommendationId], references: [id])
+  teammate         Teammate?        @relation(fields: [teammateId], references: [id])
+  membership       GroupMembership? @relation(fields: [membershipId], references: [id])
 
-  @@index([date, type])
+  @@index([groupId, officeDate, restaurantId])
+  @@index([groupId, officeDate, type])
   @@map("feedback")
+}
+
+model DailyParticipation {
+  id               String              @id @default(cuid())
+  groupId          String              @map("group_id")
+  officeDate       String              @map("office_date")
+  membershipId     String              @map("membership_id")
+  status           ParticipationStatus @default(undecided)
+  restaurantId     String?             @map("restaurant_id")
+  recommendationId String?             @map("recommendation_id")
+  decidedAt        DateTime?           @map("decided_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  group            LunchGroup          @relation(fields: [groupId], references: [id])
+  membership       GroupMembership     @relation(fields: [membershipId], references: [id])
+
+  @@unique([groupId, officeDate, membershipId])
+  @@map("daily_participation")
+}
+
+model DailyRecommendationBatch {
+  id                      String                    @id @default(cuid())
+  groupId                 String                    @map("group_id")
+  officeDate              String                    @map("office_date")
+  batchNo                 Int                       @map("batch_no")
+  source                  RecommendationBatchSource
+  generatedByMembershipId String?                   @map("generated_by_membership_id")
+  weatherSnapshotId       String?                   @map("weather_snapshot_id")
+  scoringWeightsSnapshot  Json                      @map("scoring_weights_snapshot")
+  algorithmVersion        String                    @map("algorithm_version")
+  isCurrent               Boolean                   @default(true) @map("is_current")
+  createdAt               DateTime                  @default(now()) @map("created_at")
+  group                   LunchGroup                @relation(fields: [groupId], references: [id])
+  generatedByMembership   GroupMembership?          @relation(fields: [generatedByMembershipId], references: [id])
+  items                   DailyRecommendationItem[]
+
+  @@unique([groupId, officeDate, batchNo])
+  @@index([groupId, officeDate, isCurrent])
+  @@map("daily_recommendation_batches")
+}
+
+model DailyRecommendationItem {
+  id               String                   @id @default(cuid())
+  batchId          String                   @map("batch_id")
+  rank             Int
+  restaurantId     String                   @map("restaurant_id")
+  recommendationId String?                  @map("recommendation_id")
+  score            Int
+  scoreBreakdown   Json                     @map("score_breakdown")
+  reason           String
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  batch            DailyRecommendationBatch @relation(fields: [batchId], references: [id])
+  restaurant       Restaurant               @relation(fields: [restaurantId], references: [id])
+  recommendation   Recommendation?          @relation(fields: [recommendationId], references: [id])
+
+  @@unique([batchId, rank])
+  @@index([batchId])
+  @@map("daily_recommendation_items")
 }

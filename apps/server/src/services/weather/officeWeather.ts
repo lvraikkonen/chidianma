@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { AppEnv } from "../../env.js";
+import { DEFAULT_GROUP_ID } from "../groups/defaultGroup.js";
 import type { WeatherSummary } from "./mockWeather.js";
 import { fetchWeatherSummary } from "./openMeteo.js";
 
@@ -9,7 +10,8 @@ export async function getWeatherForOfficeDate(input: {
   date: string;
 }): Promise<{ weather: WeatherSummary | null; weatherUnavailable: boolean }> {
   const snapshotWhere = {
-    date_city: {
+    groupId_date_city: {
+      groupId: DEFAULT_GROUP_ID,
       date: input.date,
       city: input.env.OFFICE_CITY
     }
@@ -30,6 +32,7 @@ export async function getWeatherForOfficeDate(input: {
     try {
       await input.prisma.weatherSnapshot.create({
         data: {
+          groupId: DEFAULT_GROUP_ID,
           date: input.date,
           city: input.env.OFFICE_CITY,
           temperatureC: weather.temperatureC,

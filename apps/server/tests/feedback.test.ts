@@ -89,7 +89,8 @@ describe("feedback route", () => {
     expect(authorized.statusCode).toBe(200);
     expect(prisma.feedback.create).toHaveBeenCalledWith({
       data: {
-        date: "2026-07-07",
+        groupId: "seed-group-default",
+        officeDate: "2026-07-07",
         restaurantId: "restaurant-1",
         recommendationId: null,
         type: "want"
@@ -132,7 +133,8 @@ describe("feedback route", () => {
     expect(response.statusCode).toBe(200);
     expect(prisma.feedback.create).toHaveBeenLastCalledWith({
       data: {
-        date: "2026-07-07",
+        groupId: "seed-group-default",
+        officeDate: "2026-07-07",
         restaurantId: "restaurant-1",
         recommendationId: "recommendation-1",
         type: "ate"

@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import type { AppEnv } from "../../env.js";
 import { getOfficeDate, getOfficeWeekdayTag } from "../dates.js";
+import { DEFAULT_GROUP_ID } from "../groups/defaultGroup.js";
 import { getWeatherForOfficeDate } from "../weather/officeWeather.js";
 import { rankRestaurantCandidates } from "./scorer.js";
 
@@ -28,7 +29,7 @@ export async function getTodayRecommendations(input: {
     try {
       return await input.prisma.$transaction(async (tx) => {
         const existing = await tx.dailyRecommendation.findMany({
-          where: { date, isCurrent: true },
+          where: { groupId: DEFAULT_GROUP_ID, date, isCurrent: true },
           include: { restaurant: true, recommendation: true },
           orderBy: { score: "desc" }
         });
@@ -52,15 +53,15 @@ export async function getTodayRecommendations(input: {
         }
 
         const restaurants = await tx.restaurant.findMany({
-          where: { status: "active" },
+          where: { groupId: DEFAULT_GROUP_ID, status: "active" },
           include: {
             recommendations: true,
-            feedback: { where: { date, type: { in: ["skip", "blocked"] } } }
+            feedback: { where: { officeDate: date, type: { in: ["skip", "avoid"] } } }
           }
         });
 
         const recent = await tx.dailyRecommendation.findMany({
-          where: { date: { not: date } },
+          where: { groupId: DEFAULT_GROUP_ID, date: { not: date } },
           take: 20,
           orderBy: { createdAt: "desc" }
         });
@@ -97,12 +98,13 @@ export async function getTodayRecommendations(input: {
 
         const batchId = randomUUID();
         await tx.dailyRecommendation.updateMany({
-          where: { date, isCurrent: true },
+          where: { groupId: DEFAULT_GROUP_ID, date, isCurrent: true },
           data: { isCurrent: false }
         });
 
         await tx.dailyRecommendation.createMany({
           data: ranked.map((item) => ({
+            groupId: DEFAULT_GROUP_ID,
             date,
             batchId,
             restaurantId: item.restaurantId,
