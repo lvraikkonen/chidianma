@@ -112,9 +112,29 @@ const prisma = vi.hoisted(() => {
       })
     },
     recommendation: {
-      findFirst: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn()
+      findFirst: vi.fn(async ({ where }: { where: { id: string; groupId: string } }) => {
+        return (
+          store.recommendations.find((candidate) => candidate.id === where.id && candidate.groupId === where.groupId) ??
+          null
+        );
+      }),
+      create: vi.fn(async ({ data }: { data: Omit<MockRecommendation, "id" | "createdAt" | "updatedAt"> }) => {
+        const now = new Date("2026-07-09T04:10:00.000Z");
+        const recommendation = {
+          id: `recommendation-${store.nextRecommendationId++}`,
+          createdAt: now,
+          updatedAt: now,
+          ...data
+        };
+        store.recommendations.push(recommendation);
+        return recommendation;
+      }),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<MockRecommendation> }) => {
+        const recommendation = store.recommendations.find((candidate) => candidate.id === where.id);
+        if (!recommendation) throw new Error(`Missing recommendation ${where.id}`);
+        Object.assign(recommendation, data, { updatedAt: new Date("2026-07-09T05:10:00.000Z") });
+        return recommendation;
+      })
     },
     feedback: {
       create: vi.fn()
@@ -443,6 +463,210 @@ describe("group knowledge restaurant routes", () => {
     expect(readToken.statusCode).toBe(401);
     expect(crossGroupPatch.statusCode).toBe(404);
     expect(crossGroupPatch.json()).toEqual({ error: "restaurant_not_found", message: "Restaurant not found" });
+
+    await app.close();
+  });
+});
+
+describe("group knowledge recommendation routes", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    prisma.__reset();
+    prisma.__seedMembership({
+      id: "membership-1",
+      groupId: "group-1",
+      identityId: "identity-1",
+      role: "member",
+      status: "active"
+    });
+    prisma.__seedMembership({
+      id: "membership-2",
+      groupId: "group-1",
+      identityId: "identity-2",
+      role: "member",
+      status: "active"
+    });
+    prisma.__seedMembership({
+      id: "admin-membership",
+      groupId: "group-1",
+      identityId: "identity-admin",
+      role: "admin",
+      status: "active"
+    });
+    prisma.__seedRestaurant(baseRestaurant);
+    prisma.__seedRestaurant({ ...baseRestaurant, id: "restaurant-2", groupId: "group-2", name: "别组餐厅" });
+  });
+
+  afterEach(() => {
+    for (const key of Object.keys(env)) {
+      delete process.env[key];
+    }
+  });
+
+  it("creates a recommendation for a restaurant in the active membership group", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {
+        restaurantId: "restaurant-1",
+        dish: "卤肉饭",
+        reason: "稳定下饭",
+        weatherTags: ["rainy"],
+        weekdayTags: ["thursday"],
+        moodTags: ["想吃饭"]
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(prisma.recommendation.create).toHaveBeenCalledWith({
+      data: {
+        groupId: "group-1",
+        restaurantId: "restaurant-1",
+        createdByMembershipId: "membership-1",
+        dish: "卤肉饭",
+        reason: "稳定下饭",
+        weatherTags: ["rainy"],
+        weekdayTags: ["thursday"],
+        moodTags: ["想吃饭"]
+      }
+    });
+
+    await app.close();
+  });
+
+  it("rejects recommendation creation with a restaurant from another group", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {
+        restaurantId: "restaurant-2",
+        reason: "不能跨组写推荐"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: "restaurant_group_mismatch",
+      message: "Restaurant does not belong to route group"
+    });
+    expect(prisma.recommendation.create).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("lets a member patch their own recommendation and blocks another member", async () => {
+    prisma.__seedRecommendation({
+      id: "recommendation-1",
+      groupId: "group-1",
+      restaurantId: "restaurant-1",
+      dish: "卤肉饭",
+      reason: "稳定下饭",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: "membership-1",
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+    const app = await buildTestApp();
+
+    const ownPatch = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { reason: "今天特别适合", moodTags: ["想吃饭"] }
+    });
+    const otherPatch = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: {
+        authorization: `Bearer ${groupToken({
+          identityId: "identity-2",
+          membershipId: "membership-2",
+          role: "member"
+        })}`
+      },
+      payload: { reason: "改别人的推荐" }
+    });
+
+    expect(ownPatch.statusCode).toBe(200);
+    expect(otherPatch.statusCode).toBe(403);
+    expect(otherPatch.json()).toEqual({
+      error: "recommendation_owner_required",
+      message: "Only the creator or an admin can edit recommendation"
+    });
+
+    await app.close();
+  });
+
+  it("lets an admin patch any recommendation in the group", async () => {
+    prisma.__seedRecommendation({
+      id: "recommendation-1",
+      groupId: "group-1",
+      restaurantId: "restaurant-1",
+      dish: "卤肉饭",
+      reason: "稳定下饭",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: "membership-1",
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+    const app = await buildTestApp();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: {
+        authorization: `Bearer ${groupToken({
+          identityId: "identity-admin",
+          membershipId: "admin-membership",
+          role: "admin"
+        })}`
+      },
+      payload: { dish: "鸡腿饭", reason: "管理员补充口味信息" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(prisma.recommendation.update).toHaveBeenCalledWith({
+      where: { id: "recommendation-1" },
+      data: { dish: "鸡腿饭", reason: "管理员补充口味信息" }
+    });
+
+    await app.close();
+  });
+
+  it("returns not found for a recommendation outside the route group", async () => {
+    prisma.__seedRecommendation({
+      id: "recommendation-2",
+      groupId: "group-2",
+      restaurantId: "restaurant-2",
+      dish: null,
+      reason: "别组推荐",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: null,
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+    const app = await buildTestApp();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-2",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { reason: "跨组更新" }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "recommendation_not_found", message: "Recommendation not found" });
 
     await app.close();
   });

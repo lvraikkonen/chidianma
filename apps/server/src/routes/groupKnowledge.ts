@@ -1,6 +1,9 @@
 import type {
+  CreateRecommendationRequest,
   CreateRestaurantRequest,
+  PatchRecommendationRequest,
   PatchRestaurantRequest,
+  RecommendationMutationResponse,
   RestaurantMutationResponse,
   RestaurantSummary
 } from "@lunch/shared";
@@ -60,6 +63,8 @@ class ValidationError extends Error {
 }
 
 const restaurantStatuses = new Set(["active", "paused", "blocked"]);
+const weatherTags = new Set(["rainy", "hot", "cold", "clear", "windy"]);
+const weekdayTags = new Set(["monday", "tuesday", "wednesday", "thursday", "friday"]);
 
 function membershipAuthInput(groupId: string, authorization: string | undefined) {
   return authorization ? { groupId, authorization } : { groupId };
@@ -124,6 +129,14 @@ function stringArray(value: unknown, error = "invalid_tags"): string[] | undefin
   return value.map((item) => item.trim()).filter(Boolean);
 }
 
+function enumArray(value: unknown, allowed: Set<string>, error: string): string[] {
+  const values = stringArray(value, error) ?? [];
+  if (values.some((item) => !allowed.has(item))) {
+    throw new ValidationError(error, "Tags include unsupported values");
+  }
+  return values;
+}
+
 function restaurantStatus(value: unknown): "active" | "paused" | "blocked" {
   if (typeof value !== "string" || !restaurantStatuses.has(value)) {
     throw new ValidationError("invalid_restaurant_status", "Restaurant status is invalid");
@@ -133,6 +146,20 @@ function restaurantStatus(value: unknown): "active" | "paused" | "blocked" {
 
 function restaurantPatchBody(body: unknown): PatchRestaurantRequest {
   return body && typeof body === "object" && !Array.isArray(body) ? (body as PatchRestaurantRequest) : {};
+}
+
+type RecommendationRow = IncludedRecommendation;
+
+function moodTagArray(value: unknown): string[] {
+  return stringArray(value, "invalid_tags") ?? [];
+}
+
+function weatherTagArray(value: unknown): string[] {
+  return enumArray(value, weatherTags, "invalid_weather_tags");
+}
+
+function weekdayTagArray(value: unknown): string[] {
+  return enumArray(value, weekdayTags, "invalid_weekday_tags");
 }
 
 function toRecommendationSummary(recommendation: IncludedRecommendation) {
@@ -171,6 +198,31 @@ function toRestaurantSummary(restaurant: IncludedRestaurant): RestaurantSummary 
     updatedAt: restaurant.updatedAt.toISOString(),
     recommendations: (restaurant.recommendations ?? []).map(toRecommendationSummary)
   };
+}
+
+function recommendationPatch(body: unknown) {
+  const patch = body && typeof body === "object" && !Array.isArray(body) ? (body as PatchRecommendationRequest) : {};
+  const data: Record<string, unknown> = {};
+  if (patch.dish !== undefined) data.dish = optionalString(patch.dish);
+  if (patch.reason !== undefined) {
+    data.reason = requiredNonBlankString(
+      patch,
+      "reason",
+      "recommendation_reason_required",
+      "Recommendation reason is required"
+    );
+  }
+  if (patch.weatherTags !== undefined) data.weatherTags = weatherTagArray(patch.weatherTags);
+  if (patch.weekdayTags !== undefined) data.weekdayTags = weekdayTagArray(patch.weekdayTags);
+  if (patch.moodTags !== undefined) data.moodTags = moodTagArray(patch.moodTags);
+  return data;
+}
+
+async function findRestaurantForWrite(groupId: string, restaurantId: string) {
+  return prisma.restaurant.findFirst({
+    where: { id: restaurantId, groupId },
+    include: restaurantInclude
+  });
 }
 
 function buildRestaurantPatch(body: PatchRestaurantRequest, allowStatus: boolean) {
@@ -322,6 +374,99 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
           groupId: request.params.groupId,
           restaurant: toRestaurantSummary(restaurant)
         } satisfies RestaurantMutationResponse;
+      } catch (error) {
+        return sendAuthError(reply, error);
+      }
+    }
+  );
+
+  app.post<{ Params: { groupId: string }; Body: CreateRecommendationRequest }>(
+    "/api/groups/:groupId/recommendations",
+    async (request, reply) => {
+      try {
+        const membership = await requireActiveMembership({
+          prisma,
+          env,
+          ...membershipAuthInput(request.params.groupId, request.headers.authorization)
+        });
+        const reason = requiredNonBlankString(
+          request.body,
+          "reason",
+          "recommendation_reason_required",
+          "Recommendation reason is required"
+        );
+        const restaurantId = requiredNonBlankString(
+          request.body,
+          "restaurantId",
+          "restaurant_id_required",
+          "Restaurant ID is required"
+        );
+        const restaurant = await findRestaurantForWrite(request.params.groupId, restaurantId);
+        if (!restaurant) {
+          reply.code(400);
+          return {
+            error: "restaurant_group_mismatch",
+            message: "Restaurant does not belong to route group"
+          };
+        }
+        const recommendation = await prisma.recommendation.create({
+          data: {
+            groupId: request.params.groupId,
+            restaurantId: restaurant.id,
+            createdByMembershipId: membership.membershipId,
+            dish: optionalString(request.body.dish) ?? null,
+            reason,
+            weatherTags: weatherTagArray(request.body.weatherTags),
+            weekdayTags: weekdayTagArray(request.body.weekdayTags),
+            moodTags: moodTagArray(request.body.moodTags)
+          }
+        });
+        return {
+          groupId: request.params.groupId,
+          recommendation: toRecommendationSummary(recommendation as RecommendationRow)
+        } satisfies RecommendationMutationResponse;
+      } catch (error) {
+        return sendAuthError(reply, error);
+      }
+    }
+  );
+
+  app.patch<{ Params: { groupId: string; recommendationId: string }; Body: PatchRecommendationRequest }>(
+    "/api/groups/:groupId/recommendations/:recommendationId",
+    async (request, reply) => {
+      try {
+        const membership = await requireActiveMembership({
+          prisma,
+          env,
+          ...membershipAuthInput(request.params.groupId, request.headers.authorization)
+        });
+        const existing = await prisma.recommendation.findFirst({
+          where: { id: request.params.recommendationId, groupId: request.params.groupId }
+        });
+        if (!existing) {
+          reply.code(404);
+          return { error: "recommendation_not_found", message: "Recommendation not found" };
+        }
+        if (membership.role !== "admin" && existing.createdByMembershipId !== membership.membershipId) {
+          reply.code(403);
+          return {
+            error: "recommendation_owner_required",
+            message: "Only the creator or an admin can edit recommendation"
+          };
+        }
+        const data = recommendationPatch(request.body);
+        if (Object.keys(data).length === 0) {
+          reply.code(400);
+          return { error: "empty_recommendation_patch", message: "At least one recommendation field is required" };
+        }
+        const recommendation = await prisma.recommendation.update({
+          where: { id: existing.id },
+          data
+        });
+        return {
+          groupId: request.params.groupId,
+          recommendation: toRecommendationSummary(recommendation as RecommendationRow)
+        } satisfies RecommendationMutationResponse;
       } catch (error) {
         return sendAuthError(reply, error);
       }
