@@ -4,6 +4,7 @@ import { loadEnv } from "./env.js";
 import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerGroupKnowledgeRoutes } from "./routes/groupKnowledge.js";
 import { registerGroupRoutes } from "./routes/groups.js";
+import { registerGroupTodayRoutes } from "./routes/groupToday.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerRecommendationAdminRoutes } from "./routes/recommendations-admin.js";
 import { registerRecommendationRoutes } from "./routes/recommendations.js";
@@ -19,6 +20,7 @@ export async function buildApp() {
 
   await registerHealthRoutes(app);
   await registerGroupRoutes(app, env);
+  await registerGroupTodayRoutes(app, env);
   await registerGroupKnowledgeRoutes(app, env);
   await registerRecommendationRoutes(app, env);
   await registerSessionRoutes(app, env);
