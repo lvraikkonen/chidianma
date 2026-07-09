@@ -359,6 +359,59 @@ describe("group membership authorization", () => {
 });
 
 describe("group routes", () => {
+  it("returns 400 for missing and malformed identity creation bodies", async () => {
+    const app = await buildApp();
+
+    const missingBody = await app.inject({ method: "POST", url: "/api/identities" });
+    expect(missingBody.statusCode).toBe(400);
+    expect(missingBody.json()).toEqual({ error: "display_name_required", message: "Display name is required" });
+
+    const malformedBody = await app.inject({
+      method: "POST",
+      url: "/api/identities",
+      payload: { displayName: 123 }
+    });
+    expect(malformedBody.statusCode).toBe(400);
+    expect(malformedBody.json()).toEqual({ error: "display_name_required", message: "Display name is required" });
+  });
+
+  it("returns 400 for missing and malformed group creation bodies", async () => {
+    const app = await buildApp();
+
+    const missingBody = await app.inject({ method: "POST", url: "/api/groups" });
+    expect(missingBody.statusCode).toBe(400);
+    expect(missingBody.json()).toEqual({ error: "invalid_group_create_request", message: "Group name is required" });
+
+    const malformedBody = await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "李雷", groupName: 123 }
+    });
+    expect(malformedBody.statusCode).toBe(400);
+    expect(malformedBody.json()).toEqual({ error: "invalid_group_create_request", message: "Group name is required" });
+  });
+
+  it("returns 400 for missing and malformed group join bodies", async () => {
+    const app = await buildApp();
+    await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    });
+
+    const missingBody = await app.inject({ method: "POST", url: "/api/groups/join" });
+    expect(missingBody.statusCode).toBe(400);
+    expect(missingBody.json()).toEqual({ error: "invalid_group_join_request", message: "Invite code is required" });
+
+    const malformedBody = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      payload: { displayName: "小赵", inviteCode: 123 }
+    });
+    expect(malformedBody.statusCode).toBe(400);
+    expect(malformedBody.json()).toEqual({ error: "invalid_group_join_request", message: "Invite code is required" });
+  });
+
   it("creates an identity and group, then lists active memberships", async () => {
     const app = await buildApp();
 

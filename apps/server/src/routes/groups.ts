@@ -19,6 +19,12 @@ function authErrorResponse(reply: { code(statusCode: number): unknown }, error: 
   throw error;
 }
 
+function stringField(body: unknown, field: string): string {
+  if (!body || typeof body !== "object") return "";
+  const value = (body as Record<string, unknown>)[field];
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function groupSummary(membership: {
   id: string;
   role: "admin" | "member";
@@ -83,7 +89,7 @@ function signTokens(input: {
 
 export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
   app.post<{ Body: { displayName: string } }>("/api/identities", async (request, reply) => {
-    const displayName = request.body.displayName.trim();
+    const displayName = stringField(request.body, "displayName");
     if (!displayName) {
       reply.code(400);
       return { error: "display_name_required", message: "Display name is required" };
@@ -104,7 +110,7 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
         reply.code(403);
         return { error: "group_creation_disabled", message: "Group creation is disabled" };
       }
-      const groupName = request.body.groupName?.trim();
+      const groupName = stringField(request.body, "groupName");
       if (!groupName) {
         reply.code(400);
         return { error: "invalid_group_create_request", message: "Group name is required" };
@@ -112,7 +118,7 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
 
       const identity = await resolveIdentityForRequest({
         authorization: request.headers.authorization,
-        displayName: request.body.displayName,
+        displayName: stringField(request.body, "displayName"),
         env
       });
 
@@ -121,7 +127,7 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
         const group = await tx.lunchGroup.create({
           data: {
             name: groupName,
-            subtitle: request.body.subtitle?.trim() || null,
+            subtitle: stringField(request.body, "subtitle") || null,
             inviteCodeHash: hashInviteCode(inviteCode, env.SESSION_SECRET),
             createdByIdentityId: identity.id,
             officeTimezone: env.OFFICE_TIMEZONE,
@@ -171,8 +177,13 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
   app.post<{ Body: { displayName?: string; inviteCode: string } }>("/api/groups/join", async (request, reply) => {
     try {
       const groups = await prisma.lunchGroup.findMany();
+      const inviteCode = stringField(request.body, "inviteCode");
+      if (!inviteCode) {
+        reply.code(400);
+        return { error: "invalid_group_join_request", message: "Invite code is required" };
+      }
       const group = groups.find((candidate) =>
-        verifyInviteCode(request.body.inviteCode, candidate.inviteCodeHash, env.SESSION_SECRET)
+        verifyInviteCode(inviteCode, candidate.inviteCodeHash, env.SESSION_SECRET)
       );
       if (!group) {
         reply.code(401);
@@ -181,7 +192,7 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
 
       const identity = await resolveIdentityForRequest({
         authorization: request.headers.authorization,
-        displayName: request.body.displayName,
+        displayName: stringField(request.body, "displayName"),
         env
       });
 
