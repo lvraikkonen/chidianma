@@ -1,6 +1,10 @@
 import type {
+  CreateGroupFeedbackRequest,
+  CreateGroupFeedbackResponse,
   CreateRecommendationRequest,
   CreateRestaurantRequest,
+  FeedbackSummary,
+  FeedbackType,
   PatchRecommendationRequest,
   PatchRestaurantRequest,
   RecommendationMutationResponse,
@@ -65,6 +69,7 @@ class ValidationError extends Error {
 const restaurantStatuses = new Set(["active", "paused", "blocked"]);
 const weatherTags = new Set(["rainy", "hot", "cold", "clear", "windy"]);
 const weekdayTags = new Set(["monday", "tuesday", "wednesday", "thursday", "friday"]);
+const feedbackTypes = new Set<FeedbackType>(["want", "skip", "ate", "avoid"]);
 const createRecommendationFields = new Set([
   "restaurantId",
   "dish",
@@ -74,6 +79,7 @@ const createRecommendationFields = new Set([
   "moodTags"
 ]);
 const patchRecommendationFields = new Set(["dish", "reason", "weatherTags", "weekdayTags", "moodTags"]);
+const createFeedbackFields = new Set(["officeDate", "restaurantId", "recommendationId", "type"]);
 
 function membershipAuthInput(groupId: string, authorization: string | undefined) {
   return authorization ? { groupId, authorization } : { groupId };
@@ -186,6 +192,13 @@ function weekdayTagArray(value: unknown): string[] {
   return enumArray(value, weekdayTags, "invalid_weekday_tags");
 }
 
+function officeDate(value: unknown): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new ValidationError("invalid_office_date", "Office date is invalid");
+  }
+  return value;
+}
+
 function toRecommendationSummary(recommendation: IncludedRecommendation) {
   return {
     id: recommendation.id,
@@ -221,6 +234,28 @@ function toRestaurantSummary(restaurant: IncludedRestaurant): RestaurantSummary 
     createdAt: restaurant.createdAt.toISOString(),
     updatedAt: restaurant.updatedAt.toISOString(),
     recommendations: (restaurant.recommendations ?? []).map(toRecommendationSummary)
+  };
+}
+
+function toFeedbackSummary(feedback: {
+  id: string;
+  groupId: string;
+  officeDate: string;
+  restaurantId: string;
+  recommendationId: string | null;
+  membershipId: string | null;
+  type: FeedbackType;
+  createdAt: Date;
+}): FeedbackSummary {
+  return {
+    id: feedback.id,
+    groupId: feedback.groupId,
+    officeDate: feedback.officeDate,
+    restaurantId: feedback.restaurantId,
+    ...(feedback.recommendationId ? { recommendationId: feedback.recommendationId } : {}),
+    ...(feedback.membershipId ? { membershipId: feedback.membershipId } : {}),
+    type: feedback.type,
+    createdAt: feedback.createdAt.toISOString()
   };
 }
 
@@ -261,6 +296,35 @@ function recommendationPatch(body: unknown) {
   if (patch.weekdayTags !== undefined) data.weekdayTags = weekdayTagArray(patch.weekdayTags);
   if (patch.moodTags !== undefined) data.moodTags = moodTagArray(patch.moodTags);
   return data;
+}
+
+function invalidFeedbackRequest(): ValidationError {
+  return new ValidationError("invalid_feedback_request", "Feedback request body is invalid");
+}
+
+function createFeedbackBody(body: unknown) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw invalidFeedbackRequest();
+  }
+  const record = body as Record<string, unknown>;
+  if (Object.keys(record).some((field) => !createFeedbackFields.has(field))) {
+    throw invalidFeedbackRequest();
+  }
+  const restaurantId = requiredString(record, "restaurantId");
+  if (!restaurantId) {
+    throw invalidFeedbackRequest();
+  }
+  const recommendationId = optionalString(record.recommendationId) ?? undefined;
+  const type = record.type;
+  if (!feedbackTypes.has(type as FeedbackType)) {
+    throw new ValidationError("invalid_feedback_type", "Feedback type is invalid");
+  }
+  return {
+    officeDate: officeDate(record.officeDate),
+    restaurantId,
+    ...(recommendationId ? { recommendationId } : {}),
+    type: type as FeedbackType
+  };
 }
 
 async function findRestaurantForWrite(groupId: string, restaurantId: string) {
@@ -501,6 +565,60 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
           groupId: request.params.groupId,
           recommendation: toRecommendationSummary(recommendation as RecommendationRow)
         } satisfies RecommendationMutationResponse;
+      } catch (error) {
+        return sendAuthError(reply, error);
+      }
+    }
+  );
+
+  app.post<{ Params: { groupId: string }; Body: CreateGroupFeedbackRequest }>(
+    "/api/groups/:groupId/feedback",
+    async (request, reply) => {
+      try {
+        const membership = await requireActiveMembership({
+          prisma,
+          env,
+          ...membershipAuthInput(request.params.groupId, request.headers.authorization)
+        });
+        const body = createFeedbackBody(request.body);
+        const restaurant = await findRestaurantForWrite(request.params.groupId, body.restaurantId);
+        if (!restaurant) {
+          reply.code(400);
+          return {
+            error: "restaurant_group_mismatch",
+            message: "Restaurant does not belong to route group"
+          };
+        }
+        if (body.recommendationId) {
+          const recommendation = await prisma.recommendation.findFirst({
+            where: {
+              id: body.recommendationId,
+              groupId: request.params.groupId,
+              restaurantId: restaurant.id
+            }
+          });
+          if (!recommendation) {
+            reply.code(400);
+            return {
+              error: "recommendation_group_mismatch",
+              message: "Recommendation does not belong to route group and restaurant"
+            };
+          }
+        }
+        const feedback = await prisma.feedback.create({
+          data: {
+            groupId: request.params.groupId,
+            officeDate: body.officeDate,
+            restaurantId: restaurant.id,
+            recommendationId: body.recommendationId ?? null,
+            membershipId: membership.membershipId,
+            type: body.type
+          }
+        });
+        return {
+          groupId: request.params.groupId,
+          feedback: toFeedbackSummary(feedback as Parameters<typeof toFeedbackSummary>[0])
+        } satisfies CreateGroupFeedbackResponse;
       } catch (error) {
         return sendAuthError(reply, error);
       }

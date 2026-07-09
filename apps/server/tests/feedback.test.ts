@@ -159,4 +159,42 @@ describe("feedback route", () => {
 
     await app.close();
   });
+
+  it("keeps legacy feedback on the default group while group feedback requires group session", async () => {
+    prisma.feedback.create.mockResolvedValue({
+      id: "feedback-legacy",
+      groupId: "seed-group-default",
+      officeDate: "2026-07-09",
+      restaurantId: "restaurant-1",
+      recommendationId: null,
+      type: "avoid"
+    });
+
+    const app = await buildTestApp();
+    const legacy = await app.inject({
+      method: "POST",
+      url: "/api/feedback",
+      headers: { "x-lunch-read-token": "read-token" },
+      payload: {
+        date: "2026-07-09",
+        restaurantId: "restaurant-1",
+        type: "avoid"
+      }
+    });
+    const groupRoute = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { "x-lunch-read-token": "read-token" },
+      payload: {
+        officeDate: "2026-07-09",
+        restaurantId: "restaurant-1",
+        type: "avoid"
+      }
+    });
+
+    expect(legacy.statusCode).toBe(200);
+    expect(groupRoute.statusCode).toBe(401);
+
+    await app.close();
+  });
 });

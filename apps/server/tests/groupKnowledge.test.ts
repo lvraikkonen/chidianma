@@ -112,10 +112,14 @@ const prisma = vi.hoisted(() => {
       })
     },
     recommendation: {
-      findFirst: vi.fn(async ({ where }: { where: { id: string; groupId: string } }) => {
+      findFirst: vi.fn(async ({ where }: { where: { id: string; groupId: string; restaurantId?: string } }) => {
         return (
-          store.recommendations.find((candidate) => candidate.id === where.id && candidate.groupId === where.groupId) ??
-          null
+          store.recommendations.find(
+            (candidate) =>
+              candidate.id === where.id &&
+              candidate.groupId === where.groupId &&
+              (where.restaurantId === undefined || candidate.restaurantId === where.restaurantId)
+          ) ?? null
         );
       }),
       create: vi.fn(async ({ data }: { data: Omit<MockRecommendation, "id" | "createdAt" | "updatedAt"> }) => {
@@ -137,7 +141,11 @@ const prisma = vi.hoisted(() => {
       })
     },
     feedback: {
-      create: vi.fn()
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: "feedback-1",
+        createdAt: new Date("2026-07-09T06:00:00.000Z"),
+        ...data
+      }))
     }
   };
 
@@ -892,6 +900,397 @@ describe("group knowledge recommendation routes", () => {
     expect(patchResponse.statusCode).toBe(401);
     expect(prisma.recommendation.create).not.toHaveBeenCalled();
     expect(prisma.recommendation.update).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+});
+
+describe("group knowledge feedback route", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    prisma.__reset();
+    prisma.__seedMembership({
+      id: "membership-1",
+      groupId: "group-1",
+      identityId: "identity-1",
+      role: "member",
+      status: "active"
+    });
+    prisma.__seedRestaurant(baseRestaurant);
+    prisma.__seedRestaurant({ ...baseRestaurant, id: "restaurant-2", groupId: "group-2", name: "别组餐厅" });
+    prisma.__seedRecommendation({
+      id: "recommendation-1",
+      groupId: "group-1",
+      restaurantId: "restaurant-1",
+      dish: "卤肉饭",
+      reason: "稳定下饭",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: "membership-1",
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+    prisma.__seedRecommendation({
+      id: "recommendation-2",
+      groupId: "group-2",
+      restaurantId: "restaurant-2",
+      dish: null,
+      reason: "别组推荐",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: null,
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+  });
+
+  afterEach(() => {
+    for (const key of Object.keys(env)) {
+      delete process.env[key];
+    }
+  });
+
+  it("writes avoid feedback for the active group without blocking the restaurant", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {
+        officeDate: "2026-07-09",
+        restaurantId: "restaurant-1",
+        recommendationId: "recommendation-1",
+        type: "avoid"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(prisma.feedback.create).toHaveBeenCalledWith({
+      data: {
+        groupId: "group-1",
+        officeDate: "2026-07-09",
+        restaurantId: "restaurant-1",
+        recommendationId: "recommendation-1",
+        membershipId: "membership-1",
+        type: "avoid"
+      }
+    });
+    expect(prisma.restaurant.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "blocked" }) })
+    );
+
+    await app.close();
+  });
+
+  it("rejects feedback for a restaurant from another group", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {
+        officeDate: "2026-07-09",
+        restaurantId: "restaurant-2",
+        type: "skip"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: "restaurant_group_mismatch",
+      message: "Restaurant does not belong to route group"
+    });
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("rejects feedback when recommendation does not belong to the route group or restaurant", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {
+        officeDate: "2026-07-09",
+        restaurantId: "restaurant-1",
+        recommendationId: "recommendation-2",
+        type: "ate"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: "recommendation_group_mismatch",
+      message: "Recommendation does not belong to route group and restaurant"
+    });
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("rejects read-token-only auth on group feedback", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { "x-lunch-read-token": "read-token" },
+      payload: {
+        officeDate: "2026-07-09",
+        restaurantId: "restaurant-1",
+        type: "want"
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+});
+
+describe("group knowledge route auth and validation matrix", () => {
+  const routeCases = [
+    { method: "GET", url: "/api/groups/group-1/restaurants" },
+    { method: "POST", url: "/api/groups/group-1/restaurants", payload: { name: "新餐厅" } },
+    {
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      payload: { restaurantId: "restaurant-1", reason: "推荐" }
+    },
+    {
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      payload: { officeDate: "2026-07-09", restaurantId: "restaurant-1", type: "want" }
+    }
+  ] as const;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    prisma.__reset();
+    prisma.__seedMembership({
+      id: "membership-1",
+      groupId: "group-1",
+      identityId: "identity-1",
+      role: "member",
+      status: "active"
+    });
+    prisma.__seedMembership({
+      id: "membership-removed",
+      groupId: "group-1",
+      identityId: "identity-removed",
+      role: "member",
+      status: "removed"
+    });
+    prisma.__seedMembership({
+      id: "admin-membership",
+      groupId: "group-1",
+      identityId: "identity-admin",
+      role: "admin",
+      status: "active"
+    });
+    prisma.__seedRestaurant(baseRestaurant);
+    prisma.__seedRecommendation({
+      id: "recommendation-1",
+      groupId: "group-1",
+      restaurantId: "restaurant-1",
+      dish: "卤肉饭",
+      reason: "稳定下饭",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: "membership-1",
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+  });
+
+  afterEach(() => {
+    for (const key of Object.keys(env)) {
+      delete process.env[key];
+    }
+  });
+
+  async function injectRoute(
+    app: Awaited<ReturnType<typeof buildTestApp>>,
+    route: (typeof routeCases)[number],
+    headers?: Record<string, string>
+  ) {
+    return app.inject({
+      method: route.method,
+      url: route.url,
+      ...(headers ? { headers } : {}),
+      ...("payload" in route ? { payload: route.payload } : {})
+    });
+  }
+
+  it.each(routeCases)("rejects missing group session for $method $url", async (route) => {
+    const app = await buildTestApp();
+    const response = await injectRoute(app, route);
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: "missing_token" });
+
+    await app.close();
+  });
+
+  it.each(routeCases)("rejects read-token-only auth for $method $url", async (route) => {
+    const app = await buildTestApp();
+    const response = await injectRoute(app, route, { "x-lunch-read-token": "read-token" });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: "missing_token" });
+
+    await app.close();
+  });
+
+  it.each(routeCases)("rejects mismatched group sessions for $method $url", async (route) => {
+    const app = await buildTestApp();
+    const response = await injectRoute(app, route, {
+      authorization: `Bearer ${groupToken({ groupId: "group-2", membershipId: "membership-1" })}`
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: "group_session_mismatch" });
+
+    await app.close();
+  });
+
+  it.each(routeCases)("rejects removed memberships for $method $url", async (route) => {
+    const app = await buildTestApp();
+    const response = await injectRoute(app, route, {
+      authorization: `Bearer ${groupToken({
+        identityId: "identity-removed",
+        membershipId: "membership-removed",
+        role: "member"
+      })}`
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: "active_membership_required" });
+
+    await app.close();
+  });
+
+  it("rejects invalid restaurant body fields before writing", async () => {
+    const app = await buildTestApp();
+
+    const badDistance = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/restaurants",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { name: "坏距离", distanceMinutes: -1 }
+    });
+    const badTags = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/restaurants",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { name: "坏标签", tags: "近" }
+    });
+    const badStatus = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/restaurants/restaurant-1",
+      headers: {
+        authorization: `Bearer ${groupToken({
+          identityId: "identity-admin",
+          membershipId: "admin-membership",
+          role: "admin"
+        })}`
+      },
+      payload: { status: "retired" }
+    });
+
+    expect(badDistance.statusCode).toBe(400);
+    expect(badDistance.json()).toMatchObject({ error: "invalid_distance_minutes" });
+    expect(badTags.statusCode).toBe(400);
+    expect(badTags.json()).toMatchObject({ error: "invalid_tags" });
+    expect(badStatus.statusCode).toBe(400);
+    expect(badStatus.json()).toMatchObject({ error: "invalid_restaurant_status" });
+
+    await app.close();
+  });
+
+  it("rejects invalid recommendation tags and blank reasons before writing", async () => {
+    const app = await buildTestApp();
+
+    const badReason = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { restaurantId: "restaurant-1", reason: "   " }
+    });
+    const badWeather = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { restaurantId: "restaurant-1", reason: "推荐", weatherTags: ["snowy"] }
+    });
+    const badWeekday = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { restaurantId: "restaurant-1", reason: "推荐", weekdayTags: ["sunday"] }
+    });
+
+    expect(badReason.statusCode).toBe(400);
+    expect(badReason.json()).toMatchObject({ error: "recommendation_reason_required" });
+    expect(badWeather.statusCode).toBe(400);
+    expect(badWeather.json()).toMatchObject({ error: "invalid_weather_tags" });
+    expect(badWeekday.statusCode).toBe(400);
+    expect(badWeekday.json()).toMatchObject({ error: "invalid_weekday_tags" });
+
+    await app.close();
+  });
+
+  it("rejects invalid feedback type and malformed office date before writing", async () => {
+    const app = await buildTestApp();
+
+    const badType = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { officeDate: "2026-07-09", restaurantId: "restaurant-1", type: "blocked" }
+    });
+    const badDate = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { officeDate: "07/09/2026", restaurantId: "restaurant-1", type: "want" }
+    });
+
+    expect(badType.statusCode).toBe(400);
+    expect(badType.json()).toMatchObject({ error: "invalid_feedback_type" });
+    expect(badDate.statusCode).toBe(400);
+    expect(badDate.json()).toMatchObject({ error: "invalid_office_date" });
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("rejects unknown feedback fields before writing", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/feedback",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {
+        officeDate: "2026-07-09",
+        restaurantId: "restaurant-1",
+        type: "want",
+        moodTag: "typo"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: "invalid_feedback_request",
+      message: "Feedback request body is invalid"
+    });
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
 
     await app.close();
   });
