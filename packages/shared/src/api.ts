@@ -10,6 +10,7 @@ export const GROUP_ROUTES = {
   todayRecommendations: (groupId: string) => `/api/groups/${groupId}/today-recommendations`,
   refreshTodayRecommendations: (groupId: string) => `/api/groups/${groupId}/today-recommendations/refresh`,
   restaurants: (groupId: string) => `/api/groups/${groupId}/restaurants`,
+  restaurant: (groupId: string, restaurantId: string) => `/api/groups/${groupId}/restaurants/${restaurantId}`,
   recommendations: (groupId: string) => `/api/groups/${groupId}/recommendations`,
   recommendation: (groupId: string, recommendationId: string) =>
     `/api/groups/${groupId}/recommendations/${recommendationId}`,
