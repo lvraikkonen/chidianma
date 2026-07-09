@@ -2,6 +2,7 @@ export interface WeatherSummary {
   temperatureC: number;
   condition: "rainy" | "hot" | "cold" | "clear" | "windy";
   precipitationProbability: number;
+  windLevel?: string | undefined;
   summary: string;
 }
 

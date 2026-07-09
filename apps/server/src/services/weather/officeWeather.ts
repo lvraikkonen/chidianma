@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { AppEnv } from "../../env.js";
 import { DEFAULT_GROUP_ID } from "../groups/defaultGroup.js";
 import type { WeatherSummary } from "./mockWeather.js";
-import { fetchWeatherSummary } from "./openMeteo.js";
+import { fetchWeatherSummary, fetchWeatherSummaryForOffice } from "./openMeteo.js";
 
 export async function getWeatherForOfficeDate(input: {
   prisma: PrismaClient;
@@ -58,15 +58,90 @@ export async function getWeatherForOfficeDate(input: {
   }
 }
 
+export async function getWeatherForGroupOfficeDate(input: {
+  prisma: PrismaClient;
+  env: AppEnv;
+  group: {
+    id: string;
+    officeCity: string;
+    officeLatitude: number;
+    officeLongitude: number;
+    officeTimezone: string;
+  };
+  date: string;
+}): Promise<{
+  weather: WeatherSummary | null;
+  weatherUnavailable: boolean;
+  weatherSnapshotId?: string | undefined;
+}> {
+  const snapshotWhere = {
+    groupId_date_city: {
+      groupId: input.group.id,
+      date: input.date,
+      city: input.group.officeCity
+    }
+  };
+  const existing = await input.prisma.weatherSnapshot.findUnique({ where: snapshotWhere });
+  if (existing) {
+    return {
+      weather: snapshotToWeather(existing),
+      weatherUnavailable: false,
+      weatherSnapshotId: existing.id
+    };
+  }
+
+  try {
+    const weather = await fetchWeatherSummaryForOffice({
+      apiBaseUrl: input.env.WEATHER_API_BASE_URL,
+      latitude: input.group.officeLatitude,
+      longitude: input.group.officeLongitude,
+      timezone: input.group.officeTimezone
+    });
+    const created = await input.prisma.weatherSnapshot.upsert({
+      where: snapshotWhere,
+      create: {
+        groupId: input.group.id,
+        date: input.date,
+        city: input.group.officeCity,
+        temperatureC: weather.temperatureC,
+        condition: weather.condition,
+        precipitationProbability: weather.precipitationProbability,
+        windLevel: weather.windLevel ?? null,
+        rawPayload: { source: "open-meteo" }
+      },
+      update: {}
+    });
+    return {
+      weather: snapshotToWeather(created),
+      weatherUnavailable: false,
+      weatherSnapshotId: created.id
+    };
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const concurrent = await input.prisma.weatherSnapshot.findUnique({ where: snapshotWhere });
+      if (concurrent) {
+        return {
+          weather: snapshotToWeather(concurrent),
+          weatherUnavailable: false,
+          weatherSnapshotId: concurrent.id
+        };
+      }
+    }
+    return { weather: null, weatherUnavailable: true };
+  }
+}
+
 function snapshotToWeather(snapshot: {
   temperatureC: number | null;
   condition: string;
   precipitationProbability: number | null;
+  windLevel?: string | null | undefined;
 }): WeatherSummary {
   return {
     temperatureC: snapshot.temperatureC ?? 20,
     condition: snapshot.condition as WeatherSummary["condition"],
     precipitationProbability: snapshot.precipitationProbability ?? 0,
+    windLevel: snapshot.windLevel ?? undefined,
     summary: weatherSummaryText(snapshot.condition)
   };
 }

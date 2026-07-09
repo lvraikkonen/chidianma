@@ -1,4 +1,9 @@
-import { calculateRestaurantScore, type RecommendationItem } from "@lunch/shared";
+import {
+  calculateRestaurantScore,
+  type RecommendationItem,
+  type ScoreBreakdown,
+  type ScoringWeightsSnapshot
+} from "@lunch/shared";
 
 export interface Candidate {
   restaurantId: string;
@@ -16,11 +21,13 @@ export interface Candidate {
 
 export interface RankedRecommendation extends RecommendationItem {
   score: number;
+  scoreBreakdown: ScoreBreakdown;
 }
 
 export function rankRestaurantCandidates(input: {
   candidates: Candidate[];
   limit: number;
+  weights?: ScoringWeightsSnapshot | undefined;
 }): RankedRecommendation[] {
   const ranked = input.candidates
     .map((candidate) => {
@@ -30,7 +37,8 @@ export function rankRestaurantCandidates(input: {
         distanceMinutes: candidate.distanceMinutes,
         teammateRecommendationCount: candidate.teammateRecommendationCount,
         recentlyRecommended: candidate.recentlyRecommended,
-        negativeFeedbackCount: candidate.negativeFeedbackCount
+        negativeFeedbackCount: candidate.negativeFeedbackCount,
+        weights: input.weights
       });
 
       return {
@@ -41,7 +49,8 @@ export function rankRestaurantCandidates(input: {
         reason: result.reasons.length ? result.reasons.join("，") : "今天也适合来点稳妥的。",
         distanceMinutes: candidate.distanceMinutes,
         tags: candidate.tags,
-        score: result.score
+        score: result.score,
+        scoreBreakdown: result.breakdown
       };
     })
     .sort((a, b) => b.score - a.score);

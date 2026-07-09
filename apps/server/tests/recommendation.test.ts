@@ -65,7 +65,16 @@ describe("rankRestaurantCandidates", () => {
     expect(ranked[0]).toMatchObject({
       restaurantName: "拉面小馆",
       dish: "叉烧拉面",
-      distanceMinutes: 8
+      distanceMinutes: 8,
+      scoreBreakdown: {
+        weekdayMatch: 20,
+        weatherMatch: 25,
+        distance: 20,
+        teammateRecommendation: 10,
+        recentDuplicatePenalty: 0,
+        negativeFeedbackPenalty: 0,
+        total: 75
+      }
     });
     expect(ranked[0]?.reason).toContain("适合今天");
   });
@@ -270,6 +279,11 @@ describe("getTodayRecommendations", () => {
           reason: "离办公室近"
         })
       ]
+    });
+    expect(response.items[0]).toMatchObject({
+      restaurantId: "restaurant-3",
+      recommendationId: "recommendation-3",
+      tags: ["近", "热乎"]
     });
   });
 });

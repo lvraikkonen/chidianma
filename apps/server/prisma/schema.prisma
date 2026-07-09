@@ -282,6 +282,8 @@ model DailyRecommendationBatch {
   weatherSnapshotId       String?                   @map("weather_snapshot_id")
   scoringWeightsSnapshot  Json                      @map("scoring_weights_snapshot")
   algorithmVersion        String                    @map("algorithm_version")
+  /// One current batch per group office date is enforced by SQL partial unique index
+  /// daily_recommendation_batches_one_current_key because Prisma cannot model it.
   isCurrent               Boolean                   @default(true) @map("is_current")
   createdAt               DateTime                  @default(now()) @map("created_at")
   group                   LunchGroup                @relation(fields: [groupId], references: [id])
