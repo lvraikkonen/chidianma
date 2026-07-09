@@ -349,8 +349,9 @@ function isRetryableTransactionError(error: unknown): boolean {
   if (details.includes("daily_recommendation_batches_one_current_key")) return true;
   if (details.includes("daily_recommendation_batches_group_id_office_date_batch_no_key")) return true;
 
-  const normalized = details.replaceAll("Id", "_id").replaceAll("No", "_no").toLowerCase();
-  return normalized.includes("group_id")
-    && normalized.includes("office_date")
-    && normalized.includes("batch_no");
+  const normalizedTarget = (Array.isArray(target) ? target : [target])
+    .map((part) => String(part ?? "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase())
+    .join(" ");
+  return normalizedTarget.includes("groupid")
+    && normalizedTarget.includes("officedate");
 }

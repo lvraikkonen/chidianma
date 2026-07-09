@@ -168,6 +168,38 @@ describe("group today recommendation service", () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ["camelCase current-batch target", ["groupId", "officeDate"]],
+    ["snake_case current-batch target", ["group_id", "office_date"]],
+    ["camelCase batch-number target", ["groupId", "officeDate", "batchNo"]],
+    ["snake_case batch-number target", ["group_id", "office_date", "batch_no"]]
+  ])("retries refresh for %s", async (_label, target) => {
+    const prisma = buildPrismaForRefreshTest();
+    const conflict = Object.assign(new Error("unique constraint conflict"), {
+      code: "P2002",
+      clientVersion: "6.1.0",
+      meta: { target }
+    });
+    prisma.$transaction
+      .mockRejectedValueOnce(conflict)
+      .mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma));
+
+    const response = await refreshGroupTodayRecommendations({
+      prisma: prisma as unknown as PrismaClient,
+      env,
+      groupId: "group-1",
+      membership: {
+        identityId: "identity-1",
+        groupId: "group-1",
+        membershipId: "membership-1",
+        role: "member"
+      }
+    });
+
+    expect(response.batchNo).toBe(1);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
   it("uses weatherMatch 0 when weather is unavailable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     const prisma = buildPrismaForRefreshTest({ weatherSnapshot: null });

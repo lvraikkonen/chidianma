@@ -120,7 +120,7 @@ export async function getTodayRecommendations(input: {
           headline: LUNCH_HEADLINE,
           weatherSummary,
           weatherUnavailable: weatherResult.weatherUnavailable,
-          items: ranked.map(({ score: _score, ...item }) => item)
+          items: ranked.map(({ score: _score, scoreBreakdown: _scoreBreakdown, ...item }) => item)
         };
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable

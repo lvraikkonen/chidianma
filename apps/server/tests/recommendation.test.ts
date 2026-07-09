@@ -218,9 +218,13 @@ describe("getTodayRecommendations", () => {
       ]
     });
     expect(response.items).toHaveLength(1);
-    expect(response.items[0]).toMatchObject({
+    expect(response.items[0]).toEqual({
       restaurantId: "restaurant-2",
       recommendationId: "recommendation-2",
+      restaurantName: "米饭小馆",
+      dish: "卤肉饭",
+      reason: "适合今天，适合当前天气，离办公室近",
+      distanceMinutes: 7,
       tags: ["近", "下饭"]
     });
   });
