@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { hashInviteCode } from "../src/services/groups/inviteCodes.js";
 
 const prisma = new PrismaClient();
 
@@ -73,16 +74,64 @@ const restaurants = [
 ];
 
 async function main() {
+  const now = new Date();
+  const defaultIdentity = await prisma.identity.upsert({
+    where: { id: "seed-identity-admin" },
+    update: { displayName: "Demo 同事", lastSeenAt: now },
+    create: { id: "seed-identity-admin", displayName: "Demo 同事", lastSeenAt: now }
+  });
+
+  const defaultGroup = await prisma.lunchGroup.upsert({
+    where: { id: "seed-group-default" },
+    update: {},
+    create: {
+      id: "seed-group-default",
+      name: "Dev团队",
+      subtitle: "干饭小分队",
+      inviteCodeHash: hashInviteCode("LUNCH-2026AA", process.env.SESSION_SECRET ?? "dev-session-secret"),
+      createdByIdentityId: defaultIdentity.id,
+      officeTimezone: process.env.OFFICE_TIMEZONE ?? "Asia/Shanghai",
+      officeCity: process.env.OFFICE_CITY ?? "Shanghai",
+      officeLatitude: Number(process.env.OFFICE_LATITUDE ?? 31.2304),
+      officeLongitude: Number(process.env.OFFICE_LONGITUDE ?? 121.4737)
+    }
+  });
+
+  const defaultMembership = await prisma.groupMembership.upsert({
+    where: { id: "seed-membership-admin" },
+    update: { role: "admin", status: "active", removedAt: null },
+    create: {
+      id: "seed-membership-admin",
+      groupId: defaultGroup.id,
+      identityId: defaultIdentity.id,
+      role: "admin",
+      status: "active"
+    }
+  });
+
+  await prisma.groupSettings.upsert({
+    where: { groupId: defaultGroup.id },
+    update: { notificationGroupLabel: defaultGroup.name },
+    create: { groupId: defaultGroup.id, notificationGroupLabel: defaultGroup.name }
+  });
+
+  await prisma.scoringWeights.upsert({
+    where: { groupId: defaultGroup.id },
+    update: {},
+    create: { groupId: defaultGroup.id }
+  });
+
   const teammate = await prisma.teammate.upsert({
     where: { name: "Demo 同事" },
-    update: { lastSeenAt: new Date() },
-    create: { name: "Demo 同事", lastSeenAt: new Date() }
+    update: { lastSeenAt: now },
+    create: { name: "Demo 同事", lastSeenAt: now }
   });
 
   for (const item of restaurants) {
     const restaurant = await prisma.restaurant.upsert({
       where: { name: item.name },
       update: {
+        groupId: defaultGroup.id,
         area: item.area,
         address: item.address,
         distanceMinutes: item.distanceMinutes,
@@ -91,9 +140,11 @@ async function main() {
         supportsDineIn: true,
         supportsTakeout: true,
         tags: item.tags,
-        status: "active"
+        status: "active",
+        createdByMembershipId: defaultMembership.id
       },
       create: {
+        groupId: defaultGroup.id,
         name: item.name,
         area: item.area,
         address: item.address,
@@ -103,29 +154,40 @@ async function main() {
         supportsDineIn: true,
         supportsTakeout: true,
         tags: item.tags,
-        status: "active"
+        status: "active",
+        createdByMembershipId: defaultMembership.id
       }
     });
 
     const existingRecommendation = await prisma.recommendation.findFirst({
       where: {
+        groupId: defaultGroup.id,
         restaurantId: restaurant.id,
         teammateId: teammate.id,
         dish: item.dish
       }
     });
 
-    if (!existingRecommendation) {
+    const recommendationData = {
+      groupId: defaultGroup.id,
+      restaurantId: restaurant.id,
+      teammateId: teammate.id,
+      createdByMembershipId: defaultMembership.id,
+      dish: item.dish,
+      reason: item.reason,
+      weatherTags: item.tags.includes("雨天") ? ["rainy"] : item.tags.includes("清爽") ? ["hot"] : [],
+      weekdayTags: item.tags.includes("周五") ? ["friday"] : [],
+      moodTags: item.tags
+    };
+
+    if (existingRecommendation) {
+      await prisma.recommendation.update({
+        where: { id: existingRecommendation.id },
+        data: recommendationData
+      });
+    } else {
       await prisma.recommendation.create({
-        data: {
-          restaurantId: restaurant.id,
-          teammateId: teammate.id,
-          dish: item.dish,
-          reason: item.reason,
-          weatherTags: item.tags.includes("雨天") ? ["rainy"] : item.tags.includes("清爽") ? ["hot"] : [],
-          weekdayTags: item.tags.includes("周五") ? ["friday"] : [],
-          moodTags: item.tags
-        }
+        data: recommendationData
       });
     }
   }

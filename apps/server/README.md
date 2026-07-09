@@ -32,3 +32,18 @@ Migration command for deploy:
 ```bash
 pnpm --filter @lunch/server exec prisma migrate deploy
 ```
+
+## Multi-Group Foundation
+
+The multi-group foundation migrates old single-team data into a default group:
+
+- group name: `Dev团队`
+- group subtitle: `干饭小分队`
+- legacy daily recommendation rows keep `groupId` for compatibility during the foundation slice
+- later recommendation-batch migration copies legacy rows into `daily_recommendation_batches/items`
+- copied legacy batch source: `legacy`
+- copied legacy algorithm version: `legacy-v1`
+- legacy feedback type `blocked` is migrated to member feedback type `avoid`
+- migration SQL must backfill legacy `group_id` values before setting `group_id NOT NULL`
+
+New `/api/groups/:groupId/*` routes require group session tokens. `EXTENSION_READ_TOKEN` is retained only for legacy read compatibility and readiness/debug use.
