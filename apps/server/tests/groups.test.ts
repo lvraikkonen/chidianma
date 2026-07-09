@@ -857,9 +857,23 @@ describe("group routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
-    expect(String(prisma.$queryRaw.mock.calls[0]?.[0])).toContain("FOR UPDATE");
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    const targetLockSql = String(prisma.$queryRaw.mock.calls[0]?.[0]);
+    expect(targetLockSql).toContain('FROM "group_memberships"');
+    expect(targetLockSql).toContain('WHERE "id" =');
+    expect(targetLockSql).toContain("FOR UPDATE");
+
+    const activeAdminLockSql = String(prisma.$queryRaw.mock.calls[1]?.[0]);
+    expect(activeAdminLockSql).toContain('FROM "group_memberships"');
+    expect(activeAdminLockSql).toContain('WHERE "group_id" =');
+    expect(activeAdminLockSql).toContain(`AND "role" = 'admin'`);
+    expect(activeAdminLockSql).toContain(`AND "status" = 'active'`);
+    expect(activeAdminLockSql).toContain("FOR UPDATE");
+
     expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.$queryRaw.mock.invocationCallOrder[1]
+    );
+    expect(prisma.$queryRaw.mock.invocationCallOrder[1]).toBeLessThan(
       prisma.groupMembership.update.mock.invocationCallOrder[0]
     );
   });

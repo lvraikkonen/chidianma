@@ -278,6 +278,12 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
       });
 
       const updated = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`
+          SELECT "id"
+          FROM "group_memberships"
+          WHERE "id" = ${request.params.membershipId}
+          FOR UPDATE
+        `;
         const target = await tx.groupMembership.findUnique({ where: { id: request.params.membershipId } });
         if (!target || target.groupId !== request.params.groupId) {
           return null;
