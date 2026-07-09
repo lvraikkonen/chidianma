@@ -231,6 +231,7 @@ describe("admin routes", () => {
     expect(restaurant.statusCode).toBe(200);
     expect(prisma.restaurant.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
+        groupId: "seed-group-default",
         name: "米饭小馆",
         tags: ["新推荐"],
         status: "active"
@@ -239,6 +240,7 @@ describe("admin routes", () => {
     expect(recommendation.statusCode).toBe(200);
     expect(prisma.recommendation.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
+        groupId: "seed-group-default",
         restaurantId: "restaurant-1",
         teammateId: "teammate-1",
         reason: "稳定下饭"
