@@ -1,6 +1,6 @@
 # Subagent Model Policy Design
 
-**Date:** 2026-07-09  
+**Date:** 2026-07-09
 **Status:** Approved design, pending implementation
 
 ## Context
