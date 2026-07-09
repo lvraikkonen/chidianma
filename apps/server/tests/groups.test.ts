@@ -32,6 +32,7 @@ type MockGroupMembership = {
   role: GroupRole;
   status: MembershipStatus;
   joinedAt: Date;
+  removedAt?: Date | null;
   group?: MockLunchGroup;
 };
 
@@ -135,7 +136,27 @@ const prisma = vi.hoisted(() => {
           return membership ? includeGroup(membership) : null;
         }
       ),
-      count: vi.fn()
+      count: vi.fn(async ({ where }: { where: Partial<MockGroupMembership> }) => {
+        return store.memberships.filter((membership) => {
+          return Object.entries(where).every(([key, value]) => membership[key as keyof MockGroupMembership] === value);
+        }).length;
+      }),
+      update: vi.fn(
+        async ({
+          where,
+          data
+        }: {
+          where: { id: string };
+          data: { role?: GroupRole; status?: MembershipStatus; removedAt?: Date | null };
+        }) => {
+          const membership = store.memberships.find((candidate) => candidate.id === where.id);
+          if (!membership) {
+            throw new Error(`Missing membership ${where.id}`);
+          }
+          Object.assign(membership, data);
+          return includeGroup(membership);
+        }
+      )
     },
     groupSettings: {
       create: vi.fn(async ({ data }: { data: { groupId: string; notificationGroupLabel: string } }) => data)
@@ -672,5 +693,178 @@ describe("group routes", () => {
 
     expect(joinAgain.statusCode).toBe(403);
     expect(joinAgain.json().error).toBe("removed_member");
+  });
+
+  it("rejects removing or downgrading the last active admin", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+      headers: { authorization: `Bearer ${created.groupSessionToken}` },
+      payload: { role: "member" }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("last_admin");
+  });
+
+  it("returns 403 when a non-admin patches members", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+    const joined = (await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      payload: { displayName: "成员", inviteCode: created.inviteCode }
+    })).json();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+      headers: { authorization: `Bearer ${joined.groupSessionToken}` },
+      payload: { role: "member" }
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toBe("admin_membership_required");
+  });
+
+  it("does not allow a removed membership to rejoin with the same identity token", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+    const joined = (await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      payload: { displayName: "成员", inviteCode: created.inviteCode }
+    })).json();
+
+    const remove = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${joined.group.membershipId}`,
+      headers: { authorization: `Bearer ${created.groupSessionToken}` },
+      payload: { status: "removed" }
+    });
+    expect(remove.statusCode).toBe(200);
+
+    const rejoin = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      headers: { authorization: `Bearer ${joined.identityToken}` },
+      payload: { inviteCode: created.inviteCode }
+    });
+    expect(rejoin.statusCode).toBe(403);
+    expect(rejoin.json().error).toBe("removed_member");
+
+    const session = await app.inject({
+      method: "POST",
+      url: `/api/groups/${created.group.groupId}/session`,
+      headers: { authorization: `Bearer ${joined.identityToken}` }
+    });
+    expect(session.statusCode).toBe(403);
+    expect(session.json().error).toBe("active_membership_required");
+  });
+
+  it("does not trust stale admin role in an old group session token", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+    const oldAdminSession = created.groupSessionToken;
+    const joined = (await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      payload: { displayName: "成员", inviteCode: created.inviteCode }
+    })).json();
+
+    const promote = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${joined.group.membershipId}`,
+      headers: { authorization: `Bearer ${created.groupSessionToken}` },
+      payload: { role: "admin" }
+    });
+    expect(promote.statusCode).toBe(200);
+
+    const refreshedMemberSession = await app.inject({
+      method: "POST",
+      url: `/api/groups/${created.group.groupId}/session`,
+      headers: { authorization: `Bearer ${joined.identityToken}` }
+    });
+    expect(refreshedMemberSession.statusCode).toBe(200);
+
+    const downgradeOriginalAdmin = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+      headers: { authorization: `Bearer ${refreshedMemberSession.json().groupSessionToken}` },
+      payload: { role: "member" }
+    });
+    expect(downgradeOriginalAdmin.statusCode).toBe(200);
+
+    const staleAdminAttempt = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${joined.group.membershipId}`,
+      headers: { authorization: `Bearer ${oldAdminSession}` },
+      payload: { role: "member" }
+    });
+    expect(staleAdminAttempt.statusCode).toBe(403);
+    expect(staleAdminAttempt.json().error).toBe("admin_membership_required");
+  });
+
+  it("returns 401 for expired group session tokens on group-scoped routes", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+    const expiredGroupSessionToken = signGroupSessionToken(
+      {
+        identityId: "identity-expired",
+        groupId: created.group.groupId,
+        membershipId: created.group.membershipId,
+        role: "admin",
+        exp: Date.now() - 1_000
+      },
+      "session-secret"
+    );
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+      headers: { authorization: `Bearer ${expiredGroupSessionToken}` },
+      payload: { role: "member" }
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("expired_token");
+  });
+
+  it("does not accept EXTENSION_READ_TOKEN on new group routes", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/groups/${created.group.groupId}/members/${created.group.membershipId}`,
+      headers: { "x-lunch-read-token": "read-token" },
+      payload: { role: "member" }
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("missing_token");
   });
 });

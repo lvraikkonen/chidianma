@@ -5,6 +5,7 @@ import { prisma } from "../plugins/prisma.js";
 import { AuthError } from "../services/auth/errors.js";
 import { addDays, signGroupSessionToken, signIdentityToken, verifyIdentityToken } from "../services/auth/tokens.js";
 import { generateInviteCode, hashInviteCode, verifyInviteCode } from "../services/groups/inviteCodes.js";
+import { assertNotLastActiveAdmin, requireActiveMembership } from "../services/groups/memberships.js";
 
 function bearerToken(authorization?: string): string {
   return authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
@@ -248,6 +249,53 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
         env
       });
       return { ...tokens, group: groupSummary(membership) } satisfies GroupSessionResponse;
+    } catch (error) {
+      return authErrorResponse(reply, error);
+    }
+  });
+
+  app.patch<{
+    Params: { groupId: string; membershipId: string };
+    Body: { role?: "admin" | "member"; status?: "active" | "removed" };
+  }>("/api/groups/:groupId/members/:membershipId", async (request, reply) => {
+    try {
+      const body = request.body ?? {};
+      if (body.role && body.role !== "admin" && body.role !== "member") {
+        reply.code(400);
+        return { error: "invalid_member_role", message: "Role must be admin or member" };
+      }
+      if (body.status && body.status !== "active" && body.status !== "removed") {
+        reply.code(400);
+        return { error: "invalid_membership_status", message: "Status must be active or removed" };
+      }
+
+      await requireActiveMembership({
+        prisma,
+        env,
+        groupId: request.params.groupId,
+        ...(request.headers.authorization ? { authorization: request.headers.authorization } : {}),
+        requiredRole: "admin"
+      });
+
+      const target = await prisma.groupMembership.findUnique({ where: { id: request.params.membershipId } });
+      if (!target || target.groupId !== request.params.groupId) {
+        reply.code(404);
+        return { error: "member_not_found", message: "Member not found" };
+      }
+
+      if ((body.role === "member" || body.status === "removed") && target.role === "admin") {
+        await assertNotLastActiveAdmin({ prisma, groupId: request.params.groupId, membershipId: target.id });
+      }
+
+      return prisma.groupMembership.update({
+        where: { id: target.id },
+        data: {
+          ...(body.role ? { role: body.role } : {}),
+          ...(body.status
+            ? { status: body.status, removedAt: body.status === "removed" ? new Date() : null }
+            : {})
+        }
+      });
     } catch (error) {
       return authErrorResponse(reply, error);
     }

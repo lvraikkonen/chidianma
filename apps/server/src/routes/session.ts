@@ -5,6 +5,7 @@ import { signSessionToken } from "../services/auth/sessionToken.js";
 
 export async function registerSessionRoutes(app: FastifyInstance, env: AppEnv) {
   app.post<{ Body: { inviteCode: string; name: string } }>("/api/session", async (request, reply) => {
+    // Keep this route as legacy compatibility until admin is rewired to group sessions.
     if (request.body.inviteCode !== env.TEAM_INVITE_CODE) {
       reply.code(401);
       return { error: "Invalid invite code" };
