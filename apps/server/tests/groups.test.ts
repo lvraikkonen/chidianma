@@ -502,6 +502,80 @@ describe("group routes", () => {
     expect(response.json().error).toBe("expired_token");
   });
 
+  it("rejects a group session token when listing groups with an identity token", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${created.groupSessionToken}` }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("invalid_token");
+  });
+
+  it("rejects a group session token when creating a group with an identity token", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${created.groupSessionToken}` },
+      payload: { groupName: "夜宵组" }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("invalid_token");
+  });
+
+  it("rejects a group session token when joining a group with an identity token", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      headers: { authorization: `Bearer ${created.groupSessionToken}` },
+      payload: { inviteCode: created.inviteCode }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("invalid_token");
+  });
+
+  it("rejects a group session token when exchanging an identity token for a group session", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/groups/${created.group.groupId}/session`,
+      headers: { authorization: `Bearer ${created.groupSessionToken}` }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("invalid_token");
+  });
+
   it("joins a group with invite code and exchanges identity token for group session", async () => {
     const app = await buildApp();
     const created = (await app.inject({

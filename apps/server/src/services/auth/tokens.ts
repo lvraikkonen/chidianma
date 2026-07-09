@@ -69,6 +69,10 @@ function assertGroupRole(value: unknown): asserts value is GroupRole {
   }
 }
 
+function hasClaim(claims: object, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(claims, field);
+}
+
 export function signIdentityToken(claims: IdentityTokenClaims, secret: string): string {
   return signPayload(claims, secret);
 }
@@ -76,6 +80,9 @@ export function signIdentityToken(claims: IdentityTokenClaims, secret: string): 
 export function verifyIdentityToken(token: string, secret: string): IdentityTokenClaims {
   const claims = verifyPayload<IdentityTokenClaims>(token, secret);
   assertString(claims.identityId, "identityId");
+  if (hasClaim(claims, "groupId") || hasClaim(claims, "membershipId") || hasClaim(claims, "role")) {
+    throw new AuthError("unauthorized", "invalid_token", "Invalid identity token");
+  }
   return claims;
 }
 

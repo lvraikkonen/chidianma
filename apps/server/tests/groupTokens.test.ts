@@ -91,6 +91,21 @@ describe("multi-group signed tokens", () => {
     expectAuthError(() => verifyIdentityToken(malformed, "session-secret"), "unauthorized", "invalid_token");
   });
 
+  it("rejects signed group session tokens as identity tokens", () => {
+    const groupSessionToken = signGroupSessionToken(
+      {
+        identityId: "identity-1",
+        groupId: "group-1",
+        membershipId: "membership-1",
+        role: "member",
+        exp: Date.now() + 60_000
+      },
+      "session-secret"
+    );
+
+    expectAuthError(() => verifyIdentityToken(groupSessionToken, "session-secret"), "unauthorized", "invalid_token");
+  });
+
   it("rejects extra token segments with a stable invalid-token error", () => {
     const token = signGroupSessionToken(
       {
