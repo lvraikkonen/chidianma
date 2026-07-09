@@ -31,8 +31,8 @@ extension smoke testing.
 | Stage | Name | Status | Detailed Plan | Primary Outcome |
 | --- | --- | --- | --- | --- |
 | Stage 1 | Multi-Group Foundation | Done | [`plans/2026-07-08-multi-group-foundation-stage1.md`](plans/2026-07-08-multi-group-foundation-stage1.md) | Identity, groups, memberships, sessions, invites, permissions, migration foundation |
-| Stage 2 | Group-Scoped Restaurant Knowledge | Approved for Execution | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
-| Stage 3 | Today Recommendation Batch + Participation | Not Started | Write after Stage 2 | Core lunch loop plus minimal extension auth/storage/API client |
+| Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
+| Stage 3 | Today Recommendation Batch + Participation | Approved for Execution | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md) | Core lunch loop plus minimal extension auth/storage/API client |
 | Stage 4 | Prototype UI Wiring | Not Started | Write after Stage 3 | Extension and admin prototype screens connect to real Stage 1-3 APIs |
 | Stage 5 | Dashboard / Settings / Weights | Not Started | Write after Stage 4 | Historical review, dashboard metrics, member contribution, reminders, weights |
 | Stage 6 | Deploy Hardening | Not Started | Write after Stage 5 | Production hosting, migration verification, extension smoke test, Railway checks |
@@ -97,7 +97,7 @@ existing MVP legacy routes working.
 
 ## Stage 2: Group-Scoped Restaurant Knowledge
 
-**Status:** Approved for Execution.
+**Status:** Done per Stage 2 implementation handoff.
 
 **Detailed plan:** [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md)
 
@@ -119,7 +119,9 @@ without leaking or mutating another group's data.
 
 ## Stage 3: Today Recommendation Batch + Participation
 
-**Status:** Not Started.
+**Status:** Approved for Execution.
+
+**Detailed plan:** [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md)
 
 **Goal:** Restore and upgrade the core lunch decision loop on top of the
 multi-group foundation.
@@ -211,8 +213,8 @@ extension handoff.
 - [x] Stage 1 approved for execution.
 - [x] Stage 1 implemented and verified.
 - [x] Stage 2 detailed implementation plan written.
-- [ ] Stage 2 implemented and verified.
-- [ ] Stage 3 detailed implementation plan written.
+- [x] Stage 2 implemented and verified.
+- [x] Stage 3 detailed implementation plan written.
 - [ ] Stage 3 implemented and verified.
 - [ ] Stage 4 detailed implementation plan written.
 - [ ] Stage 4 implemented and verified.

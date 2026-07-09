@@ -28,18 +28,6 @@ Responsibilities:
 - Update relevant documentation after implementation.
 - Summarize changed files, tests added, tests run, and known issues before handoff.
 
-### Codex Subagent Model Requirement
-
-When Codex or Superpowers creates any subagent, the subagent must use GPT-5.5.
-
-This is a hard project rule.
-
-- Do not create Codex subagents with any model other than GPT-5.5.
-- Do not substitute GPT-4.x, GPT-5, GPT-5 mini, Claude, Gemini, local models, or any other model.
-- Do not silently fall back to another model.
-- If the tool cannot explicitly enforce GPT-5.5 for a subagent, do not create that subagent. Document the limitation and continue with a non-subagent workflow or ask for review.
-- This applies to implementation, testing, code review, research, QA, refactoring, and plan execution subagents.
-
 ## Claude Code / gstack Role
 
 Claude Code with gstack is primarily used for:
@@ -51,8 +39,6 @@ Claude Code with gstack is primarily used for:
 - Documentation review
 
 Claude Code / gstack may propose implementation changes, but major behavior changes must be reflected in specs and plans before coding.
-
-Claude Code / gstack should also verify that any Codex handoff or implementation report involving subagents confirms the GPT-5.5-only subagent rule.
 
 ## Source of Truth
 
@@ -185,4 +171,3 @@ If a Superpowers skill suggests a default path such as `docs/superpowers/specs/`
 - Do not embed `TEAM_INVITE_CODE` in frontend bundles.
 - Do not treat `EXTENSION_READ_TOKEN` as strong security.
 - Do not make product direction changes during implementation without updating specs and plans.
-- Do not create Codex subagents with any model other than GPT-5.5.
