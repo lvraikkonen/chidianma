@@ -9,6 +9,7 @@ export const GROUP_ROUTES = {
   groupSession: (groupId: string) => `/api/groups/${groupId}/session`,
   todayRecommendations: (groupId: string) => `/api/groups/${groupId}/today-recommendations`,
   refreshTodayRecommendations: (groupId: string) => `/api/groups/${groupId}/today-recommendations/refresh`,
+  participationToday: (groupId: string) => `/api/groups/${groupId}/participation/today`,
   restaurants: (groupId: string) => `/api/groups/${groupId}/restaurants`,
   restaurant: (groupId: string, restaurantId: string) => `/api/groups/${groupId}/restaurants/${restaurantId}`,
   recommendations: (groupId: string) => `/api/groups/${groupId}/recommendations`,

@@ -75,6 +75,97 @@ export interface TodayRecommendationResponse {
   items: RecommendationItem[];
 }
 
+export type RecommendationBatchSource = "auto" | "manual" | "legacy";
+export type ParticipationStatus = "undecided" | "joining" | "away" | "decided";
+
+export interface ScoringWeightsSnapshot {
+  weekdayMatch: number;
+  weatherMatch: number;
+  distance: number;
+  teammateRecommendation: number;
+  recentDuplicatePenalty: number;
+  negativeFeedbackPenalty: number;
+}
+
+export interface ScoreBreakdown {
+  weekdayMatch: number;
+  weatherMatch: number;
+  distance: number;
+  teammateRecommendation: number;
+  recentDuplicatePenalty: number;
+  negativeFeedbackPenalty: number;
+  total: number;
+}
+
+export interface WeatherSummary {
+  city: string;
+  condition: WeatherTag | string;
+  temperatureC?: number | undefined;
+  precipitationProbability?: number | undefined;
+  windLevel?: string | undefined;
+  summary: string;
+}
+
+export interface GroupTodayRecommendationItem extends RecommendationItem {
+  rank: number;
+  priceBand?: string | undefined;
+  averagePriceCents?: number | undefined;
+  supportsDineIn?: boolean | undefined;
+  supportsTakeout?: boolean | undefined;
+  score: number;
+  scoreBreakdown: ScoreBreakdown;
+}
+
+export interface ParticipationSummary {
+  joiningCount: number;
+  decidedCount: number;
+  awayCount: number;
+  undecidedCount: number;
+}
+
+export interface GroupTodayRecommendationsResponse {
+  groupId: string;
+  officeDate: string;
+  batchId: string;
+  batchNo: number;
+  generatedAt: string;
+  weather?: WeatherSummary | undefined;
+  weatherUnavailable?: boolean | undefined;
+  participationSummary: ParticipationSummary;
+  items: GroupTodayRecommendationItem[];
+  fromCache?: boolean | undefined;
+}
+
+export interface ParticipationMember {
+  membershipId: string;
+  displayName: string;
+  status: ParticipationStatus;
+  restaurantId?: string | undefined;
+  recommendationId?: string | undefined;
+  decidedAt?: string | undefined;
+  updatedAt?: string | undefined;
+}
+
+export interface ParticipationTodayResponse {
+  groupId: string;
+  officeDate: string;
+  members: ParticipationMember[];
+  summary: ParticipationSummary;
+}
+
+export interface PutParticipationTodayRequest {
+  status: ParticipationStatus;
+  restaurantId?: string | undefined;
+  recommendationId?: string | undefined;
+}
+
+export interface PutParticipationTodayResponse {
+  groupId: string;
+  officeDate: string;
+  participation: ParticipationMember;
+  summary: ParticipationSummary;
+}
+
 export interface RecommendationSummary {
   id: string;
   groupId: string;

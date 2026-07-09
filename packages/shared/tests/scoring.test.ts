@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { calculateRestaurantScore } from "../src/scoring";
+import {
+  DEFAULT_GROUP_SCORING_WEIGHTS,
+  LEGACY_SCORING_WEIGHTS,
+  calculateRestaurantScore
+} from "../src/scoring";
 
 describe("calculateRestaurantScore", () => {
   it("rewards weekday, weather, distance, and teammate recommendations", () => {
@@ -34,5 +38,37 @@ describe("calculateRestaurantScore", () => {
     expect(result.score).toBe(-45);
     expect(result.reasons).toContain("最近推荐过，降权");
     expect(result.reasons).toContain("有人不想吃，降权");
+  });
+
+  it("supports explicit scoring weights and returns a numeric breakdown", () => {
+    const result = calculateRestaurantScore({
+      weekdayMatch: 1,
+      weatherMatch: 0,
+      distanceMinutes: 8,
+      teammateRecommendationCount: 2,
+      recentlyRecommended: true,
+      negativeFeedbackCount: 1,
+      weights: {
+        weekdayMatch: 30,
+        weatherMatch: 40,
+        distance: 12,
+        teammateRecommendation: 8,
+        recentDuplicatePenalty: 5,
+        negativeFeedbackPenalty: 7
+      }
+    });
+
+    expect(LEGACY_SCORING_WEIGHTS.recentDuplicatePenalty).toBe(25);
+    expect(DEFAULT_GROUP_SCORING_WEIGHTS.recentDuplicatePenalty).toBe(12);
+    expect(result.score).toBe(38);
+    expect(result.breakdown).toEqual({
+      weekdayMatch: 30,
+      weatherMatch: 0,
+      distance: 12,
+      teammateRecommendation: 8,
+      recentDuplicatePenalty: -5,
+      negativeFeedbackPenalty: -7,
+      total: 38
+    });
   });
 });
