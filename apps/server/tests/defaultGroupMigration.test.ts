@@ -42,6 +42,19 @@ describe("default group migration", () => {
     expect(seed).toMatch(/groupId:\s*defaultGroup\.id/g);
   });
 
+  it("updates the migrated default group placeholder invite hash during dev seed", () => {
+    const seedPath = join(process.cwd(), "prisma", "seed.ts");
+    const seed = readFileSync(seedPath, "utf8");
+
+    expect(seed).toContain('const defaultInviteCodeHash = hashInviteCode("LUNCH-2026AA"');
+    expect(seed).not.toContain('where: { id: "seed-group-default" },\n    update: {},');
+    expect(seed).toMatch(
+      /prisma\.lunchGroup\.upsert\(\{[\s\S]*where:\s*\{\s*id:\s*"seed-group-default"\s*\}[\s\S]*update:\s*\{[\s\S]*inviteCodeHash:\s*defaultInviteCodeHash/
+    );
+    expect(seed).toMatch(/update:\s*\{[\s\S]*name:\s*"Dev团队"[\s\S]*subtitle:\s*"干饭小分队"/);
+    expect(seed).toMatch(/update:\s*\{[\s\S]*officeTimezone:\s*defaultOfficeTimezone/);
+  });
+
   it("does not upsert restaurants by non-unique global name in the dev seed", () => {
     const seedPath = join(process.cwd(), "prisma", "seed.ts");
     const seed = readFileSync(seedPath, "utf8");

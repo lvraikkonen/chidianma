@@ -7,8 +7,16 @@ import { addDays, signGroupSessionToken, signIdentityToken, verifyIdentityToken 
 import { generateInviteCode, hashInviteCode, verifyInviteCode } from "../services/groups/inviteCodes.js";
 import { assertNotLastActiveAdmin, requireActiveMembership } from "../services/groups/memberships.js";
 
-function bearerToken(authorization?: string): string {
-  return authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+function bearerToken(authorization?: string): string | undefined {
+  if (!authorization) return undefined;
+  if (!authorization.startsWith("Bearer ")) {
+    throw new AuthError("unauthorized", "invalid_token", "Authorization bearer token is invalid");
+  }
+  const token = authorization.slice("Bearer ".length).trim();
+  if (!token) {
+    throw new AuthError("unauthorized", "invalid_token", "Authorization bearer token is invalid");
+  }
+  return token;
 }
 
 function authErrorResponse(reply: { code(statusCode: number): unknown }, error: unknown) {

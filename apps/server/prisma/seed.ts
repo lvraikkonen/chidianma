@@ -75,6 +75,11 @@ const restaurants = [
 
 async function main() {
   const now = new Date();
+  const defaultInviteCodeHash = hashInviteCode("LUNCH-2026AA", process.env.SESSION_SECRET ?? "dev-session-secret");
+  const defaultOfficeTimezone = process.env.OFFICE_TIMEZONE ?? "Asia/Shanghai";
+  const defaultOfficeCity = process.env.OFFICE_CITY ?? "Shanghai";
+  const defaultOfficeLatitude = Number(process.env.OFFICE_LATITUDE ?? 31.2304);
+  const defaultOfficeLongitude = Number(process.env.OFFICE_LONGITUDE ?? 121.4737);
   const defaultIdentity = await prisma.identity.upsert({
     where: { id: "seed-identity-admin" },
     update: { displayName: "Demo 同事", lastSeenAt: now },
@@ -83,17 +88,26 @@ async function main() {
 
   const defaultGroup = await prisma.lunchGroup.upsert({
     where: { id: "seed-group-default" },
-    update: {},
+    update: {
+      name: "Dev团队",
+      subtitle: "干饭小分队",
+      inviteCodeHash: defaultInviteCodeHash,
+      createdByIdentityId: defaultIdentity.id,
+      officeTimezone: defaultOfficeTimezone,
+      officeCity: defaultOfficeCity,
+      officeLatitude: defaultOfficeLatitude,
+      officeLongitude: defaultOfficeLongitude
+    },
     create: {
       id: "seed-group-default",
       name: "Dev团队",
       subtitle: "干饭小分队",
-      inviteCodeHash: hashInviteCode("LUNCH-2026AA", process.env.SESSION_SECRET ?? "dev-session-secret"),
+      inviteCodeHash: defaultInviteCodeHash,
       createdByIdentityId: defaultIdentity.id,
-      officeTimezone: process.env.OFFICE_TIMEZONE ?? "Asia/Shanghai",
-      officeCity: process.env.OFFICE_CITY ?? "Shanghai",
-      officeLatitude: Number(process.env.OFFICE_LATITUDE ?? 31.2304),
-      officeLongitude: Number(process.env.OFFICE_LONGITUDE ?? 121.4737)
+      officeTimezone: defaultOfficeTimezone,
+      officeCity: defaultOfficeCity,
+      officeLatitude: defaultOfficeLatitude,
+      officeLongitude: defaultOfficeLongitude
     }
   });
 

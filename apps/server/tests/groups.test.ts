@@ -491,6 +491,21 @@ describe("group routes", () => {
     );
   });
 
+  it("returns 401 for malformed optional authorization when creating a group", async () => {
+    const app = await buildApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      headers: { authorization: "Bearer   " },
+      payload: { displayName: "李雷", groupName: "前端干饭组" }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("invalid_token");
+    expect(prisma.identity.create).not.toHaveBeenCalled();
+  });
+
   it("returns 401 for missing and tampered identity tokens", async () => {
     const app = await buildApp();
 
@@ -578,6 +593,27 @@ describe("group routes", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json().error).toBe("invalid_token");
+  });
+
+  it("returns 401 for malformed optional authorization when joining a group", async () => {
+    const app = await buildApp();
+    const created = (await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      payload: { displayName: "组长", groupName: "午饭组" }
+    })).json();
+    vi.mocked(prisma.identity.create).mockClear();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      headers: { authorization: "Token bad" },
+      payload: { displayName: "小赵", inviteCode: created.inviteCode }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe("invalid_token");
+    expect(prisma.identity.create).not.toHaveBeenCalled();
   });
 
   it("rejects a group session token when exchanging an identity token for a group session", async () => {
