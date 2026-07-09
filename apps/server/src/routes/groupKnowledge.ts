@@ -65,6 +65,15 @@ class ValidationError extends Error {
 const restaurantStatuses = new Set(["active", "paused", "blocked"]);
 const weatherTags = new Set(["rainy", "hot", "cold", "clear", "windy"]);
 const weekdayTags = new Set(["monday", "tuesday", "wednesday", "thursday", "friday"]);
+const createRecommendationFields = new Set([
+  "restaurantId",
+  "dish",
+  "reason",
+  "weatherTags",
+  "weekdayTags",
+  "moodTags"
+]);
+const patchRecommendationFields = new Set(["dish", "reason", "weatherTags", "weekdayTags", "moodTags"]);
 
 function membershipAuthInput(groupId: string, authorization: string | undefined) {
   return authorization ? { groupId, authorization } : { groupId };
@@ -150,6 +159,21 @@ function restaurantPatchBody(body: unknown): PatchRestaurantRequest {
 
 type RecommendationRow = IncludedRecommendation;
 
+function invalidRecommendationRequest(): ValidationError {
+  return new ValidationError("invalid_recommendation_request", "Recommendation request body is invalid");
+}
+
+function recommendationBody(body: unknown, allowedFields: Set<string>): Record<string, unknown> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw invalidRecommendationRequest();
+  }
+  const record = body as Record<string, unknown>;
+  if (Object.keys(record).some((field) => !allowedFields.has(field))) {
+    throw invalidRecommendationRequest();
+  }
+  return record;
+}
+
 function moodTagArray(value: unknown): string[] {
   return stringArray(value, "invalid_tags") ?? [];
 }
@@ -200,8 +224,29 @@ function toRestaurantSummary(restaurant: IncludedRestaurant): RestaurantSummary 
   };
 }
 
+function createRecommendationBody(body: unknown) {
+  const requestBody = recommendationBody(body, createRecommendationFields);
+  const restaurantId = requiredString(requestBody, "restaurantId");
+  if (!restaurantId) {
+    throw invalidRecommendationRequest();
+  }
+  return {
+    restaurantId,
+    dish: optionalString(requestBody.dish) ?? null,
+    reason: requiredNonBlankString(
+      requestBody,
+      "reason",
+      "recommendation_reason_required",
+      "Recommendation reason is required"
+    ),
+    weatherTags: weatherTagArray(requestBody.weatherTags),
+    weekdayTags: weekdayTagArray(requestBody.weekdayTags),
+    moodTags: moodTagArray(requestBody.moodTags)
+  };
+}
+
 function recommendationPatch(body: unknown) {
-  const patch = body && typeof body === "object" && !Array.isArray(body) ? (body as PatchRecommendationRequest) : {};
+  const patch = recommendationBody(body, patchRecommendationFields) as PatchRecommendationRequest;
   const data: Record<string, unknown> = {};
   if (patch.dish !== undefined) data.dish = optionalString(patch.dish);
   if (patch.reason !== undefined) {
@@ -389,19 +434,8 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
           env,
           ...membershipAuthInput(request.params.groupId, request.headers.authorization)
         });
-        const reason = requiredNonBlankString(
-          request.body,
-          "reason",
-          "recommendation_reason_required",
-          "Recommendation reason is required"
-        );
-        const restaurantId = requiredNonBlankString(
-          request.body,
-          "restaurantId",
-          "restaurant_id_required",
-          "Restaurant ID is required"
-        );
-        const restaurant = await findRestaurantForWrite(request.params.groupId, restaurantId);
+        const body = createRecommendationBody(request.body);
+        const restaurant = await findRestaurantForWrite(request.params.groupId, body.restaurantId);
         if (!restaurant) {
           reply.code(400);
           return {
@@ -414,11 +448,11 @@ export async function registerGroupKnowledgeRoutes(app: FastifyInstance, env: Ap
             groupId: request.params.groupId,
             restaurantId: restaurant.id,
             createdByMembershipId: membership.membershipId,
-            dish: optionalString(request.body.dish) ?? null,
-            reason,
-            weatherTags: weatherTagArray(request.body.weatherTags),
-            weekdayTags: weekdayTagArray(request.body.weekdayTags),
-            moodTags: moodTagArray(request.body.moodTags)
+            dish: body.dish,
+            reason: body.reason,
+            weatherTags: body.weatherTags,
+            weekdayTags: body.weekdayTags,
+            moodTags: body.moodTags
           }
         });
         return {

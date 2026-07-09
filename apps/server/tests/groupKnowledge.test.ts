@@ -559,6 +559,87 @@ describe("group knowledge recommendation routes", () => {
     await app.close();
   });
 
+  it("rejects structurally invalid recommendation creation bodies before writing", async () => {
+    const app = await buildTestApp();
+
+    const missingRestaurantId = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { reason: "少了餐厅" }
+    });
+    const nullBody = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: null
+    });
+    const typoField = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { restaurantId: "restaurant-1", reason: "字段写错", moodTag: ["想吃饭"] }
+    });
+
+    expect(missingRestaurantId.statusCode).toBe(400);
+    expect(missingRestaurantId.json()).toEqual({
+      error: "invalid_recommendation_request",
+      message: "Recommendation request body is invalid"
+    });
+    expect(nullBody.statusCode).toBe(400);
+    expect(nullBody.json()).toEqual({
+      error: "invalid_recommendation_request",
+      message: "Recommendation request body is invalid"
+    });
+    expect(typoField.statusCode).toBe(400);
+    expect(typoField.json()).toEqual({
+      error: "invalid_recommendation_request",
+      message: "Recommendation request body is invalid"
+    });
+    expect(prisma.recommendation.create).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("rejects invalid recommendation creation tags before writing", async () => {
+    const app = await buildTestApp();
+
+    const invalidMoodTags = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { restaurantId: "restaurant-1", reason: "标签形状不对", moodTags: "想吃饭" }
+    });
+    const invalidWeatherTags = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { restaurantId: "restaurant-1", reason: "天气枚举不对", weatherTags: ["snowy"] }
+    });
+    const invalidWeekdayTags = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { restaurantId: "restaurant-1", reason: "工作日枚举不对", weekdayTags: ["saturday"] }
+    });
+
+    expect(invalidMoodTags.statusCode).toBe(400);
+    expect(invalidMoodTags.json()).toEqual({ error: "invalid_tags", message: "Tags must be an array of strings" });
+    expect(invalidWeatherTags.statusCode).toBe(400);
+    expect(invalidWeatherTags.json()).toEqual({
+      error: "invalid_weather_tags",
+      message: "Tags include unsupported values"
+    });
+    expect(invalidWeekdayTags.statusCode).toBe(400);
+    expect(invalidWeekdayTags.json()).toEqual({
+      error: "invalid_weekday_tags",
+      message: "Tags include unsupported values"
+    });
+    expect(prisma.recommendation.create).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
   it("lets a member patch their own recommendation and blocks another member", async () => {
     prisma.__seedRecommendation({
       id: "recommendation-1",
@@ -642,6 +723,113 @@ describe("group knowledge recommendation routes", () => {
     await app.close();
   });
 
+  it("rejects invalid recommendation patches before writing", async () => {
+    prisma.__seedRecommendation({
+      id: "recommendation-1",
+      groupId: "group-1",
+      restaurantId: "restaurant-1",
+      dish: "卤肉饭",
+      reason: "稳定下饭",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: "membership-1",
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+    const app = await buildTestApp();
+
+    const emptyPatch = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {}
+    });
+    const nullPatch = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: null
+    });
+    const unknownPatch = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { restaurantId: "restaurant-2", reason: "不能换餐厅" }
+    });
+
+    expect(emptyPatch.statusCode).toBe(400);
+    expect(emptyPatch.json()).toEqual({
+      error: "empty_recommendation_patch",
+      message: "At least one recommendation field is required"
+    });
+    expect(nullPatch.statusCode).toBe(400);
+    expect(nullPatch.json()).toEqual({
+      error: "invalid_recommendation_request",
+      message: "Recommendation request body is invalid"
+    });
+    expect(unknownPatch.statusCode).toBe(400);
+    expect(unknownPatch.json()).toEqual({
+      error: "invalid_recommendation_request",
+      message: "Recommendation request body is invalid"
+    });
+    expect(prisma.recommendation.update).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("rejects invalid recommendation patch tags before writing", async () => {
+    prisma.__seedRecommendation({
+      id: "recommendation-1",
+      groupId: "group-1",
+      restaurantId: "restaurant-1",
+      dish: "卤肉饭",
+      reason: "稳定下饭",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: "membership-1",
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+    const app = await buildTestApp();
+
+    const invalidMoodTags = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { moodTags: [42] }
+    });
+    const invalidWeatherTags = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { weatherTags: ["snowy"] }
+    });
+    const invalidWeekdayTags = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { weekdayTags: ["saturday"] }
+    });
+
+    expect(invalidMoodTags.statusCode).toBe(400);
+    expect(invalidMoodTags.json()).toEqual({ error: "invalid_tags", message: "Tags must be an array of strings" });
+    expect(invalidWeatherTags.statusCode).toBe(400);
+    expect(invalidWeatherTags.json()).toEqual({
+      error: "invalid_weather_tags",
+      message: "Tags include unsupported values"
+    });
+    expect(invalidWeekdayTags.statusCode).toBe(400);
+    expect(invalidWeekdayTags.json()).toEqual({
+      error: "invalid_weekday_tags",
+      message: "Tags include unsupported values"
+    });
+    expect(prisma.recommendation.update).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
   it("returns not found for a recommendation outside the route group", async () => {
     prisma.__seedRecommendation({
       id: "recommendation-2",
@@ -667,6 +855,43 @@ describe("group knowledge recommendation routes", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: "recommendation_not_found", message: "Recommendation not found" });
+
+    await app.close();
+  });
+
+  it("blocks read-token-only auth for recommendation writes", async () => {
+    prisma.__seedRecommendation({
+      id: "recommendation-1",
+      groupId: "group-1",
+      restaurantId: "restaurant-1",
+      dish: "卤肉饭",
+      reason: "稳定下饭",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: [],
+      createdByMembershipId: "membership-1",
+      createdAt: new Date("2026-07-09T03:10:00.000Z"),
+      updatedAt: new Date("2026-07-09T03:10:00.000Z")
+    });
+    const app = await buildTestApp();
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/groups/group-1/recommendations",
+      headers: { "x-lunch-read-token": "read-token" },
+      payload: { restaurantId: "restaurant-1", reason: "read token cannot write" }
+    });
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/groups/group-1/recommendations/recommendation-1",
+      headers: { "x-lunch-read-token": "read-token" },
+      payload: { reason: "read token cannot patch" }
+    });
+
+    expect(createResponse.statusCode).toBe(401);
+    expect(patchResponse.statusCode).toBe(401);
+    expect(prisma.recommendation.create).not.toHaveBeenCalled();
+    expect(prisma.recommendation.update).not.toHaveBeenCalled();
 
     await app.close();
   });
