@@ -1,5 +1,5 @@
 import type { GroupTodayRecommendationsResponse } from "@lunch/shared";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { STORAGE_KEYS } from "../src/config";
 import {
   getActiveGroupRecommendationCache,
@@ -11,8 +11,33 @@ import {
   getStorageState,
   saveGroupRecommendationCache,
   saveSettings,
-  saveStorageState
+  saveStorageState,
+  updateStorageState
 } from "../src/storage";
+
+function serialLockManager() {
+  let queue = Promise.resolve();
+  return {
+    request: vi.fn(
+      (
+        _name: string,
+        _options: LockOptions,
+        callback: () => Promise<unknown>
+      ) => {
+        const run = queue.then(callback);
+        queue = run.then(
+          () => undefined,
+          () => undefined
+        );
+        return run;
+      }
+    )
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal("navigator", { locks: serialLockManager() });
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -99,6 +124,62 @@ describe("grouped extension storage", () => {
     await saveStorageState(state);
 
     expect(set).toHaveBeenCalledWith({ [STORAGE_KEYS.state]: state });
+  });
+
+  it("serializes settings, active group session, and cache mutations without lost updates", async () => {
+    let storedState = getDefaultStorageState();
+    const locks = serialLockManager();
+    const get = vi.fn(async () => ({
+      [STORAGE_KEYS.state]: structuredClone(storedState)
+    }));
+    const set = vi.fn(async (value: Record<string, unknown>) => {
+      storedState = structuredClone(
+        value[STORAGE_KEYS.state]
+      ) as typeof storedState;
+    });
+    vi.stubGlobal("navigator", { locks });
+    vi.stubGlobal("chrome", {
+      storage: { local: { get, set } },
+      runtime: { sendMessage: vi.fn().mockResolvedValue(undefined) }
+    });
+
+    await Promise.all([
+      saveSettings({
+        apiBaseUrl: "https://lunch.example",
+        readToken: "read-token",
+        reminderTime: "12:00",
+        enabled: false
+      }),
+      updateStorageState((state) => ({
+        ...state,
+        activeGroupId: "group-2",
+        sessionsByGroupId: {
+          ...state.sessionsByGroupId,
+          "group-2": { token: "group-session-token" }
+        }
+      })),
+      saveGroupRecommendationCache(
+        "group-1",
+        recommendationResponse("group-1", "batch-1")
+      )
+    ]);
+
+    expect(locks.request).toHaveBeenCalledTimes(3);
+    expect(storedState).toMatchObject({
+      apiBaseUrl: "https://lunch.example",
+      reminderTime: "12:00",
+      enabled: false,
+      activeGroupId: "group-2",
+      sessionsByGroupId: {
+        "group-2": { token: "group-session-token" }
+      },
+      lastRecommendationsByGroupId: {
+        "group-1": expect.objectContaining({
+          groupId: "group-1",
+          fromCache: true
+        })
+      }
+    });
   });
 
   it("resolves the active group session without requiring a legacy read token", async () => {
@@ -192,6 +273,53 @@ describe("grouped extension storage", () => {
     });
 
     await expect(getActiveGroupRecommendationCache()).resolves.toEqual(groupTwoResponse);
+  });
+
+  it("rejects a recommendation response for another cache group", async () => {
+    const set = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { locks: serialLockManager() });
+    vi.stubGlobal("chrome", {
+      storage: { local: { get: vi.fn(), set } }
+    });
+
+    await expect(
+      saveGroupRecommendationCache(
+        "group-1",
+        recommendationResponse("group-2", "batch-2")
+      )
+    ).rejects.toThrow("recommendation_cache_group_mismatch");
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stored cache whose response group does not match the active bucket", async () => {
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({
+            [STORAGE_KEYS.state]: {
+              ...getDefaultStorageState(),
+              activeGroupId: "group-1",
+              lastRecommendationsByGroupId: {
+                "group-1": recommendationResponse("group-2", "batch-2")
+              }
+            }
+          })
+        }
+      }
+    });
+
+    await expect(getActiveGroupRecommendationCache()).resolves.toBeNull();
+  });
+
+  it("fails writes when Web Locks is unavailable", async () => {
+    vi.stubGlobal("navigator", {});
+    vi.stubGlobal("chrome", {
+      storage: { local: { get: vi.fn(), set: vi.fn() } }
+    });
+
+    await expect(updateStorageState((state) => state)).rejects.toThrow(
+      "storage_lock_unavailable"
+    );
   });
 
   it("applies the active group's local reminder override", async () => {

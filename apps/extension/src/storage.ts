@@ -31,6 +31,12 @@ export interface ExtensionStorageShape extends ExtensionSettings {
   localReminderOverridesByGroupId: Record<string, LocalReminderOverride>;
 }
 
+export const STORAGE_STATE_LOCK_NAME = "lunch-extension-storage-state";
+
+export type StorageStateUpdater = (
+  state: ExtensionStorageShape
+) => ExtensionStorageShape;
+
 export function getDefaultStorageState(): ExtensionStorageShape {
   return {
     apiBaseUrl: "http://localhost:3000",
@@ -58,10 +64,39 @@ export async function getStorageState(): Promise<ExtensionStorageShape> {
   };
 }
 
+function getStorageLockManager(): LockManager {
+  const locks = globalThis.navigator?.locks;
+  if (!locks) throw new Error("storage_lock_unavailable");
+  return locks;
+}
+
+async function writeStorageStateUnlocked(
+  state: ExtensionStorageShape
+): Promise<void> {
+  await chrome.storage.local.set({ [STORAGE_KEYS.state]: state });
+}
+
 export async function saveStorageState(state: ExtensionStorageShape): Promise<void> {
-  await chrome.storage.local.set({
-    [STORAGE_KEYS.state]: state
-  });
+  await getStorageLockManager().request(
+    STORAGE_STATE_LOCK_NAME,
+    { mode: "exclusive" },
+    () => writeStorageStateUnlocked(state)
+  );
+}
+
+export async function updateStorageState(
+  updater: StorageStateUpdater
+): Promise<ExtensionStorageShape> {
+  return getStorageLockManager().request(
+    STORAGE_STATE_LOCK_NAME,
+    { mode: "exclusive" },
+    async () => {
+      const current = await getStorageState();
+      const next = updater(current);
+      await writeStorageStateUnlocked(next);
+      return next;
+    }
+  );
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {
@@ -70,11 +105,7 @@ export async function getSettings(): Promise<ExtensionSettings> {
 }
 
 export async function saveSettings(settings: ExtensionSettings): Promise<void> {
-  const state = await getStorageState();
-  await saveStorageState({
-    ...state,
-    ...settings
-  });
+  await updateStorageState((state) => ({ ...state, ...settings }));
   await chrome.runtime.sendMessage({ type: "settingsChanged" }).catch(() => undefined);
 }
 
@@ -96,20 +127,24 @@ export async function saveGroupRecommendationCache(
   groupId: string,
   response: GroupTodayRecommendationsResponse
 ): Promise<void> {
-  const state = await getStorageState();
-  await saveStorageState({
+  if (response.groupId !== groupId) {
+    throw new Error("recommendation_cache_group_mismatch");
+  }
+  await updateStorageState((state) => ({
     ...state,
     lastRecommendationsByGroupId: {
       ...state.lastRecommendationsByGroupId,
       [groupId]: { ...response, fromCache: true }
     }
-  });
+  }));
 }
 
 export async function getActiveGroupRecommendationCache(): Promise<GroupTodayRecommendationsResponse | null> {
   const state = await getStorageState();
-  if (!state.activeGroupId) return null;
-  return state.lastRecommendationsByGroupId[state.activeGroupId] ?? null;
+  const groupId = state.activeGroupId;
+  if (!groupId) return null;
+  const cached = state.lastRecommendationsByGroupId[groupId];
+  return cached?.groupId === groupId ? cached : null;
 }
 
 export async function getReminderSettingsForActiveGroup(): Promise<

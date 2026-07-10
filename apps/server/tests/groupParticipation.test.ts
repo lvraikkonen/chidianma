@@ -351,6 +351,48 @@ describe("group participation routes", () => {
   });
 
   it.each([
+    ["numeric restaurantId", { status: "joining", restaurantId: 123 }],
+    ["blank restaurantId", { status: "joining", restaurantId: "   " }],
+    [
+      "object recommendationId",
+      {
+        status: "decided",
+        restaurantId: "restaurant-1",
+        recommendationId: { id: "recommendation-1" }
+      }
+    ],
+    [
+      "blank recommendationId",
+      {
+        status: "decided",
+        restaurantId: "restaurant-1",
+        recommendationId: ""
+      }
+    ]
+  ] as const)(
+    "rejects malformed participation resource ids: %s",
+    async (_label, payload) => {
+      seedActiveMemberships([{ id: "membership-1", displayName: "小陈" }]);
+      seedRestaurant({ id: "restaurant-1", groupId: "group-1" });
+
+      const app = await buildTestApp();
+      const response = await app.inject({
+        method: "PUT",
+        url: "/api/groups/group-1/participation/today",
+        headers: { authorization: `Bearer ${groupToken()}` },
+        payload
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        error: "invalid_participation_request"
+      });
+      expect(prisma.dailyParticipation.upsert).not.toHaveBeenCalled();
+      await app.close();
+    }
+  );
+
+  it.each([
     ["GET", "/api/groups/group-1/participation/today", undefined],
     ["PUT", "/api/groups/group-1/participation/today", { status: "joining" }]
   ] as const)(

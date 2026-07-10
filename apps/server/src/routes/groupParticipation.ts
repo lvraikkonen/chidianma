@@ -32,6 +32,21 @@ function membershipAuthInput(groupId: string, authorization: string | undefined)
   return authorization ? { groupId, authorization } : { groupId };
 }
 
+function parseOptionalResourceId(
+  record: Record<string, unknown>,
+  key: "restaurantId" | "recommendationId"
+): string | undefined {
+  if (!(key in record)) return undefined;
+  const value = record[key];
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ParticipationValidationError(
+      "invalid_participation_request",
+      `${key} must be a non-empty string when provided`
+    );
+  }
+  return value.trim();
+}
+
 function parseParticipationBody(body: unknown): PutParticipationTodayRequest {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new ParticipationValidationError(
@@ -47,12 +62,8 @@ function parseParticipationBody(body: unknown): PutParticipationTodayRequest {
       "Participation status is invalid"
     );
   }
-  const restaurantId =
-    typeof record.restaurantId === "string" ? record.restaurantId.trim() : undefined;
-  const recommendationId =
-    typeof record.recommendationId === "string"
-      ? record.recommendationId.trim()
-      : undefined;
+  const restaurantId = parseOptionalResourceId(record, "restaurantId");
+  const recommendationId = parseOptionalResourceId(record, "recommendationId");
   if (status === "decided" && !restaurantId) {
     throw new ParticipationValidationError(
       "decision_restaurant_required",
