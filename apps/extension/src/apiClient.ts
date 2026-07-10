@@ -1,3 +1,5 @@
+import type { ApiErrorResponse } from "@lunch/shared";
+
 export type ExtensionApiErrorKind = "http" | "network" | "invalid-response";
 
 export class ExtensionApiError extends Error {
@@ -34,14 +36,13 @@ export async function requestJson<T>(
   }
 
   if (!response.ok) {
-    let code: string | undefined;
-    let message: string | undefined;
+    const errorBody: Partial<ApiErrorResponse> = {};
     try {
       const body = await response.json() as unknown;
       if (typeof body === "object" && body !== null && !Array.isArray(body)) {
         const fields = body as Record<string, unknown>;
-        code = typeof fields.error === "string" ? fields.error : undefined;
-        message = typeof fields.message === "string" ? fields.message : undefined;
+        if (typeof fields.error === "string") errorBody.error = fields.error;
+        if (typeof fields.message === "string") errorBody.message = fields.message;
       }
     } catch {
       // The HTTP status remains authoritative when the body is not valid JSON.
@@ -49,8 +50,8 @@ export async function requestJson<T>(
     throw new ExtensionApiError({
       kind: "http",
       status: response.status,
-      code,
-      message: message ?? `HTTP ${response.status}`
+      code: errorBody.error,
+      message: errorBody.message ?? `HTTP ${response.status}`
     });
   }
 
