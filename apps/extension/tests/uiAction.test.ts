@@ -19,7 +19,7 @@ describe("runButtonAction", () => {
       button,
       pendingText: "记录中...",
       successText: "已记录参与",
-      failurePrefix: "记录参与失败",
+      failureMessage: "记录参与失败，请重试。",
       action,
       onFailure
     });
@@ -32,23 +32,30 @@ describe("runButtonAction", () => {
     expect(onFailure).not.toHaveBeenCalled();
   });
 
-  it("catches failures, restores a retryable button, and reports the error", async () => {
+  it("restores a retryable button and reports stable safe copy", async () => {
     const button = { textContent: "避雷", disabled: false };
     const onFailure = vi.fn();
+    const error = new Error("Bearer private-session-token");
 
     await expect(runButtonAction({
       button,
       pendingText: "提交中...",
       successText: "已记录",
-      failurePrefix: "记录反馈失败",
+      failureMessage: "记录反馈失败，请重试。",
       action: async () => {
-        throw new Error("网络断开");
+        throw error;
       },
       onFailure
     })).resolves.toBeUndefined();
 
     expect(button).toEqual({ textContent: "避雷", disabled: false });
-    expect(onFailure).toHaveBeenCalledWith("记录反馈失败：网络断开");
+    expect(onFailure).toHaveBeenCalledWith(
+      "记录反馈失败，请重试。",
+      error
+    );
+    expect(onFailure.mock.calls[0]?.[0]).not.toContain(
+      "private-session-token"
+    );
   });
 
   it("clears a previous failure banner before a successful retry", async () => {
@@ -61,7 +68,7 @@ describe("runButtonAction", () => {
       button,
       pendingText: "记录中...",
       successText: "已记录参与",
-      failurePrefix: "记录参与失败",
+      failureMessage: "记录参与失败，请重试。",
       action,
       onStart: () => {
         status = "";
@@ -72,7 +79,7 @@ describe("runButtonAction", () => {
     };
 
     await runButtonAction(input);
-    expect(status).toBe("记录参与失败：网络断开");
+    expect(status).toBe("记录参与失败，请重试。");
 
     await runButtonAction(input);
 

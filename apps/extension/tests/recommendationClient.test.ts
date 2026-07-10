@@ -3,12 +3,15 @@ import { AUTHORIZATION_HEADER, GROUP_ROUTES, READ_TOKEN_HEADER } from "@lunch/sh
 import { STORAGE_KEYS } from "../src/config";
 import {
   decideTodayRecommendation,
+  fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
   ensureGroupTodayRecommendations,
   fetchTodayParticipation,
+  fetchTodayParticipationForStorage,
   fetchTodayRecommendations,
   postFeedback,
   putTodayParticipation,
   refreshGroupTodayRecommendations,
+  refreshGroupTodayRecommendationsForStorage,
   refreshTodayRecommendations
 } from "../src/recommendationClient";
 import { getDefaultStorageState, STORAGE_STATE_LOCK_NAME } from "../src/storage";
@@ -69,6 +72,99 @@ function groupRecommendationResponse(groupId: string, batchId: string) {
 }
 
 describe("group recommendation client", () => {
+  it("uses the provided popup snapshot for recommendation, refresh, and participation", async () => {
+    const snapshot = {
+      ...getDefaultStorageState(),
+      apiBaseUrl: "https://captured-lunch.example",
+      activeGroupId: "group-1",
+      sessionsByGroupId: {
+        "group-1": { token: "captured-group-session-token" }
+      },
+      lastRecommendationsByGroupId: {
+        "group-1": groupRecommendationResponse("group-1", "captured-cache")
+      }
+    };
+    const recommendation = groupRecommendationResponse("group-1", "batch-1");
+    const participation = {
+      groupId: "group-1",
+      officeDate: "2026-07-09",
+      summary: {
+        joiningCount: 0,
+        decidedCount: 0,
+        awayCount: 0,
+        undecidedCount: 1
+      },
+      members: []
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => recommendation })
+      .mockResolvedValueOnce({ ok: true, json: async () => recommendation })
+      .mockResolvedValueOnce({ ok: true, json: async () => participation });
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState({
+      apiBaseUrl: "https://current-lunch.example",
+      activeGroupId: "group-2",
+      sessionsByGroupId: {
+        "group-2": { token: "current-group-session-token" }
+      }
+    });
+
+    await expect(
+      fetchGroupTodayRecommendationsWithCacheFallbackForStorage(snapshot)
+    ).resolves.toEqual(recommendation);
+    await expect(
+      refreshGroupTodayRecommendationsForStorage(snapshot)
+    ).resolves.toEqual(recommendation);
+    await expect(fetchTodayParticipationForStorage(snapshot)).resolves.toEqual(
+      participation
+    );
+
+    expect(fetchMock.mock.calls.map(([url]) => (url as URL).toString())).toEqual([
+      `https://captured-lunch.example${GROUP_ROUTES.todayRecommendations("group-1")}`,
+      `https://captured-lunch.example${GROUP_ROUTES.refreshTodayRecommendations("group-1")}`,
+      `https://captured-lunch.example${GROUP_ROUTES.participationToday("group-1")}`
+    ]);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init).toMatchObject({
+        headers: expect.objectContaining({
+          [AUTHORIZATION_HEADER]: "Bearer captured-group-session-token"
+        })
+      });
+    }
+  });
+
+  it("uses only the provided popup snapshot for cache fallback", async () => {
+    const snapshot = {
+      ...getDefaultStorageState(),
+      apiBaseUrl: "https://captured-lunch.example",
+      activeGroupId: "group-1",
+      sessionsByGroupId: {
+        "group-1": { token: "captured-group-session-token" }
+      },
+      lastRecommendationsByGroupId: {
+        "group-1": groupRecommendationResponse("group-1", "captured-cache")
+      }
+    };
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    stubGroupedState({
+      activeGroupId: "group-2",
+      sessionsByGroupId: {
+        "group-2": { token: "current-group-session-token" }
+      },
+      lastRecommendationsByGroupId: {
+        "group-2": groupRecommendationResponse("group-2", "current-cache")
+      }
+    });
+
+    await expect(
+      fetchGroupTodayRecommendationsWithCacheFallbackForStorage(snapshot)
+    ).resolves.toMatchObject({
+      groupId: "group-1",
+      batchId: "captured-cache",
+      fromCache: true
+    });
+  });
+
   it("uses the captured group cache after a network failure even if the active group changes", async () => {
     const groupOneCache = groupRecommendationResponse("group-1", "group-1-cache");
     const groupTwoCache = groupRecommendationResponse("group-2", "group-2-cache");

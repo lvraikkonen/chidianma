@@ -50,7 +50,13 @@ function getActiveGroupRequestContext(
 }
 
 async function requireActiveGroupRequestContext(): Promise<ActiveGroupRequestContext> {
-  const context = getActiveGroupRequestContext(await getStorageState());
+  return requireActiveGroupRequestContextForStorage(await getStorageState());
+}
+
+function requireActiveGroupRequestContextForStorage(
+  storage: ExtensionStorageShape
+): ActiveGroupRequestContext {
+  const context = getActiveGroupRequestContext(storage);
   if (!context) throw new Error("No active group session configured");
   return context;
 }
@@ -80,10 +86,10 @@ async function fetchGroupTodayRecommendationsNetworkOnlyForContext(
   return data;
 }
 
-async function getGroupCacheFallback(
+function getGroupCacheFallback(
+  state: ExtensionStorageShape,
   groupId: string
-): Promise<GroupTodayRecommendationsResponse | null> {
-  const state = await getStorageState();
+): GroupTodayRecommendationsResponse | null {
   const cached = state.lastRecommendationsByGroupId[groupId];
   return cached?.groupId === groupId ? { ...cached, fromCache: true } : null;
 }
@@ -93,13 +99,13 @@ function isCacheFallbackEligible(error: unknown): boolean {
 }
 
 async function fetchGroupTodayRecommendationsWithCacheFallbackForContext(
-  context: ActiveGroupRequestContext
+  context: ActiveGroupRequestContext,
+  cached: GroupTodayRecommendationsResponse | null
 ): Promise<GroupTodayRecommendationsResponse> {
   try {
     return await fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
   } catch (error) {
     if (!isCacheFallbackEligible(error)) throw error;
-    const cached = await getGroupCacheFallback(context.groupId);
     if (cached) return cached;
     throw error;
   }
@@ -122,21 +128,40 @@ export async function fetchGroupTodayRecommendationsNetworkOnly(): Promise<Group
   return fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
 }
 
+export async function fetchGroupTodayRecommendationsWithCacheFallbackForStorage(
+  storage: ExtensionStorageShape
+): Promise<GroupTodayRecommendationsResponse> {
+  const context = requireActiveGroupRequestContextForStorage(storage);
+  return fetchGroupTodayRecommendationsWithCacheFallbackForContext(
+    context,
+    getGroupCacheFallback(storage, context.groupId)
+  );
+}
+
 export async function fetchGroupTodayRecommendationsWithCacheFallback(): Promise<GroupTodayRecommendationsResponse> {
-  const context = await requireActiveGroupRequestContext();
-  return fetchGroupTodayRecommendationsWithCacheFallbackForContext(context);
+  return fetchGroupTodayRecommendationsWithCacheFallbackForStorage(
+    await getStorageState()
+  );
 }
 
 export const fetchGroupTodayRecommendations =
   fetchGroupTodayRecommendationsWithCacheFallback;
 
 export async function refreshGroupTodayRecommendations(): Promise<GroupTodayRecommendationsResponse> {
-  const context = await requireActiveGroupRequestContext();
-  return refreshGroupTodayRecommendationsForContext(context);
+  return refreshGroupTodayRecommendationsForStorage(await getStorageState());
+}
+
+export async function refreshGroupTodayRecommendationsForStorage(
+  storage: ExtensionStorageShape
+): Promise<GroupTodayRecommendationsResponse> {
+  return refreshGroupTodayRecommendationsForContext(
+    requireActiveGroupRequestContextForStorage(storage)
+  );
 }
 
 export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecommendationsResponse> {
-  const context = await requireActiveGroupRequestContext();
+  const storage = await getStorageState();
+  const context = requireActiveGroupRequestContextForStorage(storage);
   try {
     return await fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
   } catch (error) {
@@ -148,7 +173,7 @@ export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecom
       return refreshGroupTodayRecommendationsForContext(context);
     }
     if (!isCacheFallbackEligible(error)) throw error;
-    const cached = await getGroupCacheFallback(context.groupId);
+    const cached = getGroupCacheFallback(storage, context.groupId);
     if (cached) return cached;
     throw error;
   }
@@ -183,7 +208,10 @@ export async function fetchTodayRecommendations(options: {
   const settings = await getStorageState();
   const context = getActiveGroupRequestContext(settings);
   if (context) {
-    return fetchGroupTodayRecommendationsWithCacheFallbackForContext(context);
+    return fetchGroupTodayRecommendationsWithCacheFallbackForContext(
+      context,
+      getGroupCacheFallback(settings, context.groupId)
+    );
   }
 
   return fetchLegacyTodayRecommendations(settings, options);
@@ -199,7 +227,13 @@ export async function refreshTodayRecommendations(): Promise<ExtensionRecommenda
 }
 
 export async function fetchTodayParticipation(): Promise<ParticipationTodayResponse> {
-  const context = await requireActiveGroupRequestContext();
+  return fetchTodayParticipationForStorage(await getStorageState());
+}
+
+export async function fetchTodayParticipationForStorage(
+  storage: ExtensionStorageShape
+): Promise<ParticipationTodayResponse> {
+  const context = requireActiveGroupRequestContextForStorage(storage);
   return activeGroupJson<ParticipationTodayResponse>(
     context,
     GROUP_ROUTES.participationToday(context.groupId)

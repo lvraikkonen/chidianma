@@ -34,10 +34,10 @@ export async function runButtonAction(input: {
   button: ButtonActionTarget;
   pendingText: string;
   successText: string;
-  failurePrefix: string;
+  failureMessage: string;
   action: () => Promise<unknown>;
   onStart?: (() => void) | undefined;
-  onFailure: (message: string) => void;
+  onFailure: (message: string, error: unknown) => void;
 }): Promise<void> {
   const originalText = input.button.textContent;
   input.onStart?.();
@@ -50,7 +50,6 @@ export async function runButtonAction(input: {
   } catch (error) {
     input.button.textContent = originalText;
     input.button.disabled = false;
-    const detail = error instanceof Error ? error.message : String(error);
-    input.onFailure(`${input.failurePrefix}：${detail}`);
+    input.onFailure(input.failureMessage, error);
   }
 }

@@ -6,16 +6,19 @@ import type {
 } from "@lunch/shared";
 import {
   applyParticipationUpdate,
+  classifyPopupRetryOutcome,
   loadRefreshedPopupState,
   loadPopupState,
+  resolvePopupActionFailure,
+  restoreRecommendationFocus,
   type PopupViewState
 } from "./popupController";
 import {
-  fetchGroupTodayRecommendationsWithCacheFallback,
-  fetchTodayParticipation,
+  fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
+  fetchTodayParticipationForStorage,
   postFeedback,
   putTodayParticipation,
-  refreshGroupTodayRecommendations
+  refreshGroupTodayRecommendationsForStorage
 } from "./recommendationClient";
 import {
   scoreBreakdownRows,
@@ -53,27 +56,33 @@ refreshButton.addEventListener("click", () => {
     refreshButton,
     "正在换一批...",
     "今日推荐已更新。",
-    "刷新推荐失败"
+    "刷新推荐失败，请重试。"
   ));
 });
 
 void reloadPopup();
 
-async function reloadPopup(): Promise<void> {
+async function reloadPopup(): Promise<PopupViewState> {
   renderLoading();
+  currentState = await loadCurrentPopupState();
+  renderPopup(currentState);
+  return currentState;
+}
+
+async function loadCurrentPopupState(): Promise<PopupViewState> {
   try {
-    currentState = await loadPopupState({
+    return await loadPopupState({
       loadStorage: getStorageState,
-      loadRecommendations: fetchGroupTodayRecommendationsWithCacheFallback,
-      loadParticipation: fetchTodayParticipation
+      loadRecommendations:
+        fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
+      loadParticipation: fetchTodayParticipationForStorage
     });
   } catch {
-    currentState = {
+    return {
       kind: "error",
       message: "暂时无法加载今日推荐，请重试。"
     };
   }
-  renderPopup(currentState);
 }
 
 function renderPopup(state: PopupViewState): void {
@@ -135,7 +144,7 @@ function renderGenerate(
       button,
       "正在生成...",
       "今日推荐已生成。",
-      "生成推荐失败"
+      "生成推荐失败，请重试。"
     ));
   });
   panel.appendChild(button);
@@ -146,11 +155,7 @@ function renderEmpty(
   state: Extract<PopupViewState, { kind: "empty" }>
 ): void {
   renderRecommendationContext(state.response);
-  const panel = createStatePanel(
-    "暂时没有可推荐的饭馆",
-    "给小组加几家真实饭馆和推荐理由，再回来生成午饭选择。"
-  );
-  popupContent.appendChild(panel);
+  renderEmptyRecommendationLibrary();
 }
 
 function renderReady(
@@ -190,17 +195,7 @@ function renderError(message: string): void {
   const panel = createStatePanel("今天的推荐暂时没加载出来", message);
   const retryButton = createButton("重试", "button primary");
   retryButton.addEventListener("click", () => {
-    runExclusive(async () => {
-      await runButtonAction({
-        button: retryButton,
-        pendingText: "重试中...",
-        successText: "已重试",
-        failurePrefix: "重试失败",
-        action: reloadPopup,
-        onStart: hideStatus,
-        onFailure: setStatus
-      });
-    });
+    runExclusive(() => retryPopup(retryButton));
   });
   panel.append(retryButton, createSettingsButton("打开设置"));
   popupContent.appendChild(panel);
@@ -334,6 +329,9 @@ function renderRecommendations(
     recommendations.appendChild(createRecommendationCard(item, state));
   }
   popupContent.appendChild(recommendations);
+  if (state.response.items.length === 0) {
+    renderEmptyRecommendationLibrary();
+  }
 }
 
 function createRecommendationCard(
@@ -348,6 +346,7 @@ function createRecommendationCard(
   }
   const model = toRecommendationCardModel(item);
   const openButton = card.querySelector<HTMLButtonElement>(".card-open")!;
+  openButton.dataset.restaurantId = item.restaurantId;
   card.querySelector<HTMLElement>(".rank")!.textContent = model.rankLabel;
   card.querySelector<HTMLElement>(".name")!.textContent = model.name;
   const dish = card.querySelector<HTMLElement>(".dish")!;
@@ -370,6 +369,7 @@ function createRecommendationCard(
   openButton.addEventListener("click", () => {
     selectedRestaurantId = item.restaurantId;
     renderPopup(state);
+    popupContent.querySelector<HTMLButtonElement>(".detail-back")?.focus();
   });
   return card;
 }
@@ -385,8 +385,20 @@ function createRecommendationDetail(
 
   const backButton = createButton("← 返回今日推荐", "detail-back");
   backButton.addEventListener("click", () => {
+    const originatingRestaurantId = item.restaurantId;
     selectedRestaurantId = null;
     renderPopup(state);
+    const cardTargets = Array.from(
+      popupContent.querySelectorAll<HTMLButtonElement>(".card-open")
+    ).map((button) => ({
+      restaurantId: button.dataset.restaurantId ?? "",
+      focus: () => button.focus()
+    }));
+    restoreRecommendationFocus(
+      cardTargets,
+      originatingRestaurantId,
+      { focus: () => settingsButton.focus() }
+    );
   });
   detail.appendChild(backButton);
 
@@ -509,7 +521,7 @@ async function updateParticipation(
     button,
     pendingText: "记录中...",
     successText: "已记录",
-    failurePrefix: "记录参与状态失败",
+    failureMessage: "记录参与状态失败，请重试。",
     action: async () => {
       update = await putTodayParticipation({ status });
     },
@@ -517,7 +529,7 @@ async function updateParticipation(
       hideStatus();
       syncDisabledState(true);
     },
-    onFailure: setStatus
+    onFailure: handlePopupActionFailure
   });
 
   if (!update) {
@@ -542,7 +554,7 @@ async function submitFeedback(
     button,
     pendingText: "提交中...",
     successText: "已记录",
-    failurePrefix: "记录反馈失败",
+    failureMessage: "记录反馈失败，请重试。",
     action: async () => {
       await postFeedback({
         date: state.response.officeDate,
@@ -555,7 +567,7 @@ async function submitFeedback(
       succeeded = true;
     },
     onStart: hideStatus,
-    onFailure: setStatus
+    onFailure: handlePopupActionFailure
   });
   if (succeeded) setStatus("反馈已记录。");
 }
@@ -569,7 +581,7 @@ async function submitDecision(
     button,
     pendingText: "提交中...",
     successText: "已决定",
-    failurePrefix: "记录决定失败",
+    failureMessage: "记录决定失败，请重试。",
     action: async () => {
       update = await putTodayParticipation({
         status: "decided",
@@ -580,7 +592,7 @@ async function submitDecision(
       });
     },
     onStart: hideStatus,
-    onFailure: setStatus
+    onFailure: handlePopupActionFailure
   });
   if (update && currentState.kind === "ready") {
     currentState = applyParticipationUpdate(currentState, update);
@@ -593,24 +605,25 @@ async function runRecommendationRefresh(
   button: HTMLButtonElement,
   pendingText: string,
   successMessage: string,
-  failurePrefix: string
+  failureMessage: string
 ): Promise<void> {
   let refreshedState: PopupViewState | undefined;
   await runButtonAction({
     button,
     pendingText,
     successText: "已更新",
-    failurePrefix,
+    failureMessage,
     action: async () => {
       refreshedState = await loadRefreshedPopupState({
         loadStorage: getStorageState,
-        loadRecommendations: fetchGroupTodayRecommendationsWithCacheFallback,
-        loadParticipation: fetchTodayParticipation,
-        refreshRecommendations: refreshGroupTodayRecommendations
+        loadRecommendations:
+          fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
+        loadParticipation: fetchTodayParticipationForStorage,
+        refreshRecommendations: refreshGroupTodayRecommendationsForStorage
       });
     },
     onStart: hideStatus,
-    onFailure: setStatus
+    onFailure: handlePopupActionFailure
   });
   if (!refreshedState) return;
 
@@ -625,19 +638,37 @@ async function runRecommendationRefresh(
 function createCacheRetryButton(): HTMLButtonElement {
   const button = createButton("重试获取最新推荐", "button secondary cache-retry");
   button.addEventListener("click", () => {
-    runExclusive(async () => {
-      await runButtonAction({
-        button,
-        pendingText: "重试中...",
-        successText: "已重试",
-        failurePrefix: "重试失败",
-        action: reloadPopup,
-        onStart: hideStatus,
-        onFailure: setStatus
-      });
-    });
+    runExclusive(() => retryPopup(button));
   });
   return button;
+}
+
+async function retryPopup(button: HTMLButtonElement): Promise<void> {
+  let retryState: PopupViewState | undefined;
+  await runButtonAction({
+    button,
+    pendingText: "重试中...",
+    successText: "已重试",
+    failureMessage: "重试失败，请重试。",
+    action: async () => {
+      retryState = await loadCurrentPopupState();
+    },
+    onStart: hideStatus,
+    onFailure: handlePopupActionFailure
+  });
+  if (!retryState) return;
+
+  currentState = retryState;
+  renderPopup(currentState);
+  const outcome = classifyPopupRetryOutcome(retryState);
+  if (outcome.announcement) setStatus(outcome.announcement);
+}
+
+function renderEmptyRecommendationLibrary(): void {
+  popupContent.appendChild(createStatePanel(
+    "暂时没有可推荐的饭馆",
+    "给小组加几家真实饭馆和推荐理由，再回来生成午饭选择。"
+  ));
 }
 
 function createStatePanel(titleText: string, bodyText: string): HTMLElement {
@@ -679,6 +710,25 @@ function runExclusive(action: () => Promise<void>): void {
   void actionGate.run(action).catch(() => {
     setStatus("操作失败，请重试。");
   });
+}
+
+function handlePopupActionFailure(
+  safeMessage: string,
+  error: unknown
+): void {
+  const resolution = resolvePopupActionFailure(
+    currentState,
+    error,
+    safeMessage
+  );
+  if (resolution.kind === "message") {
+    setStatus(resolution.message);
+    return;
+  }
+
+  currentState = resolution.state;
+  selectedRestaurantId = null;
+  renderPopup(currentState);
 }
 
 function hideStatus(): void {

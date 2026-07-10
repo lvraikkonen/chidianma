@@ -8,9 +8,12 @@ import { ExtensionApiError } from "../src/apiClient";
 import {
   applyParticipationUpdate,
   classifyPopupError,
+  classifyPopupRetryOutcome,
   currentMemberParticipation,
   loadRefreshedPopupState,
   loadPopupState,
+  resolvePopupActionFailure,
+  restoreRecommendationFocus,
   type PopupDependencies
 } from "../src/popupController";
 import { getDefaultStorageState } from "../src/storage";
@@ -51,9 +54,11 @@ function todayResponse(groupId: string): GroupTodayRecommendationsResponse {
   };
 }
 
-function participationResponse(): ParticipationTodayResponse {
+function participationResponse(
+  groupId = "group-1"
+): ParticipationTodayResponse {
   return {
-    groupId: "group-1",
+    groupId,
     officeDate: "2026-07-10",
     summary: {
       joiningCount: 1,
@@ -179,6 +184,195 @@ describe("popup controller", () => {
     });
   });
 
+  it("rejects a recommendation response from a different group snapshot", async () => {
+    let resolveRecommendations!: (
+      response: GroupTodayRecommendationsResponse
+    ) => void;
+    const loadParticipation = vi.fn();
+    const dependencies = popupDependencies({
+      loadRecommendations: vi.fn(() => new Promise<
+        GroupTodayRecommendationsResponse
+      >((resolve) => {
+        resolveRecommendations = resolve;
+      })),
+      loadParticipation
+    });
+
+    const pendingState = loadPopupState(dependencies);
+    await vi.waitFor(() => {
+      expect(dependencies.loadStorage).toHaveBeenCalledOnce();
+      expect(dependencies.loadRecommendations).toHaveBeenCalledOnce();
+    });
+    expect(dependencies.loadRecommendations).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGroupId: "group-1" })
+    );
+    resolveRecommendations(todayResponse("group-2"));
+
+    const state = await pendingState;
+    expect(state).toMatchObject({
+      kind: "error",
+      group: { groupId: "group-1" },
+      message: "暂时无法加载今日推荐，请重试。"
+    });
+    expect("response" in state).toBe(false);
+    expect(loadParticipation).not.toHaveBeenCalled();
+  });
+
+  it("rejects participation from a different group snapshot", async () => {
+    let resolveParticipation!: (response: ParticipationTodayResponse) => void;
+    const dependencies = popupDependencies({
+      loadParticipation: vi.fn(() => new Promise<ParticipationTodayResponse>(
+        (resolve) => {
+          resolveParticipation = resolve;
+        }
+      ))
+    });
+
+    const pendingState = loadPopupState(dependencies);
+    await vi.waitFor(() => {
+      expect(dependencies.loadStorage).toHaveBeenCalledOnce();
+      expect(dependencies.loadParticipation).toHaveBeenCalledOnce();
+    });
+    expect(dependencies.loadParticipation).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGroupId: "group-1" })
+    );
+    resolveParticipation(participationResponse("group-2"));
+
+    const state = await pendingState;
+    expect(state).toMatchObject({
+      kind: "error",
+      group: { groupId: "group-1" },
+      message: "暂时无法加载今日推荐，请重试。"
+    });
+    expect("response" in state).toBe(false);
+  });
+
+  it.each([
+    [401, "session-expired"],
+    [403, "forbidden"]
+  ] as const)(
+    "maps participation HTTP %s to %s instead of preserving writable recommendations",
+    async (status, kind) => {
+      const state = await loadPopupState(popupDependencies({
+        loadParticipation: vi.fn().mockRejectedValue(
+          new ExtensionApiError({ kind: "http", status })
+        )
+      }));
+
+      expect(state).toMatchObject({
+        kind,
+        group: { groupId: "group-1" }
+      });
+      expect("response" in state).toBe(false);
+    }
+  );
+
+  it("maps invalid participation failures to a stable safe error", async () => {
+    const state = await loadPopupState(popupDependencies({
+      loadParticipation: vi.fn().mockRejectedValue(
+        new ExtensionApiError({
+          kind: "invalid-response",
+          message: "token=private-session-token"
+        })
+      )
+    }));
+
+    expect(state).toMatchObject({
+      kind: "error",
+      group: { groupId: "group-1" },
+      message: "暂时无法加载今日推荐，请重试。"
+    });
+    expect(JSON.stringify(state)).not.toContain("private-session-token");
+    expect("response" in state).toBe(false);
+  });
+
+  it.each([
+    [401, "session-expired"],
+    [403, "forbidden"]
+  ] as const)("routes action HTTP %s to %s", async (status, kind) => {
+    const state = await loadPopupState(popupDependencies());
+    const resolution = resolvePopupActionFailure(
+      state,
+      new ExtensionApiError({ kind: "http", status }),
+      "记录失败，请重试。"
+    );
+
+    expect(resolution).toMatchObject({
+      kind: "state",
+      state: { kind, group: { groupId: "group-1" } }
+    });
+  });
+
+  it("uses stable safe copy for non-auth action failures", async () => {
+    const state = await loadPopupState(popupDependencies());
+    const resolution = resolvePopupActionFailure(
+      state,
+      new ExtensionApiError({
+        kind: "invalid-response",
+        message: "Bearer private-session-token"
+      }),
+      "记录反馈失败，请重试。"
+    );
+
+    expect(resolution).toEqual({
+      kind: "message",
+      message: "记录反馈失败，请重试。"
+    });
+    expect(JSON.stringify(resolution)).not.toContain("private-session-token");
+  });
+
+  it("distinguishes fresh retry success from retryable cached/error outcomes", async () => {
+    const readyState = await loadPopupState(popupDependencies());
+    const cachedState = await loadPopupState(popupDependencies({
+      loadRecommendations: vi.fn().mockResolvedValue({
+        ...todayResponse("group-1"),
+        fromCache: true
+      })
+    }));
+
+    expect(classifyPopupRetryOutcome(readyState)).toEqual({
+      kind: "fresh",
+      announcement: "已获取最新推荐。"
+    });
+    expect(classifyPopupRetryOutcome(cachedState)).toEqual({
+      kind: "retryable-failure",
+      announcement: "暂时仍无法获取最新推荐，当前为缓存只读内容，请重试。"
+    });
+    expect(classifyPopupRetryOutcome({
+      kind: "error",
+      message: "暂时无法加载今日推荐，请重试。"
+    })).toEqual({
+      kind: "retryable-failure",
+      announcement: "暂时仍无法获取最新推荐，请重试。"
+    });
+  });
+
+  it("restores focus to the originating restaurant or a safe fallback", () => {
+    const firstFocus = vi.fn();
+    const originFocus = vi.fn();
+    const fallbackFocus = vi.fn();
+    const targets = [
+      { restaurantId: "restaurant-1", focus: firstFocus },
+      { restaurantId: "restaurant-'\"] unsafe", focus: originFocus }
+    ];
+
+    expect(restoreRecommendationFocus(
+      targets,
+      "restaurant-'\"] unsafe",
+      { focus: fallbackFocus }
+    )).toBe("card");
+    expect(originFocus).toHaveBeenCalledOnce();
+    expect(firstFocus).not.toHaveBeenCalled();
+    expect(fallbackFocus).not.toHaveBeenCalled();
+
+    expect(restoreRecommendationFocus(
+      targets,
+      "missing-restaurant",
+      { focus: fallbackFocus }
+    )).toBe("fallback");
+    expect(fallbackFocus).toHaveBeenCalledOnce();
+  });
+
   it("uses the authoritative refresh response without a redundant recommendation read", async () => {
     const freshResponse = {
       ...todayResponse("group-1"),
@@ -206,6 +400,40 @@ describe("popup controller", () => {
       kind: "ready",
       response: { batchId: "batch-2" }
     });
+  });
+
+  it("captures refresh storage before the request and rejects another group's response", async () => {
+    const calls: string[] = [];
+    const loadParticipation = vi.fn();
+    const dependencies = popupDependencies({
+      loadStorage: vi.fn(async () => {
+        calls.push("storage");
+        return await popupDependencies().loadStorage();
+      }),
+      loadParticipation
+    });
+    const refreshRecommendations = vi.fn(async () => {
+      calls.push("refresh");
+      return todayResponse("group-2");
+    });
+
+    const state = await loadRefreshedPopupState({
+      ...dependencies,
+      refreshRecommendations
+    });
+
+    expect(calls).toEqual(["storage", "refresh"]);
+    expect(dependencies.loadStorage).toHaveBeenCalledOnce();
+    expect(refreshRecommendations).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGroupId: "group-1" })
+    );
+    expect(state).toMatchObject({
+      kind: "error",
+      group: { groupId: "group-1" },
+      message: "暂时无法加载今日推荐，请重试。"
+    });
+    expect("response" in state).toBe(false);
+    expect(loadParticipation).not.toHaveBeenCalled();
   });
 
   it("applies a participation update to the current member and summaries immutably", async () => {
