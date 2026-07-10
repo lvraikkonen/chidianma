@@ -4,6 +4,8 @@ Status: `Approved for Planning`
 
 Date: 2026-07-08
 
+Stage 3 hardening amendment: 2026-07-09
+
 ## 概述
 
 本设计把 `demo-design/` 中的 Open Designer 原型升级为下一阶段产品规格。上一阶段优先跑通了单团队工程竖切：Chrome MV3 插件、Fastify 后端、PostgreSQL/Prisma、真实天气、推荐生成、反馈和轻量管理后台。本阶段目标是在保留已跑通闭环的基础上，把产品升级为支持多个“干饭小组”的真实数据产品，并让原型中的插件端与管理后台页面全部接入真实 API。
@@ -539,6 +541,10 @@ interface ExtensionStorageShape {
 
 popup fallback 只能读取 `lastRecommendationsByGroupId[activeGroupId]`。从 A 组切到 B 组后，B 组请求失败时不得展示 A 组缓存。
 
+所有对 `lunchState` 的局部更新必须通过 `updateStorageState(updater: (state: ExtensionStorageShape) => ExtensionStorageShape)` 完成。该入口使用名称为 `lunch-extension-storage-state` 的 Web Locks 独占锁，并且必须在取得锁之后重新读取最新状态、应用 updater、再写回 `chrome.storage.local`。`saveSettings`、推荐缓存写入以及 options 中的当前小组/session 保存都必须使用这个入口；不得在锁外先读取整个状态后再覆盖写回。`saveStorageState(state)` 只用于明确的完整状态替换，也必须使用同一把锁，但不得用于局部字段更新。当前 Chrome Manifest V3 运行目标把 Web Locks 视为必需能力；锁 API 不可用时写操作必须失败，不提供会退化成不安全 read-modify-write 的 fallback。
+
+`saveGroupRecommendationCache(groupId, response)` 只允许在 `groupId === response.groupId` 时写入；不匹配时必须拒绝且不得修改任何缓存。读取 `lastRecommendationsByGroupId[activeGroupId]` 时，如果存储值自身的 `groupId` 与 active bucket 不一致，必须返回 `null`，不得把错误分桶的数据展示给用户。
+
 小组设置中的 `reminder_time` 是默认提醒时间；插件本地 `reminderTime` 是用户本机 override。首次加入小组时用小组默认值初始化本地设置，之后用户本地设置优先，后台修改不得静默覆盖用户本地 override。
 
 离线或后端不可用时，popup 展示当前小组最近一次成功推荐缓存，并清楚标记“缓存”。
@@ -643,6 +649,7 @@ Dashboard 展示当前小组真实聚合数据：
 - `decided -> joining | away | decided`
 - 当 `status=decided` 时必须带 `restaurantId`；`recommendationId` 可选。
 - 当 `status!=decided` 时必须清空 `restaurantId`、`recommendationId`、`decidedAt`。
+- 请求中只要出现 `restaurantId` 或 `recommendationId`，值就必须是 trim 后非空的字符串；数字、对象、空字符串或纯空白字符串返回 400/`invalid_participation_request`，不得降级为“未提供”后继续写入。
 
 历史复盘以 `daily_participation.status=decided` 为事实来源。多人选择不同店时，历史展示多店分布，不强行折叠成单一胜者。
 
@@ -735,6 +742,7 @@ Dev团队 · 干饭小分队
 - 天气不可用 fallback。
 - A 组 session 不能读写 B 组 restaurants、recommendations、feedback、participation。
 - feedback 和 participation 中传入其他组 `restaurantId` 时返回 400 或 403。
+- participation 中传入非字符串、空字符串或纯空白的 `restaurantId`/`recommendationId` 时返回 400/`invalid_participation_request`，且不写入 participation。
 - removed member 不能读写；role 降级或移除后旧 token 立即失效。
 - 不能移除或降级最后一个 active admin。
 - removed membership 不能通过 join 自助恢复。
@@ -750,6 +758,8 @@ Dev团队 · 干饭小分队
 - 缓存 fallback。
 - active group 切换后只读取对应 group 的 cache。
 - B 组请求失败时不会展示 A 组 cache。
+- 并发执行 settings、当前小组/session 和不同小组 cache 的局部更新时不会互相覆盖；受控交错测试必须证明每次 updater 都在同一个 Web Locks 独占锁内重新读取最新状态。
+- cache 保存拒绝 bucket `groupId` 与 response `groupId` 不一致；active bucket 内存储值自身 `groupId` 不一致时 fallback 返回 `null`。
 - session 过期时提示重新连接当前组。
 - notification 使用 active group。
 - 参与状态和决定操作。
