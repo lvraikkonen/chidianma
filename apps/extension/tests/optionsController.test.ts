@@ -375,6 +375,31 @@ describe("options controller", () => {
     });
   });
 
+  it("renders the one-time invite code after group creation without exposing tokens", async () => {
+    const render = vi.fn();
+    const controller = createOptionsController(optionsDependencies({
+      render,
+      loadStorage: vi.fn().mockResolvedValue({
+        ...getDefaultStorageState(),
+        identityToken: "identity-token",
+        identityDisplayName: "小林"
+      }),
+      createGroup: vi.fn().mockResolvedValue({
+        ...groupSessionResponse("group-1"),
+        inviteCode: "ABCD12"
+      })
+    }));
+
+    await controller.createGroup({ groupName: "设计组" });
+
+    expect(render).toHaveBeenLastCalledWith(expect.objectContaining({
+      kind: "ready",
+      inviteCode: "ABCD12"
+    }));
+    expect(JSON.stringify(render.mock.calls.at(-1)?.[0])).not.toContain("group-session-token");
+    expect(JSON.stringify(render.mock.calls.at(-1)?.[0])).not.toContain("session-group-1");
+  });
+
   it("keeps the created group invite when saving its connection rejects", async () => {
     const storage = connectedStorage();
     const response = groupCreationResponse("group-2");

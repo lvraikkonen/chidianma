@@ -7,28 +7,56 @@
     <link rel="stylesheet" href="/styles/options.css" />
   </head>
   <body>
-    <main class="options">
-      <h1>中午吃点啥设置</h1>
-      <form id="settings-form">
-        <label>API 地址<input id="apiBaseUrl" type="url" required /></label>
-        <label>只读 Team Token<input id="readToken" type="text" required /></label>
-        <label>
-          当前小组 ID
-          <input id="activeGroupId" name="activeGroupId" />
-        </label>
-        <label>
-          当前小组 Session Token
-          <input id="groupSessionToken" name="groupSessionToken" />
-        </label>
-        <label>
-          Identity Token
-          <input id="identityToken" name="identityToken" />
-        </label>
-        <label>提醒时间<input id="reminderTime" type="time" required /></label>
-        <label><input id="enabled" type="checkbox" /> 启用工作日提醒</label>
-        <button type="submit">保存</button>
-      </form>
-      <p id="message"></p>
+    <main class="settings-page">
+      <header class="settings-header">
+        <a class="brand" href="index.html" aria-label="返回今日推荐">
+          <span class="brand-mark" aria-hidden="true">♨</span>
+          <span><strong>中午吃点啥</strong><small>插件设置</small></span>
+        </a>
+        <p id="global-message" class="global-message" aria-live="polite"></p>
+      </header>
+
+      <section id="identity-card" class="settings-card" aria-labelledby="identity-title">
+        <div class="section-heading"><span>01</span><h1 id="identity-title">连接干饭小组</h1></div>
+        <div id="identity-state"></div>
+      </section>
+
+      <section id="groups-card" class="settings-card" aria-labelledby="groups-title" hidden>
+        <div class="section-heading"><span>02</span><h2 id="groups-title">当前小组</h2></div>
+        <div id="group-list" class="group-list"></div>
+        <div class="entry-grid">
+          <form id="create-group-form" class="stack">
+            <h3>创建新小组</h3>
+            <label>小组名称<input id="group-name" required maxlength="80" /></label>
+            <label>一句话说明<input id="group-subtitle" maxlength="120" /></label>
+            <button class="button primary" type="submit">创建小组</button>
+          </form>
+          <form id="join-group-form" class="stack">
+            <h3>用邀请码加入</h3>
+            <label>邀请码<input id="invite-code" required autocomplete="off" /></label>
+            <button class="button secondary" type="submit">加入小组</button>
+          </form>
+        </div>
+        <div id="invite-result" class="invite-result" aria-live="polite" hidden></div>
+      </section>
+
+      <section id="reminder-card" class="settings-card" aria-labelledby="reminder-title" hidden>
+        <div class="section-heading"><span>03</span><h2 id="reminder-title">本机提醒</h2></div>
+        <form id="reminder-form" class="setting-rows">
+          <label class="setting-row"><span><strong>提醒时间</strong><small>当前小组的本机覆盖值</small></span><input id="reminder-time" type="time" required /></label>
+          <label class="setting-row"><span><strong>工作日提醒</strong><small>周一到周五，周末不打扰</small></span><input id="reminder-enabled" type="checkbox" /></label>
+          <button class="button primary" type="submit">保存提醒</button>
+        </form>
+      </section>
+
+      <details class="settings-card advanced-card">
+        <summary>高级连接设置</summary>
+        <form id="api-host-form" class="stack">
+          <label>API 地址<input id="api-base-url" type="url" required /></label>
+          <p>更换地址会断开当前身份并清除该服务的分组缓存。</p>
+          <button class="button danger" type="submit">更换 API 地址</button>
+        </form>
+      </details>
     </main>
     <script type="module" src="/src/options.ts"></script>
   </body>
