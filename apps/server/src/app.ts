@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import { loadEnv } from "./env.js";
 import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerGroupKnowledgeRoutes } from "./routes/groupKnowledge.js";
+import { registerGroupParticipationRoutes } from "./routes/groupParticipation.js";
 import { registerGroupRoutes } from "./routes/groups.js";
 import { registerGroupTodayRoutes } from "./routes/groupToday.js";
 import { registerHealthRoutes } from "./routes/health.js";
@@ -21,6 +22,7 @@ export async function buildApp() {
   await registerHealthRoutes(app);
   await registerGroupRoutes(app, env);
   await registerGroupTodayRoutes(app, env);
+  await registerGroupParticipationRoutes(app, env);
   await registerGroupKnowledgeRoutes(app, env);
   await registerRecommendationRoutes(app, env);
   await registerSessionRoutes(app, env);
