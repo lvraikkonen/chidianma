@@ -37,6 +37,18 @@ Codex and Superpowers may create subagents through the controls exposed by the a
 - The absence of a per-dispatch model parameter must not by itself block Subagent-Driven Development.
 - Do not claim a specific subagent model unless it was explicitly selected or otherwise verifiable.
 
+## Code Intelligence
+
+- When CodeGraph is available and the workspace index is initialized, use it before manual `rg`/file-reading loops for symbol lookup, module understanding, call-flow tracing, caller/callee discovery, and change-impact analysis.
+- Prefer:
+  - `codegraph_context` for understanding a feature or module.
+  - `codegraph_search` for locating symbols.
+  - `codegraph_trace` for cross-file call paths.
+  - `codegraph_impact` before changing shared symbols.
+- If CodeGraph reports stale or pending files, read those specific files directly before relying on their contents.
+- Fall back to `rg` and direct file reads when CodeGraph is unavailable, uninitialized, ambiguous, or does not cover the required detail.
+- CodeGraph is a structural navigation aid, not a source of product requirements or correctness validation. Specs and plans remain authoritative; verify changes with tests, typecheck, and builds.
+
 ## Claude Code / gstack Role
 
 Claude Code with gstack is primarily used for:
