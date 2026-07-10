@@ -1,4 +1,7 @@
-import { fetchTodayRecommendations } from "./recommendationClient";
+import {
+  fetchTodayRecommendations,
+  isGroupResponse
+} from "./recommendationClient";
 
 const root = document.querySelector<HTMLElement>("#detail-root")!;
 
@@ -6,7 +9,9 @@ void fetchTodayRecommendations()
   .then((response) => {
     root.replaceChildren();
     const summary = document.createElement("p");
-    summary.textContent = response.weatherSummary ?? "今天先按距离和历史推荐来挑。";
+    summary.textContent = isGroupResponse(response)
+      ? response.weather?.summary ?? "今天先按距离、星期和同事推荐来挑。"
+      : response.weatherSummary ?? "今天先按距离和历史推荐来挑。";
     root.appendChild(summary);
     for (const item of response.items) {
       const article = document.createElement("article");

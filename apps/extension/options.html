@@ -12,6 +12,18 @@
       <form id="settings-form">
         <label>API 地址<input id="apiBaseUrl" type="url" required /></label>
         <label>只读 Team Token<input id="readToken" type="text" required /></label>
+        <label>
+          当前小组 ID
+          <input id="activeGroupId" name="activeGroupId" />
+        </label>
+        <label>
+          当前小组 Session Token
+          <input id="groupSessionToken" name="groupSessionToken" />
+        </label>
+        <label>
+          Identity Token
+          <input id="identityToken" name="identityToken" />
+        </label>
         <label>提醒时间<input id="reminderTime" type="time" required /></label>
         <label><input id="enabled" type="checkbox" /> 启用工作日提醒</label>
         <button type="submit">保存</button>

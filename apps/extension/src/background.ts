@@ -1,6 +1,10 @@
 import { LUNCH_HEADLINE } from "@lunch/shared";
 import { getNextAlarmTime } from "./alarmSchedule";
-import { fetchTodayRecommendations } from "./recommendationClient";
+import {
+  ensureGroupTodayRecommendations,
+  fetchTodayRecommendations,
+  isGroupResponse
+} from "./recommendationClient";
 import { getSettings } from "./storage";
 
 const ALARM_NAME = "lunch-reminder";
@@ -55,8 +59,13 @@ export async function scheduleLunchAlarm(): Promise<void> {
 }
 
 export async function showLunchNotification(): Promise<void> {
-  const recommendation = await fetchTodayRecommendations();
+  const recommendation = await ensureGroupTodayRecommendations().catch(() =>
+    fetchTodayRecommendations()
+  );
   const names = recommendation.items.map((item) => item.restaurantName).join("、");
+  const weatherSummary = isGroupResponse(recommendation)
+    ? recommendation.weather?.summary
+    : recommendation.weatherSummary;
 
   const options: chrome.notifications.NotificationOptions<true> = {
     type: "basic",
@@ -66,8 +75,8 @@ export async function showLunchNotification(): Promise<void> {
     priority: 1
   };
 
-  if (recommendation.weatherSummary) {
-    options.contextMessage = recommendation.weatherSummary;
+  if (weatherSummary) {
+    options.contextMessage = weatherSummary;
   }
 
   await chrome.notifications.create(NOTIFICATION_ID, options);

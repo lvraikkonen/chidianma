@@ -1,21 +1,262 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AUTHORIZATION_HEADER, GROUP_ROUTES, READ_TOKEN_HEADER } from "@lunch/shared";
 import { STORAGE_KEYS } from "../src/config";
-import { postFeedback } from "../src/recommendationClient";
+import {
+  decideTodayRecommendation,
+  ensureGroupTodayRecommendations,
+  fetchTodayRecommendations,
+  postFeedback,
+  putTodayParticipation,
+  refreshGroupTodayRecommendations
+} from "../src/recommendationClient";
+import { getDefaultStorageState, STORAGE_STATE_LOCK_NAME } from "../src/storage";
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
-describe("postFeedback", () => {
-  it("posts feedback with the configured read token", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({ ok: true } as Response));
+function stubGroupedState(extra: Partial<ReturnType<typeof getDefaultStorageState>> = {}) {
+  const locks = {
+    request: vi.fn(
+      async (
+        _name: string,
+        _options: LockOptions,
+        callback: () => Promise<unknown>
+      ) => callback()
+    )
+  };
+  const get = vi.fn().mockResolvedValue({
+    [STORAGE_KEYS.state]: {
+      ...getDefaultStorageState(),
+      apiBaseUrl: "https://lunch.example",
+      activeGroupId: "group-1",
+      sessionsByGroupId: {
+        "group-1": { token: "group-session-token" }
+      },
+      ...extra
+    }
+  });
+  const set = vi.fn().mockResolvedValue(undefined);
+
+  vi.stubGlobal("navigator", { locks });
+  vi.stubGlobal("chrome", {
+    storage: {
+      local: { get, set }
+    }
+  });
+
+  return { get, set, locks };
+}
+
+describe("group recommendation client", () => {
+  it("fetches current group today recommendations with the group session token", async () => {
+    const fetchMock = vi.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit
+    ) => ({
+      ok: true,
+      json: async () => ({
+        groupId: "group-1",
+        officeDate: "2026-07-09",
+        batchId: "batch-1",
+        batchNo: 1,
+        generatedAt: "2026-07-09T03:30:00.000Z",
+        participationSummary: { joiningCount: 0, decidedCount: 0, awayCount: 0, undecidedCount: 1 },
+        items: []
+      })
+    } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    const { locks } = stubGroupedState();
+
+    await fetchTodayRecommendations();
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect((url as URL).toString()).toBe(
+      `https://lunch.example${GROUP_ROUTES.todayRecommendations("group-1")}`
+    );
+    expect(init).toMatchObject({
+      headers: { [AUTHORIZATION_HEADER]: "Bearer group-session-token" }
+    });
+    expect(locks.request).toHaveBeenCalledWith(
+      STORAGE_STATE_LOCK_NAME,
+      { mode: "exclusive" },
+      expect.any(Function)
+    );
+  });
+
+  it("refreshes current group recommendations with POST refresh", async () => {
+    const fetchMock = vi.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit
+    ) => ({
+      ok: true,
+      json: async () => ({
+        groupId: "group-1",
+        officeDate: "2026-07-09",
+        batchId: "batch-2",
+        batchNo: 2,
+        generatedAt: "2026-07-09T04:00:00.000Z",
+        participationSummary: { joiningCount: 0, decidedCount: 0, awayCount: 0, undecidedCount: 1 },
+        items: []
+      })
+    } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState();
+
+    await refreshGroupTodayRecommendations();
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect((url as URL).toString()).toBe(
+      `https://lunch.example${GROUP_ROUTES.refreshTodayRecommendations("group-1")}`
+    );
+    expect(init).toMatchObject({ method: "POST" });
+  });
+
+  it("ensures recommendations by refreshing after no_current_batch", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "no_current_batch", message: "No current batch" })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          groupId: "group-1",
+          officeDate: "2026-07-09",
+          batchId: "batch-1",
+          batchNo: 1,
+          generatedAt: "2026-07-09T03:30:00.000Z",
+          participationSummary: { joiningCount: 0, decidedCount: 0, awayCount: 0, undecidedCount: 1 },
+          items: []
+        })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState({
+      lastRecommendationsByGroupId: {
+        "group-1": {
+          groupId: "group-1",
+          officeDate: "2026-07-08",
+          batchId: "old-batch",
+          batchNo: 1,
+          generatedAt: "2026-07-08T03:30:00.000Z",
+          participationSummary: { joiningCount: 0, decidedCount: 0, awayCount: 0, undecidedCount: 1 },
+          items: [],
+          fromCache: true
+        }
+      }
+    });
+
+    await ensureGroupTodayRecommendations();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[1]?.[0] as URL).toString()).toBe(
+      `https://lunch.example${GROUP_ROUTES.refreshTodayRecommendations("group-1")}`
+    );
+  });
+
+  it("posts participation decisions to the active group", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState();
+
+    await putTodayParticipation({ status: "joining" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://lunch.example/api/groups/group-1/participation/today"),
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({
+          "content-type": "application/json",
+          authorization: "Bearer group-session-token"
+        }),
+        body: JSON.stringify({ status: "joining" })
+      })
+    );
+  });
+
+  it("records the selected recommendation as today's decision", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState();
+
+    await decideTodayRecommendation({
+      restaurantId: "restaurant-1",
+      recommendationId: "recommendation-1",
+      restaurantName: "面馆",
+      dish: "牛肉面",
+      reason: "同事推荐",
+      distanceMinutes: 8,
+      tags: ["面食"],
+      rank: 1,
+      score: 42,
+      scoreBreakdown: {
+        weekdayMatch: 1,
+        weatherMatch: 0,
+        distance: 3,
+        teammateRecommendation: 4,
+        recentDuplicatePenalty: 0,
+        negativeFeedbackPenalty: 0,
+        total: 8
+      }
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://lunch.example/api/groups/group-1/participation/today"),
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          status: "decided",
+          restaurantId: "restaurant-1",
+          recommendationId: "recommendation-1"
+        })
+      })
+    );
+  });
+
+  it("posts avoid feedback to the active group with group session auth", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState();
+
+    await postFeedback({
+      date: "2026-07-09",
+      restaurantId: "restaurant-1",
+      recommendationId: "recommendation-1",
+      type: "avoid"
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://lunch.example/api/groups/group-1/feedback"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "content-type": "application/json",
+          authorization: "Bearer group-session-token"
+        }),
+        body: JSON.stringify({
+          officeDate: "2026-07-09",
+          restaurantId: "restaurant-1",
+          recommendationId: "recommendation-1",
+          type: "avoid"
+        })
+      })
+    );
+  });
+});
+
+describe("legacy recommendation client fallback", () => {
+  it("keeps legacy feedback fallback when no active group session exists", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true } as Response));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("chrome", {
       storage: {
         local: {
           get: vi.fn().mockResolvedValue({
-            [STORAGE_KEYS.settings]: {
+            [STORAGE_KEYS.state]: {
+              ...getDefaultStorageState(),
               apiBaseUrl: "https://lunch.example",
               readToken: "read-token"
             }
@@ -25,26 +266,27 @@ describe("postFeedback", () => {
     });
 
     await postFeedback({
-      date: "2026-07-07",
+      date: "2026-07-09",
       restaurantId: "restaurant-1",
       recommendationId: "recommendation-1",
       type: "want"
     });
 
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect((url as URL).toString()).toBe("https://lunch.example/api/feedback");
-    expect(init).toEqual({
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-lunch-read-token": "read-token"
-      },
-      body: JSON.stringify({
-        date: "2026-07-07",
-        restaurantId: "restaurant-1",
-        recommendationId: "recommendation-1",
-        type: "want"
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://lunch.example/api/feedback"),
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [READ_TOKEN_HEADER]: "read-token"
+        },
+        body: JSON.stringify({
+          date: "2026-07-09",
+          restaurantId: "restaurant-1",
+          recommendationId: "recommendation-1",
+          type: "want"
+        })
       })
-    });
+    );
   });
 });
