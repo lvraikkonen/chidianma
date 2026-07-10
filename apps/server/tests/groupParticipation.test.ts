@@ -538,8 +538,105 @@ describe("group participation routes", () => {
     await app.close();
   });
 
+  it("rejects non-decided participation with a restaurant outside the path group", async () => {
+    seedActiveMemberships([{ id: "membership-1", displayName: "小陈" }]);
+    seedRestaurant({ id: "restaurant-2", groupId: "group-2" });
+
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/groups/group-1/participation/today",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { status: "joining", restaurantId: "restaurant-2" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "restaurant_group_mismatch" });
+    expect(prisma.dailyParticipation.upsert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rejects non-decided participation with a recommendation outside the path group", async () => {
+    seedActiveMemberships([{ id: "membership-1", displayName: "小陈" }]);
+    seedRestaurant({ id: "restaurant-1", groupId: "group-1" });
+    seedRecommendation({
+      id: "recommendation-2",
+      groupId: "group-2",
+      restaurantId: "restaurant-1"
+    });
+
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/groups/group-1/participation/today",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {
+        status: "away",
+        restaurantId: "restaurant-1",
+        recommendationId: "recommendation-2"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "recommendation_group_mismatch" });
+    expect(prisma.dailyParticipation.upsert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rejects non-decided participation with a recommendation for another restaurant", async () => {
+    seedActiveMemberships([{ id: "membership-1", displayName: "小陈" }]);
+    seedRestaurant({ id: "restaurant-1", groupId: "group-1" });
+    seedRecommendation({
+      id: "recommendation-2",
+      groupId: "group-1",
+      restaurantId: "restaurant-2"
+    });
+
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/groups/group-1/participation/today",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: {
+        status: "undecided",
+        restaurantId: "restaurant-1",
+        recommendationId: "recommendation-2"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "recommendation_group_mismatch" });
+    expect(prisma.dailyParticipation.upsert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("requires restaurantId when non-decided participation includes recommendationId", async () => {
+    seedActiveMemberships([{ id: "membership-1", displayName: "小陈" }]);
+
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/groups/group-1/participation/today",
+      headers: { authorization: `Bearer ${groupToken()}` },
+      payload: { status: "joining", recommendationId: "recommendation-1" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "recommendation_restaurant_required"
+    });
+    expect(prisma.dailyParticipation.upsert).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("clears restaurant, recommendation, and decidedAt for non-decided participation", async () => {
     seedActiveMemberships([{ id: "membership-1", displayName: "小陈" }]);
+    seedRestaurant({ id: "restaurant-1", groupId: "group-1" });
+    seedRecommendation({
+      id: "recommendation-1",
+      groupId: "group-1",
+      restaurantId: "restaurant-1"
+    });
     seedParticipation([
       {
         membershipId: "membership-1",

@@ -59,6 +59,12 @@ function parseParticipationBody(body: unknown): PutParticipationTodayRequest {
       "restaurantId is required when status is decided"
     );
   }
+  if (recommendationId && !restaurantId) {
+    throw new ParticipationValidationError(
+      "recommendation_restaurant_required",
+      "restaurantId is required when recommendationId is provided"
+    );
+  }
   return {
     status: status as ParticipationStatus,
     ...(restaurantId ? { restaurantId } : {}),
@@ -66,10 +72,11 @@ function parseParticipationBody(body: unknown): PutParticipationTodayRequest {
   };
 }
 
-async function assertDecisionReferences(input: {
+async function assertParticipationReferences(input: {
   groupId: string;
   restaurantId: string;
   recommendationId?: string;
+  requireActiveRestaurant: boolean;
 }) {
   const restaurant = await prisma.restaurant.findFirst({
     where: { id: input.restaurantId, groupId: input.groupId }
@@ -80,7 +87,7 @@ async function assertDecisionReferences(input: {
       "Restaurant does not belong to route group"
     );
   }
-  if (restaurant.status !== "active") {
+  if (input.requireActiveRestaurant && restaurant.status !== "active") {
     throw new ParticipationValidationError(
       "restaurant_not_active",
       "Only active restaurants can be selected"
@@ -214,13 +221,14 @@ export async function registerGroupParticipationRoutes(
           where: { id: membership.membershipId },
           include: { identity: true }
         });
-        if (body.status === "decided") {
-          await assertDecisionReferences({
+        if (body.restaurantId) {
+          await assertParticipationReferences({
             groupId: request.params.groupId,
-            restaurantId: body.restaurantId as string,
+            restaurantId: body.restaurantId,
             ...(body.recommendationId
               ? { recommendationId: body.recommendationId }
-              : {})
+              : {}),
+            requireActiveRestaurant: body.status === "decided"
           });
         }
         const clearDecision = body.status !== "decided";
