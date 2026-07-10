@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { runButtonAction } from "../src/uiAction";
+import {
+  createExclusiveActionGate,
+  runButtonAction
+} from "../src/uiAction";
 
 describe("runButtonAction", () => {
   it("shows pending state and keeps the successful action disabled", async () => {
@@ -75,5 +78,50 @@ describe("runButtonAction", () => {
 
     expect(button).toEqual({ textContent: "已记录参与", disabled: true });
     expect(status).toBe("");
+  });
+});
+
+describe("createExclusiveActionGate", () => {
+  it("ignores a competing action and releases after the pending action succeeds", async () => {
+    let resolveFirst!: () => void;
+    const firstAction = vi.fn(
+      () => new Promise<void>((resolve) => {
+        resolveFirst = resolve;
+      })
+    );
+    const competingAction = vi.fn().mockResolvedValue(undefined);
+    const nextAction = vi.fn().mockResolvedValue(undefined);
+    const pendingChanges: boolean[] = [];
+    const gate = createExclusiveActionGate({
+      onPendingChange: (pending) => pendingChanges.push(pending)
+    });
+
+    const firstResult = gate.run(firstAction);
+
+    expect(gate.isPending()).toBe(true);
+    expect(pendingChanges).toEqual([true]);
+    await expect(gate.run(competingAction)).resolves.toBe(false);
+    expect(competingAction).not.toHaveBeenCalled();
+
+    resolveFirst();
+    await expect(firstResult).resolves.toBe(true);
+    expect(gate.isPending()).toBe(false);
+    expect(pendingChanges).toEqual([true, false]);
+
+    await expect(gate.run(nextAction)).resolves.toBe(true);
+    expect(nextAction).toHaveBeenCalledOnce();
+  });
+
+  it("releases after a failed action so a later action can run", async () => {
+    const gate = createExclusiveActionGate();
+    const nextAction = vi.fn().mockResolvedValue(undefined);
+
+    await expect(gate.run(async () => {
+      throw new Error("network failed");
+    })).rejects.toThrow("network failed");
+
+    expect(gate.isPending()).toBe(false);
+    await expect(gate.run(nextAction)).resolves.toBe(true);
+    expect(nextAction).toHaveBeenCalledOnce();
   });
 });

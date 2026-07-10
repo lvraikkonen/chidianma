@@ -19,6 +19,7 @@ import {
   syncGroupSummaries,
   type ExtensionStorageShape
 } from "./storage";
+import { createExclusiveActionGate } from "./uiAction";
 
 const globalMessage = document.querySelector<HTMLElement>("#global-message")!;
 const identityState = document.querySelector<HTMLElement>("#identity-state")!;
@@ -50,20 +51,18 @@ function createLabel(text: string, input: HTMLInputElement): HTMLLabelElement {
   return label;
 }
 
-async function runFormAction(
-  form: HTMLFormElement,
-  action: () => Promise<void>
-): Promise<void> {
-  const submitButton = form.querySelector<HTMLButtonElement>(
-    'button[type="submit"]'
-  )!;
-  submitButton.disabled = true;
-  try {
-    await action();
-  } finally {
-    submitButton.disabled = false;
-  }
+function setActionControlsDisabled(disabled: boolean): void {
+  document.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+    button.disabled = disabled;
+  });
 }
+
+const actionGate = createExclusiveActionGate({
+  onPendingChange: (pending) => {
+    setActionControlsDisabled(pending);
+    if (!pending) renderOptions(controller.getState());
+  }
+});
 
 function renderIdentity(container: HTMLElement, state: OptionsViewState): void {
   if (state.storage.identityToken) {
@@ -78,12 +77,9 @@ function renderIdentity(container: HTMLElement, state: OptionsViewState): void {
     disconnectButton.className = "button secondary";
     disconnectButton.type = "button";
     disconnectButton.textContent = "断开连接";
-    disconnectButton.disabled = state.kind === "loading";
+    disconnectButton.disabled = state.kind === "loading" || actionGate.isPending();
     disconnectButton.addEventListener("click", () => {
-      disconnectButton.disabled = true;
-      void controller.disconnect().finally(() => {
-        disconnectButton.disabled = false;
-      });
+      void actionGate.run(() => controller.disconnect());
     });
 
     connection.append(displayName, disconnectButton);
@@ -105,14 +101,14 @@ function renderIdentity(container: HTMLElement, state: OptionsViewState): void {
   submitButton.className = "button primary";
   submitButton.type = "submit";
   submitButton.textContent = "建立轻量身份";
-  submitButton.disabled = state.kind === "loading";
+  submitButton.disabled = state.kind === "loading" || actionGate.isPending();
 
   form.append(createLabel("你的名字", displayName), submitButton);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const name = displayName.value.trim();
     if (!name) return;
-    void runFormAction(form, () => controller.createIdentity(name));
+    void actionGate.run(() => controller.createIdentity(name));
   });
   container.replaceChildren(form);
 }
@@ -134,7 +130,10 @@ function renderGroups(container: HTMLElement, state: OptionsViewState): void {
     button.className = "group-option";
     button.type = "button";
     button.setAttribute("aria-current", String(isActive));
-    button.disabled = state.kind === "loading" || isActive || Boolean(pendingGroupId);
+    button.disabled = actionGate.isPending()
+      || state.kind === "loading"
+      || isActive
+      || Boolean(pendingGroupId);
 
     const name = document.createElement("strong");
     name.textContent = group.name;
@@ -148,10 +147,7 @@ function renderGroups(container: HTMLElement, state: OptionsViewState): void {
 
     if (!isActive) {
       button.addEventListener("click", () => {
-        button.disabled = true;
-        void controller.switchGroup(group.groupId).finally(() => {
-          button.disabled = false;
-        });
+        void actionGate.run(() => controller.switchGroup(group.groupId));
       });
     }
     return button;
@@ -187,6 +183,7 @@ function renderOptions(state: OptionsViewState): void {
     inviteResult,
     state.kind === "ready" ? state.inviteCode : undefined
   );
+  if (actionGate.isPending()) setActionControlsDisabled(true);
 }
 
 const controller = createOptionsController({
@@ -210,7 +207,7 @@ createGroupForm.addEventListener("submit", (event) => {
   const nextGroupName = groupName.value.trim();
   const subtitle = groupSubtitle.value.trim();
   if (!nextGroupName) return;
-  void runFormAction(createGroupForm, () =>
+  void actionGate.run(() =>
     controller.createGroup({
       groupName: nextGroupName,
       ...(subtitle ? { subtitle } : {})
@@ -222,14 +219,14 @@ joinGroupForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const code = inviteCode.value.trim();
   if (!code) return;
-  void runFormAction(joinGroupForm, () => controller.joinGroup(code));
+  void actionGate.run(() => controller.joinGroup(code));
 });
 
 reminderForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const time = reminderTime.value.trim();
   if (!time) return;
-  void runFormAction(reminderForm, () =>
+  void actionGate.run(() =>
     controller.saveReminder({
       reminderTime: time,
       enabled: reminderEnabled.checked
@@ -241,10 +238,12 @@ apiHostForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const host = apiBaseUrl.value.trim();
   if (!host) return;
-  if (!window.confirm("更换地址会断开当前身份并清除该服务的分组缓存。")) {
-    return;
-  }
-  void runFormAction(apiHostForm, () => controller.replaceHost(host));
+  void actionGate.run(async () => {
+    if (!window.confirm("更换地址会断开当前身份并清除该服务的分组缓存。")) {
+      return;
+    }
+    await controller.replaceHost(host);
+  });
 });
 
-void controller.load();
+void actionGate.run(() => controller.load());

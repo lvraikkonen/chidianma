@@ -3,6 +3,33 @@ export interface ButtonActionTarget {
   disabled: boolean;
 }
 
+export interface ExclusiveActionGate {
+  isPending: () => boolean;
+  run: (action: () => Promise<unknown>) => Promise<boolean>;
+}
+
+export function createExclusiveActionGate(input: {
+  onPendingChange?: ((pending: boolean) => void) | undefined;
+} = {}): ExclusiveActionGate {
+  let pending = false;
+
+  return {
+    isPending: () => pending,
+    run: async (action) => {
+      if (pending) return false;
+      pending = true;
+      input.onPendingChange?.(true);
+      try {
+        await action();
+        return true;
+      } finally {
+        pending = false;
+        input.onPendingChange?.(false);
+      }
+    }
+  };
+}
+
 export async function runButtonAction(input: {
   button: ButtonActionTarget;
   pendingText: string;
