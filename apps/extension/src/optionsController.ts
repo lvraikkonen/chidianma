@@ -216,16 +216,23 @@ export function createOptionsController(
       return;
     }
     commit({ kind: "loading", storage });
+    let inviteCode: string | undefined;
     try {
       const response = await dependencies.createGroup(
         storage.apiBaseUrl,
         storage.identityToken,
         input
       );
+      inviteCode = response.inviteCode;
       await dependencies.saveGroupConnection(response);
-      await load(response.inviteCode);
+      await load(inviteCode);
     } catch (error) {
-      commit({ kind: "ready", storage, error: mapOptionsError(error) });
+      commit({
+        kind: "ready",
+        storage,
+        ...(inviteCode ? { inviteCode } : {}),
+        error: mapOptionsError(error)
+      });
     }
   }
 

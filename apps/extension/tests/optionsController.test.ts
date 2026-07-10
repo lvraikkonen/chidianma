@@ -375,6 +375,37 @@ describe("options controller", () => {
     });
   });
 
+  it("keeps the created group invite when saving its connection rejects", async () => {
+    const storage = connectedStorage();
+    const response = groupCreationResponse("group-2");
+    const saveGroupConnection = vi.fn().mockRejectedValue(
+      new Error("group-session-token-should-stay-hidden")
+    );
+    const render = vi.fn();
+    const controller = createOptionsController(optionsDependencies({
+      loadStorage: vi.fn().mockResolvedValue(storage),
+      createGroup: vi.fn().mockResolvedValue(response),
+      saveGroupConnection,
+      render
+    }));
+
+    await expect(
+      controller.createGroup({ groupName: "产品组" })
+    ).resolves.toBeUndefined();
+
+    expect(saveGroupConnection).toHaveBeenCalledWith(response);
+    const state = lastRenderedState(render);
+    expect(state).toEqual({
+      kind: "ready",
+      storage,
+      inviteCode: "ABCD12",
+      error: "操作没有完成，请检查网络后重试。"
+    });
+    expect("error" in state ? state.error : undefined).not.toContain(
+      "group-session-token"
+    );
+  });
+
   it("keeps the created group invite when the immediate reload storage read rejects", async () => {
     const storage = connectedStorage();
     const response = groupCreationResponse("group-2");
