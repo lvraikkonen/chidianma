@@ -1,4 +1,5 @@
 import type {
+  GroupSessionResponse,
   GroupSummary,
   GroupTodayRecommendationsResponse,
   TodayRecommendationResponse
@@ -24,6 +25,7 @@ export interface LocalReminderOverride {
 
 export interface ExtensionStorageShape extends ExtensionSettings {
   activeGroupId?: string | undefined;
+  identityDisplayName?: string | undefined;
   identityToken?: string | undefined;
   sessionsByGroupId: Record<string, GroupSessionStorage>;
   groupSummariesById: Record<string, GroupSummary>;
@@ -106,6 +108,126 @@ export async function getSettings(): Promise<ExtensionSettings> {
 
 export async function saveSettings(settings: ExtensionSettings): Promise<void> {
   await updateStorageState((state) => ({ ...state, ...settings }));
+  await chrome.runtime.sendMessage({ type: "settingsChanged" }).catch(() => undefined);
+}
+
+export async function saveIdentityConnection(
+  displayName: string,
+  identityToken: string
+): Promise<void> {
+  await updateStorageState((state) => {
+    const next: ExtensionStorageShape = {
+      ...state,
+      identityDisplayName: displayName.trim(),
+      identityToken,
+      sessionsByGroupId: {},
+      groupSummariesById: {},
+      lastRecommendationsByGroupId: {},
+      localReminderOverridesByGroupId: {}
+    };
+    delete next.activeGroupId;
+    return next;
+  });
+}
+
+export async function saveGroupConnection(
+  response: GroupSessionResponse
+): Promise<void> {
+  await updateStorageState((state) => ({
+    ...state,
+    identityToken: response.identityToken,
+    activeGroupId: response.group.groupId,
+    sessionsByGroupId: {
+      ...state.sessionsByGroupId,
+      [response.group.groupId]: { token: response.groupSessionToken }
+    },
+    groupSummariesById: {
+      ...state.groupSummariesById,
+      [response.group.groupId]: response.group
+    }
+  }));
+}
+
+export async function syncGroupSummaries(groups: GroupSummary[]): Promise<void> {
+  const allowed = new Set(groups.map((group) => group.groupId));
+  await updateStorageState((state) => {
+    const next: ExtensionStorageShape = {
+      ...state,
+      groupSummariesById: Object.fromEntries(
+        groups.map((group) => [group.groupId, group])
+      ),
+      sessionsByGroupId: Object.fromEntries(
+        Object.entries(state.sessionsByGroupId).filter(([groupId]) =>
+          allowed.has(groupId)
+        )
+      )
+    };
+    if (next.activeGroupId && !allowed.has(next.activeGroupId)) {
+      delete next.activeGroupId;
+    }
+    return next;
+  });
+}
+
+export async function clearGroupSession(groupId: string): Promise<void> {
+  await updateStorageState((state) => {
+    const sessionsByGroupId = { ...state.sessionsByGroupId };
+    delete sessionsByGroupId[groupId];
+    return { ...state, sessionsByGroupId };
+  });
+}
+
+export async function disconnectIdentity(): Promise<void> {
+  await updateStorageState((state) => {
+    const next: ExtensionStorageShape = {
+      ...state,
+      readToken: "",
+      sessionsByGroupId: {},
+      groupSummariesById: {},
+      lastRecommendationsByGroupId: {},
+      localReminderOverridesByGroupId: {}
+    };
+    delete next.identityToken;
+    delete next.identityDisplayName;
+    delete next.activeGroupId;
+    return next;
+  });
+}
+
+export async function replaceApiBaseUrl(apiBaseUrl: string): Promise<void> {
+  const normalized = new URL(apiBaseUrl).toString().replace(/\/$/, "");
+  await updateStorageState((state) => ({
+    apiBaseUrl: normalized,
+    readToken: "",
+    reminderTime: state.reminderTime,
+    enabled: state.enabled,
+    sessionsByGroupId: {},
+    groupSummariesById: {},
+    lastRecommendationsByGroupId: {},
+    localReminderOverridesByGroupId: {}
+  }));
+}
+
+export async function saveActiveGroupReminderOverride(input: {
+  reminderTime: string;
+  enabled: boolean;
+}): Promise<void> {
+  await updateStorageState((state) => {
+    if (!state.activeGroupId) {
+      return {
+        ...state,
+        reminderTime: input.reminderTime,
+        enabled: input.enabled
+      };
+    }
+    return {
+      ...state,
+      localReminderOverridesByGroupId: {
+        ...state.localReminderOverridesByGroupId,
+        [state.activeGroupId]: input
+      }
+    };
+  });
   await chrome.runtime.sendMessage({ type: "settingsChanged" }).catch(() => undefined);
 }
 

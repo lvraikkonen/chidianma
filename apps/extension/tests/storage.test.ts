@@ -2,6 +2,8 @@ import type { GroupTodayRecommendationsResponse } from "@lunch/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { STORAGE_KEYS } from "../src/config";
 import {
+  clearGroupSession,
+  disconnectIdentity,
   getActiveGroupRecommendationCache,
   getActiveGroupSession,
   getDefaultSettings,
@@ -9,9 +11,15 @@ import {
   getReminderSettingsForActiveGroup,
   getSettings,
   getStorageState,
+  replaceApiBaseUrl,
+  saveActiveGroupReminderOverride,
+  saveGroupConnection,
   saveGroupRecommendationCache,
+  saveIdentityConnection,
   saveSettings,
   saveStorageState,
+  STORAGE_STATE_LOCK_NAME,
+  syncGroupSummaries,
   updateStorageState
 } from "../src/storage";
 
@@ -33,6 +41,41 @@ function serialLockManager() {
       }
     )
   };
+}
+
+function stubMutableStorage(initial: ReturnType<typeof getDefaultStorageState>) {
+  let storedState = structuredClone(initial);
+  const locks = serialLockManager();
+  const sendMessage = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { locks });
+  vi.stubGlobal("chrome", {
+    storage: {
+      local: {
+        get: vi.fn(async () => ({
+          [STORAGE_KEYS.state]: structuredClone(storedState)
+        })),
+        set: vi.fn(async (value: Record<string, unknown>) => {
+          storedState = structuredClone(
+            value[STORAGE_KEYS.state]
+          ) as typeof storedState;
+        })
+      }
+    },
+    runtime: { sendMessage }
+  });
+  return {
+    locks,
+    readStoredState: () => storedState,
+    sendMessage
+  };
+}
+
+function expectExclusiveStorageLock(locks: ReturnType<typeof serialLockManager>) {
+  expect(locks.request).toHaveBeenCalledWith(
+    STORAGE_STATE_LOCK_NAME,
+    { mode: "exclusive" },
+    expect.any(Function)
+  );
 }
 
 beforeEach(() => {
@@ -114,6 +157,280 @@ describe("grouped extension storage", () => {
       lastRecommendationsByGroupId: {},
       localReminderOverridesByGroupId: {}
     });
+  });
+
+  it("stores an identity and clears group-scoped state for a changed identity", async () => {
+    const { locks, readStoredState } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      activeGroupId: "old-group",
+      sessionsByGroupId: { "old-group": { token: "old-session" } },
+      groupSummariesById: {
+        "old-group": {
+          groupId: "old-group",
+          name: "旧小组",
+          role: "member",
+          membershipId: "old-membership"
+        }
+      },
+      lastRecommendationsByGroupId: {
+        "old-group": recommendationResponse("old-group", "old-batch")
+      },
+      localReminderOverridesByGroupId: {
+        "old-group": { reminderTime: "12:20", enabled: false }
+      }
+    });
+
+    await saveIdentityConnection(" 小林 ", "identity-token");
+
+    expect(readStoredState()).toMatchObject({
+      identityDisplayName: "小林",
+      identityToken: "identity-token",
+      sessionsByGroupId: {},
+      groupSummariesById: {},
+      lastRecommendationsByGroupId: {},
+      localReminderOverridesByGroupId: {}
+    });
+    expect(readStoredState().activeGroupId).toBeUndefined();
+    expectExclusiveStorageLock(locks);
+  });
+
+  it("commits a group session and active group in one locked mutation", async () => {
+    const { locks, readStoredState } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      sessionsByGroupId: { "group-0": { token: "existing-session" } },
+      groupSummariesById: {
+        "group-0": {
+          groupId: "group-0",
+          name: "现有小组",
+          role: "member",
+          membershipId: "membership-0"
+        }
+      }
+    });
+
+    await saveGroupConnection({
+      identityToken: "new-identity-token",
+      groupSessionToken: "group-session-token",
+      group: {
+        groupId: "group-1",
+        name: "设计组",
+        role: "admin",
+        membershipId: "membership-1"
+      }
+    });
+
+    expect(readStoredState()).toMatchObject({
+      identityToken: "new-identity-token",
+      activeGroupId: "group-1",
+      sessionsByGroupId: {
+        "group-0": { token: "existing-session" },
+        "group-1": { token: "group-session-token" }
+      },
+      groupSummariesById: {
+        "group-0": expect.objectContaining({ name: "现有小组" }),
+        "group-1": expect.objectContaining({ name: "设计组" })
+      }
+    });
+    expectExclusiveStorageLock(locks);
+  });
+
+  it("syncs group summaries and drops sessions and active group outside membership", async () => {
+    const { locks, readStoredState } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      activeGroupId: "removed-group",
+      sessionsByGroupId: {
+        "kept-group": { token: "kept-session" },
+        "removed-group": { token: "removed-session" }
+      },
+      groupSummariesById: {
+        "removed-group": {
+          groupId: "removed-group",
+          name: "已移除小组",
+          role: "member",
+          membershipId: "removed-membership"
+        }
+      }
+    });
+
+    await syncGroupSummaries([
+      {
+        groupId: "kept-group",
+        name: "保留小组",
+        role: "member",
+        membershipId: "kept-membership"
+      },
+      {
+        groupId: "new-group",
+        name: "新小组",
+        role: "admin",
+        membershipId: "new-membership"
+      }
+    ]);
+
+    expect(readStoredState().groupSummariesById).toEqual({
+      "kept-group": expect.objectContaining({ name: "保留小组" }),
+      "new-group": expect.objectContaining({ name: "新小组" })
+    });
+    expect(readStoredState().sessionsByGroupId).toEqual({
+      "kept-group": { token: "kept-session" }
+    });
+    expect(readStoredState().activeGroupId).toBeUndefined();
+    expectExclusiveStorageLock(locks);
+  });
+
+  it("clears only the requested group session", async () => {
+    const { locks, readStoredState } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      activeGroupId: "group-1",
+      sessionsByGroupId: {
+        "group-1": { token: "session-1" },
+        "group-2": { token: "session-2" }
+      }
+    });
+
+    await clearGroupSession("group-1");
+
+    expect(readStoredState().sessionsByGroupId).toEqual({
+      "group-2": { token: "session-2" }
+    });
+    expect(readStoredState().activeGroupId).toBe("group-1");
+    expectExclusiveStorageLock(locks);
+  });
+
+  it("disconnects identity without changing the API host or global reminders", async () => {
+    const { locks, readStoredState } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      apiBaseUrl: "https://lunch.example",
+      readToken: "old-read-token",
+      reminderTime: "12:05",
+      enabled: false,
+      identityToken: "identity-token",
+      identityDisplayName: "小林",
+      activeGroupId: "group-1",
+      sessionsByGroupId: { "group-1": { token: "session" } },
+      groupSummariesById: {
+        "group-1": {
+          groupId: "group-1",
+          name: "设计组",
+          role: "member",
+          membershipId: "membership-1"
+        }
+      },
+      lastRecommendationsByGroupId: {
+        "group-1": recommendationResponse("group-1", "batch-1")
+      },
+      localReminderOverridesByGroupId: {
+        "group-1": { reminderTime: "12:20" }
+      }
+    });
+
+    await disconnectIdentity();
+
+    expect(readStoredState()).toEqual({
+      apiBaseUrl: "https://lunch.example",
+      readToken: "",
+      reminderTime: "12:05",
+      enabled: false,
+      sessionsByGroupId: {},
+      groupSummariesById: {},
+      lastRecommendationsByGroupId: {},
+      localReminderOverridesByGroupId: {}
+    });
+    expectExclusiveStorageLock(locks);
+  });
+
+  it("replaces the API host without carrying credentials or group cache", async () => {
+    const { locks, readStoredState } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      apiBaseUrl: "https://old.example",
+      readToken: "old-read-token",
+      reminderTime: "12:05",
+      enabled: false,
+      identityToken: "identity-token",
+      identityDisplayName: "小林",
+      activeGroupId: "group-1",
+      sessionsByGroupId: { "group-1": { token: "session" } },
+      groupSummariesById: {
+        "group-1": {
+          groupId: "group-1",
+          name: "设计组",
+          role: "admin",
+          membershipId: "membership-1"
+        }
+      },
+      lastRecommendationsByGroupId: {
+        "group-1": recommendationResponse("group-1", "batch-1")
+      },
+      localReminderOverridesByGroupId: {
+        "group-1": { reminderTime: "12:20" }
+      }
+    });
+
+    await replaceApiBaseUrl("https://new.example/");
+
+    expect(readStoredState()).toEqual({
+      apiBaseUrl: "https://new.example",
+      readToken: "",
+      reminderTime: "12:05",
+      enabled: false,
+      sessionsByGroupId: {},
+      groupSummariesById: {},
+      lastRecommendationsByGroupId: {},
+      localReminderOverridesByGroupId: {}
+    });
+    expectExclusiveStorageLock(locks);
+  });
+
+  it("stores reminder overrides only in the active group bucket", async () => {
+    const { locks, readStoredState, sendMessage } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      reminderTime: "11:30",
+      enabled: true,
+      activeGroupId: "group-1",
+      localReminderOverridesByGroupId: {
+        "group-2": { reminderTime: "12:40", enabled: false }
+      }
+    });
+
+    await saveActiveGroupReminderOverride({
+      reminderTime: "12:10",
+      enabled: false
+    });
+
+    expect(readStoredState()).toMatchObject({
+      reminderTime: "11:30",
+      enabled: true,
+      localReminderOverridesByGroupId: {
+        "group-1": { reminderTime: "12:10", enabled: false },
+        "group-2": { reminderTime: "12:40", enabled: false }
+      }
+    });
+    expect(sendMessage).toHaveBeenCalledWith({ type: "settingsChanged" });
+    expectExclusiveStorageLock(locks);
+  });
+
+  it("stores reminder settings globally when there is no active group", async () => {
+    const { locks, readStoredState, sendMessage } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      localReminderOverridesByGroupId: {
+        "group-1": { reminderTime: "12:40", enabled: false }
+      }
+    });
+
+    await saveActiveGroupReminderOverride({
+      reminderTime: "11:55",
+      enabled: false
+    });
+
+    expect(readStoredState()).toMatchObject({
+      reminderTime: "11:55",
+      enabled: false,
+      localReminderOverridesByGroupId: {
+        "group-1": { reminderTime: "12:40", enabled: false }
+      }
+    });
+    expect(sendMessage).toHaveBeenCalledWith({ type: "settingsChanged" });
+    expectExclusiveStorageLock(locks);
   });
 
   it("writes the grouped storage state under the current state key", async () => {
