@@ -2,6 +2,7 @@ import type {
   CreateGroupResponse,
   GroupSessionResponse,
   GroupSummary,
+  GroupTodayRecommendationsResponse,
   RefreshGroupSessionResponse
 } from "@lunch/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -57,6 +58,54 @@ function connectedStorage() {
   };
 }
 
+function cachedRecommendations(groupId: string): GroupTodayRecommendationsResponse {
+  return {
+    groupId,
+    officeDate: "2026-07-10",
+    batchId: "batch-1",
+    batchNo: 1,
+    generatedAt: "2026-07-10T03:30:00.000Z",
+    participationSummary: {
+      joiningCount: 1,
+      decidedCount: 0,
+      awayCount: 0,
+      undecidedCount: 1
+    },
+    items: []
+  };
+}
+
+function storageWithSensitiveGroupState() {
+  return {
+    ...connectedStorage(),
+    readToken: "legacy-read-token",
+    reminderTime: "12:20",
+    enabled: false,
+    lastRecommendationsByGroupId: {
+      "group-1": cachedRecommendations("group-1")
+    },
+    localReminderOverridesByGroupId: {
+      "group-1": { reminderTime: "12:45", enabled: true }
+    }
+  };
+}
+
+function clearedConnectionStorage(
+  storage: ReturnType<typeof storageWithSensitiveGroupState>,
+  apiBaseUrl = storage.apiBaseUrl
+) {
+  return {
+    apiBaseUrl,
+    readToken: "",
+    reminderTime: storage.reminderTime,
+    enabled: storage.enabled,
+    sessionsByGroupId: {},
+    groupSummariesById: {},
+    lastRecommendationsByGroupId: {},
+    localReminderOverridesByGroupId: {}
+  };
+}
+
 function optionsDependencies(
   overrides: Partial<OptionsControllerDependencies> = {}
 ): OptionsControllerDependencies {
@@ -91,6 +140,45 @@ function lastRenderedState(render: OptionsControllerDependencies["render"]): Opt
   return state;
 }
 
+type OptionsController = ReturnType<typeof createOptionsController>;
+
+const storageReadingActions: Array<{
+  name: string;
+  invoke: (controller: OptionsController) => Promise<void>;
+}> = [
+  {
+    name: "createIdentity",
+    invoke: (controller) => controller.createIdentity("小林")
+  },
+  {
+    name: "createGroup",
+    invoke: (controller) => controller.createGroup({ groupName: "设计组" })
+  },
+  {
+    name: "joinGroup",
+    invoke: (controller) => controller.joinGroup("ABCD12")
+  },
+  {
+    name: "switchGroup",
+    invoke: (controller) => controller.switchGroup("group-2")
+  },
+  {
+    name: "saveReminder",
+    invoke: (controller) => controller.saveReminder({
+      reminderTime: "12:00",
+      enabled: false
+    })
+  },
+  {
+    name: "replaceHost",
+    invoke: (controller) => controller.replaceHost("https://lunch.example")
+  },
+  {
+    name: "disconnect",
+    invoke: (controller) => controller.disconnect()
+  }
+];
+
 describe("options controller", () => {
   it("shows a retryable Chinese error when loading from storage rejects", async () => {
     const render = vi.fn();
@@ -106,6 +194,32 @@ describe("options controller", () => {
       error: "加载设置失败：无法读取浏览器存储。请重试。"
     });
   });
+
+  for (const action of storageReadingActions) {
+    it(`resolves ${action.name} with the current ready state when its storage read rejects`, async () => {
+      const storage = connectedStorage();
+      const loadStorage = vi.fn()
+        .mockResolvedValueOnce(storage)
+        .mockResolvedValueOnce(storage)
+        .mockRejectedValueOnce(new Error("storage read failed"));
+      const render = vi.fn();
+      const controller = createOptionsController(optionsDependencies({
+        loadStorage,
+        render
+      }));
+      await controller.load();
+      render.mockClear();
+
+      await expect(action.invoke(controller)).resolves.toBeUndefined();
+
+      expect(render).toHaveBeenCalledOnce();
+      expect(lastRenderedState(render)).toEqual({
+        kind: "ready",
+        storage,
+        error: "加载设置失败：无法读取浏览器存储。请重试。"
+      });
+    });
+  }
 
   it("requests identity setup when no identity is stored", async () => {
     const storage = getDefaultStorageState();
@@ -504,6 +618,35 @@ describe("options controller", () => {
     });
   });
 
+  it("uses a normalized connection-cleared host fallback when reload fails after replacement", async () => {
+    const storage = storageWithSensitiveGroupState();
+    const loadStorage = vi.fn()
+      .mockResolvedValueOnce(storage)
+      .mockResolvedValueOnce(storage)
+      .mockResolvedValueOnce(storage)
+      .mockRejectedValueOnce(new Error("post-replacement read failed"));
+    const replaceApiBaseUrl = vi.fn().mockResolvedValue(undefined);
+    const render = vi.fn();
+    const controller = createOptionsController(optionsDependencies({
+      loadStorage,
+      replaceApiBaseUrl,
+      render
+    }));
+    await controller.load();
+    render.mockClear();
+
+    await controller.replaceHost("https://new.example/path/../");
+
+    expect(replaceApiBaseUrl).toHaveBeenCalledWith(
+      "https://new.example/path/../"
+    );
+    expect(lastRenderedState(render)).toEqual({
+      kind: "identity-required",
+      storage: clearedConnectionStorage(storage, "https://new.example"),
+      error: "加载设置失败：无法读取浏览器存储。请重试。"
+    });
+  });
+
   it("disconnects the identity before returning to identity setup", async () => {
     const disconnectedStorage = getDefaultStorageState();
     const loadStorage = vi.fn()
@@ -538,6 +681,33 @@ describe("options controller", () => {
     expect(lastRenderedState(render)).toMatchObject({
       kind: "ready",
       error: "断开连接失败，请重试。"
+    });
+  });
+
+  it("uses a connection-cleared fallback when reload fails after disconnect", async () => {
+    const storage = storageWithSensitiveGroupState();
+    const loadStorage = vi.fn()
+      .mockResolvedValueOnce(storage)
+      .mockResolvedValueOnce(storage)
+      .mockResolvedValueOnce(storage)
+      .mockRejectedValueOnce(new Error("post-disconnect read failed"));
+    const disconnectIdentity = vi.fn().mockResolvedValue(undefined);
+    const render = vi.fn();
+    const controller = createOptionsController(optionsDependencies({
+      loadStorage,
+      disconnectIdentity,
+      render
+    }));
+    await controller.load();
+    render.mockClear();
+
+    await controller.disconnect();
+
+    expect(disconnectIdentity).toHaveBeenCalledOnce();
+    expect(lastRenderedState(render)).toEqual({
+      kind: "identity-required",
+      storage: clearedConnectionStorage(storage),
+      error: "加载设置失败：无法读取浏览器存储。请重试。"
     });
   });
 });

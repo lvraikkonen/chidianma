@@ -73,6 +73,31 @@ function mapOptionsError(error: unknown): string {
   return "操作没有完成，请检查网络后重试。";
 }
 
+const STORAGE_READ_ERROR = "加载设置失败：无法读取浏览器存储。请重试。";
+
+function clearConnectionState(
+  storage: ExtensionStorageShape,
+  apiBaseUrl = storage.apiBaseUrl
+): ExtensionStorageShape {
+  const cleared: ExtensionStorageShape = {
+    ...storage,
+    apiBaseUrl,
+    readToken: "",
+    sessionsByGroupId: {},
+    groupSummariesById: {},
+    lastRecommendationsByGroupId: {},
+    localReminderOverridesByGroupId: {}
+  };
+  delete cleared.activeGroupId;
+  delete cleared.identityDisplayName;
+  delete cleared.identityToken;
+  return cleared;
+}
+
+function normalizeApiBaseUrl(apiBaseUrl: string): string {
+  return new URL(apiBaseUrl).toString().replace(/\/$/, "");
+}
+
 export function createOptionsController(
   dependencies: OptionsControllerDependencies
 ) {
@@ -95,18 +120,34 @@ export function createOptionsController(
     dependencies.render(next);
   }
 
-  async function load(inviteCode?: string): Promise<void> {
-    let storage: ExtensionStorageShape;
-    try {
-      storage = await dependencies.loadStorage();
-    } catch {
+  function renderStorageReadError(): void {
+    if (current.kind === "ready" && current.storage.identityToken) {
       commit({
-        kind: "identity-required",
+        kind: "ready",
         storage: current.storage,
-        error: "加载设置失败：无法读取浏览器存储。请重试。"
+        error: STORAGE_READ_ERROR
       });
       return;
     }
+    commit({
+      kind: "identity-required",
+      storage: current.storage,
+      error: STORAGE_READ_ERROR
+    });
+  }
+
+  async function readStorage(): Promise<ExtensionStorageShape | undefined> {
+    try {
+      return await dependencies.loadStorage();
+    } catch {
+      renderStorageReadError();
+      return undefined;
+    }
+  }
+
+  async function load(inviteCode?: string): Promise<void> {
+    const storage = await readStorage();
+    if (!storage) return;
     commit({ kind: "loading", storage });
     if (!storage.identityToken) {
       commit({ kind: "identity-required", storage });
@@ -130,7 +171,8 @@ export function createOptionsController(
   }
 
   async function createIdentity(displayName: string): Promise<void> {
-    const storage = await dependencies.loadStorage();
+    const storage = await readStorage();
+    if (!storage) return;
     commit({ kind: "loading", storage });
     try {
       const response = await dependencies.createIdentity(
@@ -152,7 +194,8 @@ export function createOptionsController(
   }
 
   async function createGroup(input: CreateGroupRequest): Promise<void> {
-    const storage = await dependencies.loadStorage();
+    const storage = await readStorage();
+    if (!storage) return;
     if (!storage.identityToken) {
       commit({
         kind: "identity-required",
@@ -176,7 +219,8 @@ export function createOptionsController(
   }
 
   async function joinGroup(inviteCode: string): Promise<void> {
-    const storage = await dependencies.loadStorage();
+    const storage = await readStorage();
+    if (!storage) return;
     if (!storage.identityToken) {
       commit({
         kind: "identity-required",
@@ -200,7 +244,8 @@ export function createOptionsController(
   }
 
   async function switchGroup(groupId: string): Promise<void> {
-    const storage = await dependencies.loadStorage();
+    const storage = await readStorage();
+    if (!storage) return;
     if (!storage.identityToken) {
       commit({ kind: "identity-required", storage });
       return;
@@ -223,7 +268,8 @@ export function createOptionsController(
     reminderTime: string;
     enabled: boolean;
   }) {
-    const storage = await dependencies.loadStorage();
+    const storage = await readStorage();
+    if (!storage) return;
     try {
       await dependencies.saveReminder(input);
       await load();
@@ -237,9 +283,17 @@ export function createOptionsController(
   }
 
   async function replaceHost(apiBaseUrl: string) {
-    const storage = await dependencies.loadStorage();
+    const storage = await readStorage();
+    if (!storage) return;
     try {
       await dependencies.replaceApiBaseUrl(apiBaseUrl);
+      current = {
+        kind: "loading",
+        storage: clearConnectionState(
+          storage,
+          normalizeApiBaseUrl(apiBaseUrl)
+        )
+      };
       await load();
     } catch {
       commit({ kind: "ready", storage, error: "API 地址没有保存，请重试。" });
@@ -247,9 +301,11 @@ export function createOptionsController(
   }
 
   async function disconnect() {
-    const storage = await dependencies.loadStorage();
+    const storage = await readStorage();
+    if (!storage) return;
     try {
       await dependencies.disconnectIdentity();
+      current = { kind: "loading", storage: clearConnectionState(storage) };
       await load();
     } catch {
       commit({ kind: "ready", storage, error: "断开连接失败，请重试。" });
