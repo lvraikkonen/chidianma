@@ -120,11 +120,15 @@ export function createOptionsController(
     dependencies.render(next);
   }
 
-  function renderStorageReadError(): void {
-    if (current.kind === "ready" && current.storage.identityToken) {
+  function renderStorageReadError(inviteCode?: string): void {
+    if (
+      current.storage.identityToken
+      && (current.kind === "ready" || inviteCode)
+    ) {
       commit({
         kind: "ready",
         storage: current.storage,
+        ...(inviteCode ? { inviteCode } : {}),
         error: STORAGE_READ_ERROR
       });
       return;
@@ -136,17 +140,19 @@ export function createOptionsController(
     });
   }
 
-  async function readStorage(): Promise<ExtensionStorageShape | undefined> {
+  async function readStorage(
+    inviteCode?: string
+  ): Promise<ExtensionStorageShape | undefined> {
     try {
       return await dependencies.loadStorage();
     } catch {
-      renderStorageReadError();
+      renderStorageReadError(inviteCode);
       return undefined;
     }
   }
 
   async function load(inviteCode?: string): Promise<void> {
-    const storage = await readStorage();
+    const storage = await readStorage(inviteCode);
     if (!storage) return;
     commit({ kind: "loading", storage });
     if (!storage.identityToken) {
@@ -166,7 +172,12 @@ export function createOptionsController(
         ...(inviteCode ? { inviteCode } : {})
       });
     } catch (error) {
-      commit({ kind: "ready", storage, error: mapOptionsError(error) });
+      commit({
+        kind: "ready",
+        storage,
+        ...(inviteCode ? { inviteCode } : {}),
+        error: mapOptionsError(error)
+      });
     }
   }
 

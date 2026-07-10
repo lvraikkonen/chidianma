@@ -375,6 +375,62 @@ describe("options controller", () => {
     });
   });
 
+  it("keeps the created group invite when the immediate reload storage read rejects", async () => {
+    const storage = connectedStorage();
+    const response = groupCreationResponse("group-2");
+    const loadStorage = vi.fn()
+      .mockResolvedValueOnce(storage)
+      .mockRejectedValueOnce(new Error("identity-token-should-stay-hidden"));
+    const saveGroupConnection = vi.fn().mockResolvedValue(undefined);
+    const render = vi.fn();
+    const controller = createOptionsController(optionsDependencies({
+      loadStorage,
+      createGroup: vi.fn().mockResolvedValue(response),
+      saveGroupConnection,
+      render
+    }));
+
+    await expect(
+      controller.createGroup({ groupName: "产品组" })
+    ).resolves.toBeUndefined();
+
+    expect(saveGroupConnection).toHaveBeenCalledWith(response);
+    expect(lastRenderedState(render)).toEqual({
+      kind: "ready",
+      storage,
+      inviteCode: "ABCD12",
+      error: "加载设置失败：无法读取浏览器存储。请重试。"
+    });
+  });
+
+  it("keeps the created group invite when group listing rejects", async () => {
+    const storage = connectedStorage();
+    const response = groupCreationResponse("group-2");
+    const saveGroupConnection = vi.fn().mockResolvedValue(undefined);
+    const render = vi.fn();
+    const controller = createOptionsController(optionsDependencies({
+      loadStorage: vi.fn().mockResolvedValue(storage),
+      createGroup: vi.fn().mockResolvedValue(response),
+      saveGroupConnection,
+      listGroups: vi.fn().mockRejectedValue(
+        new Error("group-session-token-should-stay-hidden")
+      ),
+      render
+    }));
+
+    await expect(
+      controller.createGroup({ groupName: "产品组" })
+    ).resolves.toBeUndefined();
+
+    expect(saveGroupConnection).toHaveBeenCalledWith(response);
+    expect(lastRenderedState(render)).toEqual({
+      kind: "ready",
+      storage,
+      inviteCode: "ABCD12",
+      error: "操作没有完成，请检查网络后重试。"
+    });
+  });
+
   it("retains the created identity when group creation fails", async () => {
     const saveIdentity = vi.fn().mockResolvedValue(undefined);
     const disconnectIdentity = vi.fn();
