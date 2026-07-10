@@ -11,7 +11,9 @@ import {
   classifyPopupRetryOutcome,
   currentMemberParticipation,
   loadRefreshedPopupState,
+  loadRefreshedPopupStateForStorage,
   loadPopupState,
+  runPopupActionWithContext,
   resolvePopupActionFailure,
   restoreRecommendationFocus,
   type PopupDependencies
@@ -97,6 +99,27 @@ function popupDependencies(
     loadParticipation: vi.fn().mockResolvedValue(participationResponse())
   };
   return { ...dependencies, ...overrides };
+}
+
+function storageForGroup(
+  groupId: string,
+  membershipId: string
+): ReturnType<typeof getDefaultStorageState> {
+  return {
+    ...getDefaultStorageState(),
+    activeGroupId: groupId,
+    sessionsByGroupId: {
+      [groupId]: { token: `${groupId}-session-token` }
+    },
+    groupSummariesById: {
+      [groupId]: {
+        groupId,
+        name: `${groupId} 午饭组`,
+        role: "member",
+        membershipId
+      }
+    }
+  };
 }
 
 describe("popup controller", () => {
@@ -321,6 +344,52 @@ describe("popup controller", () => {
     expect(JSON.stringify(resolution)).not.toContain("private-session-token");
   });
 
+  it.each([
+    "participation",
+    "decision",
+    "feedback",
+    "refresh"
+  ])("blocks a rendered-group-A %s action after storage switches to group B", async (
+    _actionName
+  ) => {
+    const renderedState = await loadPopupState(popupDependencies());
+    const storage = storageForGroup("group-2", "membership-2");
+    const loadStorage = vi.fn().mockResolvedValue(storage);
+    const write = vi.fn().mockResolvedValue("unexpected-write");
+
+    const result = await runPopupActionWithContext(
+      renderedState,
+      loadStorage,
+      write
+    );
+
+    expect(result).toEqual({
+      kind: "stale",
+      storage,
+      message: "当前小组已切换，已加载最新内容，请重新操作。"
+    });
+    expect(loadStorage).toHaveBeenCalledOnce();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("passes the one verified click snapshot into the write", async () => {
+    const renderedState = await loadPopupState(popupDependencies());
+    const storage = storageForGroup("group-1", "membership-1");
+    const loadStorage = vi.fn().mockResolvedValue(storage);
+    const write = vi.fn().mockResolvedValue("written");
+
+    const result = await runPopupActionWithContext(
+      renderedState,
+      loadStorage,
+      write
+    );
+
+    expect(result).toEqual({ kind: "performed", storage, value: "written" });
+    expect(loadStorage).toHaveBeenCalledOnce();
+    expect(write).toHaveBeenCalledOnce();
+    expect(write).toHaveBeenCalledWith(storage);
+  });
+
   it("distinguishes fresh retry success from retryable cached/error outcomes", async () => {
     const readyState = await loadPopupState(popupDependencies());
     const cachedState = await loadPopupState(popupDependencies({
@@ -436,6 +505,33 @@ describe("popup controller", () => {
     expect(loadParticipation).not.toHaveBeenCalled();
   });
 
+  it("refreshes and derives state from the already verified click snapshot", async () => {
+    const storage = storageForGroup("group-1", "membership-1");
+    const dependencies = popupDependencies({
+      loadStorage: vi.fn(),
+      loadRecommendations: vi.fn(),
+      loadParticipation: vi.fn().mockResolvedValue(participationResponse())
+    });
+    const refreshRecommendations = vi.fn().mockResolvedValue({
+      ...todayResponse("group-1"),
+      batchId: "batch-verified-refresh"
+    });
+
+    const state = await loadRefreshedPopupStateForStorage(storage, {
+      ...dependencies,
+      refreshRecommendations
+    });
+
+    expect(dependencies.loadStorage).not.toHaveBeenCalled();
+    expect(refreshRecommendations).toHaveBeenCalledOnce();
+    expect(refreshRecommendations).toHaveBeenCalledWith(storage);
+    expect(dependencies.loadParticipation).toHaveBeenCalledWith(storage);
+    expect(state).toMatchObject({
+      kind: "ready",
+      response: { batchId: "batch-verified-refresh", groupId: "group-1" }
+    });
+  });
+
   it("applies a participation update to the current member and summaries immutably", async () => {
     const participation = participationResponse();
     participation.members[0] = {
@@ -490,6 +586,48 @@ describe("popup controller", () => {
     expect(nextState.kind === "ready" && nextState.participation).toMatchObject({
       summary: update.summary,
       members: [{ status: "joining" }]
+    });
+  });
+
+  it.each([
+    ["groupId", { groupId: "group-2" }],
+    ["officeDate", { officeDate: "2026-07-11" }]
+  ] as const)("rejects a participation update with mismatched %s", async (
+    _field,
+    mismatch
+  ) => {
+    const readyState = await loadPopupState(popupDependencies());
+    expect(readyState.kind).toBe("ready");
+    const update: PutParticipationTodayResponse = {
+      groupId: "group-1",
+      officeDate: "2026-07-10",
+      participation: {
+        membershipId: "membership-2",
+        displayName: "foreign member",
+        status: "decided",
+        restaurantId: "restaurant-foreign"
+      },
+      summary: {
+        joiningCount: 0,
+        decidedCount: 99,
+        awayCount: 0,
+        undecidedCount: 0
+      },
+      ...mismatch
+    };
+
+    const nextState = applyParticipationUpdate(readyState, update);
+
+    expect(nextState).toMatchObject({
+      kind: "error",
+      group: { groupId: "group-1" },
+      message: "暂时无法加载今日推荐，请重试。"
+    });
+    expect("response" in nextState).toBe(false);
+    expect(JSON.stringify(nextState)).not.toContain("foreign member");
+    expect(readyState).toMatchObject({
+      kind: "ready",
+      currentMember: { membershipId: "membership-1" }
     });
   });
 });

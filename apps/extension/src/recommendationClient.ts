@@ -243,7 +243,14 @@ export async function fetchTodayParticipationForStorage(
 export async function putTodayParticipation(
   input: PutParticipationTodayRequest
 ): Promise<PutParticipationTodayResponse> {
-  const context = await requireActiveGroupRequestContext();
+  return putTodayParticipationForStorage(await getStorageState(), input);
+}
+
+export async function putTodayParticipationForStorage(
+  storage: ExtensionStorageShape,
+  input: PutParticipationTodayRequest
+): Promise<PutParticipationTodayResponse> {
+  const context = requireActiveGroupRequestContextForStorage(storage);
   return activeGroupJson<PutParticipationTodayResponse>(
     context,
     GROUP_ROUTES.participationToday(context.groupId),
@@ -267,13 +274,21 @@ export async function decideTodayRecommendation(
   });
 }
 
-export async function postFeedback(input: {
+export interface PostFeedbackInput {
   date: string;
   restaurantId: string;
   recommendationId?: string | undefined;
   type: FeedbackType;
-}): Promise<void> {
-  const settings = await getStorageState();
+}
+
+export async function postFeedback(input: PostFeedbackInput): Promise<void> {
+  return postFeedbackForStorage(await getStorageState(), input);
+}
+
+export async function postFeedbackForStorage(
+  settings: ExtensionStorageShape,
+  input: PostFeedbackInput
+): Promise<void> {
   const context = getActiveGroupRequestContext(settings);
   if (context) {
     await activeGroupJson(context, GROUP_ROUTES.feedback(context.groupId), {

@@ -77,6 +77,18 @@ export type PopupRetryOutcome =
   | { kind: "retryable-failure"; announcement: string }
   | { kind: "handled-state"; announcement: null };
 
+export type PopupActionContextResult<T> =
+  | {
+    kind: "performed";
+    storage: ExtensionStorageShape;
+    value: T;
+  }
+  | {
+    kind: "stale";
+    storage: ExtensionStorageShape;
+    message: string;
+  };
+
 export interface RecommendationFocusTarget {
   restaurantId: string;
   focus: () => void;
@@ -114,6 +126,50 @@ function authorizationState(
 
 function popupGroup(state: PopupViewState): GroupSummary | undefined {
   return "group" in state ? state.group : undefined;
+}
+
+function popupActionContextMatches(
+  state: PopupViewState,
+  storage: ExtensionStorageShape
+): boolean {
+  const group = popupGroup(state);
+  if (!group || storage.activeGroupId !== group.groupId) return false;
+  const storedGroup = storage.groupSummariesById[group.groupId];
+  const session = storage.sessionsByGroupId[group.groupId];
+  if (
+    storedGroup?.groupId !== group.groupId
+    || storedGroup.membershipId !== group.membershipId
+    || !session?.token
+  ) {
+    return false;
+  }
+  if ("response" in state && state.response.groupId !== group.groupId) {
+    return false;
+  }
+  if (state.kind === "no-current-batch" && state.groupId !== group.groupId) {
+    return false;
+  }
+  return true;
+}
+
+export async function runPopupActionWithContext<T>(
+  state: PopupViewState,
+  loadStorage: () => Promise<ExtensionStorageShape>,
+  action: (storage: ExtensionStorageShape) => Promise<T>
+): Promise<PopupActionContextResult<T>> {
+  const storage = await loadStorage();
+  if (!popupActionContextMatches(state, storage)) {
+    return {
+      kind: "stale",
+      storage,
+      message: "当前小组已切换，已加载最新内容，请重新操作。"
+    };
+  }
+  return {
+    kind: "performed",
+    storage,
+    value: await action(storage)
+  };
 }
 
 function safeLoadError(group: GroupSummary): PopupViewState {
@@ -204,6 +260,12 @@ export function applyParticipationUpdate(
   update: PutParticipationTodayResponse
 ): PopupViewState {
   if (state.kind !== "ready") return state;
+  if (
+    update.groupId !== state.response.groupId
+    || update.officeDate !== state.response.officeDate
+  ) {
+    return safeLoadError(state.group);
+  }
   return {
     ...state,
     currentMember: update.participation,
@@ -229,19 +291,20 @@ export async function loadPopupState(
   dependencies: PopupDependencies
 ): Promise<PopupViewState> {
   const storage = await dependencies.loadStorage();
-  return loadPopupStateFromSnapshot(
+  return loadPopupStateForStorage(
     storage,
     dependencies,
     dependencies.loadRecommendations
   );
 }
 
-async function loadPopupStateFromSnapshot(
+export async function loadPopupStateForStorage(
   storage: ExtensionStorageShape,
   dependencies: PopupDependencies,
   loadRecommendations: (
     storage: ExtensionStorageShape
-  ) => Promise<GroupTodayRecommendationsResponse>
+  ) => Promise<GroupTodayRecommendationsResponse> =
+    dependencies.loadRecommendations
 ): Promise<PopupViewState> {
   const groupId = storage.activeGroupId;
   const group = groupId ? storage.groupSummariesById[groupId] : undefined;
@@ -288,7 +351,14 @@ export async function loadRefreshedPopupState(
   dependencies: PopupRefreshDependencies
 ): Promise<PopupViewState> {
   const storage = await dependencies.loadStorage();
-  return loadPopupStateFromSnapshot(
+  return loadRefreshedPopupStateForStorage(storage, dependencies);
+}
+
+export async function loadRefreshedPopupStateForStorage(
+  storage: ExtensionStorageShape,
+  dependencies: PopupRefreshDependencies
+): Promise<PopupViewState> {
+  return loadPopupStateForStorage(
     storage,
     dependencies,
     dependencies.refreshRecommendations

@@ -7,24 +7,27 @@ import type {
 import {
   applyParticipationUpdate,
   classifyPopupRetryOutcome,
-  loadRefreshedPopupState,
+  loadRefreshedPopupStateForStorage,
   loadPopupState,
+  loadPopupStateForStorage,
   resolvePopupActionFailure,
   restoreRecommendationFocus,
+  runPopupActionWithContext,
+  type PopupActionContextResult,
   type PopupViewState
 } from "./popupController";
 import {
   fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
   fetchTodayParticipationForStorage,
-  postFeedback,
-  putTodayParticipation,
+  postFeedbackForStorage,
+  putTodayParticipationForStorage,
   refreshGroupTodayRecommendationsForStorage
 } from "./recommendationClient";
 import {
   scoreBreakdownRows,
   toRecommendationCardModel
 } from "./recommendationViewModel";
-import { getStorageState } from "./storage";
+import { getStorageState, type ExtensionStorageShape } from "./storage";
 import { createExclusiveActionGate, runButtonAction } from "./uiAction";
 
 type RecommendationState = Extract<
@@ -62,21 +65,28 @@ refreshButton.addEventListener("click", () => {
 
 void reloadPopup();
 
-async function reloadPopup(): Promise<PopupViewState> {
+async function reloadPopup(
+  storage?: ExtensionStorageShape
+): Promise<PopupViewState> {
   renderLoading();
-  currentState = await loadCurrentPopupState();
+  currentState = await loadCurrentPopupState(storage);
   renderPopup(currentState);
   return currentState;
 }
 
-async function loadCurrentPopupState(): Promise<PopupViewState> {
+async function loadCurrentPopupState(
+  storage?: ExtensionStorageShape
+): Promise<PopupViewState> {
+  const dependencies = {
+    loadStorage: getStorageState,
+    loadRecommendations:
+      fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
+    loadParticipation: fetchTodayParticipationForStorage
+  };
   try {
-    return await loadPopupState({
-      loadStorage: getStorageState,
-      loadRecommendations:
-        fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
-      loadParticipation: fetchTodayParticipationForStorage
-    });
+    return storage
+      ? await loadPopupStateForStorage(storage, dependencies)
+      : await loadPopupState(dependencies);
   } catch {
     return {
       kind: "error",
@@ -516,14 +526,20 @@ async function updateParticipation(
   status: ParticipationStatus,
   successMessage: string
 ): Promise<void> {
-  let update: PutParticipationTodayResponse | null = null;
+  const renderedState = currentState;
+  let result: PopupActionContextResult<PutParticipationTodayResponse>
+    | undefined;
   await runButtonAction({
     button,
     pendingText: "记录中...",
     successText: "已记录",
     failureMessage: "记录参与状态失败，请重试。",
     action: async () => {
-      update = await putTodayParticipation({ status });
+      result = await runPopupActionWithContext(
+        renderedState,
+        getStorageState,
+        (storage) => putTodayParticipationForStorage(storage, { status })
+      );
     },
     onStart: () => {
       hideStatus();
@@ -532,14 +548,22 @@ async function updateParticipation(
     onFailure: handlePopupActionFailure
   });
 
-  if (!update) {
+  if (!result) {
     syncDisabledState(false);
     return;
   }
-  if (currentState.kind === "ready") {
-    currentState = applyParticipationUpdate(currentState, update);
+  if (result.kind === "stale") {
+    await handleStalePopupAction(result);
+    return;
+  }
+  if (renderedState.kind === "ready") {
+    currentState = applyParticipationUpdate(renderedState, result.value);
     renderPopup(currentState);
-    setStatus(successMessage);
+    setStatus(
+      currentState.kind === "ready"
+        ? successMessage
+        : "操作结果无法确认，请重试。"
+    );
   }
 }
 
@@ -549,55 +573,78 @@ async function submitFeedback(
   item: GroupTodayRecommendationItem,
   type: FeedbackType
 ): Promise<void> {
-  let succeeded = false;
+  let result: PopupActionContextResult<void> | undefined;
   await runButtonAction({
     button,
     pendingText: "提交中...",
     successText: "已记录",
     failureMessage: "记录反馈失败，请重试。",
     action: async () => {
-      await postFeedback({
-        date: state.response.officeDate,
-        restaurantId: item.restaurantId,
-        ...(item.recommendationId
-          ? { recommendationId: item.recommendationId }
-          : {}),
-        type
-      });
-      succeeded = true;
+      result = await runPopupActionWithContext(
+        state,
+        getStorageState,
+        (storage) => postFeedbackForStorage(storage, {
+          date: state.response.officeDate,
+          restaurantId: item.restaurantId,
+          ...(item.recommendationId
+            ? { recommendationId: item.recommendationId }
+            : {}),
+          type
+        })
+      );
     },
     onStart: hideStatus,
     onFailure: handlePopupActionFailure
   });
-  if (succeeded) setStatus("反馈已记录。");
+  if (!result) return;
+  if (result.kind === "stale") {
+    await handleStalePopupAction(result);
+    return;
+  }
+  setStatus("反馈已记录。");
 }
 
 async function submitDecision(
   button: HTMLButtonElement,
   item: GroupTodayRecommendationItem
 ): Promise<void> {
-  let update: PutParticipationTodayResponse | null = null;
+  const renderedState = currentState;
+  let result: PopupActionContextResult<PutParticipationTodayResponse>
+    | undefined;
   await runButtonAction({
     button,
     pendingText: "提交中...",
     successText: "已决定",
     failureMessage: "记录决定失败，请重试。",
     action: async () => {
-      update = await putTodayParticipation({
-        status: "decided",
-        restaurantId: item.restaurantId,
-        ...(item.recommendationId
-          ? { recommendationId: item.recommendationId }
-          : {})
-      });
+      result = await runPopupActionWithContext(
+        renderedState,
+        getStorageState,
+        (storage) => putTodayParticipationForStorage(storage, {
+          status: "decided",
+          restaurantId: item.restaurantId,
+          ...(item.recommendationId
+            ? { recommendationId: item.recommendationId }
+            : {})
+        })
+      );
     },
     onStart: hideStatus,
     onFailure: handlePopupActionFailure
   });
-  if (update && currentState.kind === "ready") {
-    currentState = applyParticipationUpdate(currentState, update);
+  if (!result) return;
+  if (result.kind === "stale") {
+    await handleStalePopupAction(result);
+    return;
+  }
+  if (renderedState.kind === "ready") {
+    currentState = applyParticipationUpdate(renderedState, result.value);
     renderPopup(currentState);
-    setStatus("今天的午饭决定已记录。");
+    setStatus(
+      currentState.kind === "ready"
+        ? "今天的午饭决定已记录。"
+        : "操作结果无法确认，请重试。"
+    );
   }
 }
 
@@ -607,27 +654,36 @@ async function runRecommendationRefresh(
   successMessage: string,
   failureMessage: string
 ): Promise<void> {
-  let refreshedState: PopupViewState | undefined;
+  const renderedState = currentState;
+  let result: PopupActionContextResult<PopupViewState> | undefined;
   await runButtonAction({
     button,
     pendingText,
     successText: "已更新",
     failureMessage,
     action: async () => {
-      refreshedState = await loadRefreshedPopupState({
-        loadStorage: getStorageState,
-        loadRecommendations:
-          fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
-        loadParticipation: fetchTodayParticipationForStorage,
-        refreshRecommendations: refreshGroupTodayRecommendationsForStorage
-      });
+      result = await runPopupActionWithContext(
+        renderedState,
+        getStorageState,
+        (storage) => loadRefreshedPopupStateForStorage(storage, {
+          loadStorage: getStorageState,
+          loadRecommendations:
+            fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
+          loadParticipation: fetchTodayParticipationForStorage,
+          refreshRecommendations: refreshGroupTodayRecommendationsForStorage
+        })
+      );
     },
     onStart: hideStatus,
     onFailure: handlePopupActionFailure
   });
-  if (!refreshedState) return;
+  if (!result) return;
+  if (result.kind === "stale") {
+    await handleStalePopupAction(result);
+    return;
+  }
 
-  currentState = refreshedState;
+  currentState = result.value;
   selectedRestaurantId = null;
   renderPopup(currentState);
   if (currentState.kind === "ready" || currentState.kind === "empty") {
@@ -729,6 +785,14 @@ function handlePopupActionFailure(
   currentState = resolution.state;
   selectedRestaurantId = null;
   renderPopup(currentState);
+}
+
+async function handleStalePopupAction(
+  result: Extract<PopupActionContextResult<unknown>, { kind: "stale" }>
+): Promise<void> {
+  selectedRestaurantId = null;
+  await reloadPopup(result.storage);
+  setStatus(result.message);
 }
 
 function hideStatus(): void {

@@ -9,7 +9,9 @@ import {
   fetchTodayParticipationForStorage,
   fetchTodayRecommendations,
   postFeedback,
+  postFeedbackForStorage,
   putTodayParticipation,
+  putTodayParticipationForStorage,
   refreshGroupTodayRecommendations,
   refreshGroupTodayRecommendationsForStorage,
   refreshTodayRecommendations
@@ -163,6 +165,81 @@ describe("group recommendation client", () => {
       batchId: "captured-cache",
       fromCache: true
     });
+  });
+
+  it("uses the verified popup snapshot for participation and feedback writes", async () => {
+    const snapshot = {
+      ...getDefaultStorageState(),
+      apiBaseUrl: "https://captured-lunch.example",
+      activeGroupId: "group-1",
+      sessionsByGroupId: {
+        "group-1": { token: "captured-group-session-token" }
+      }
+    };
+    const update = {
+      groupId: "group-1",
+      officeDate: "2026-07-09",
+      participation: {
+        membershipId: "membership-1",
+        displayName: "小林",
+        status: "joining" as const
+      },
+      summary: {
+        joiningCount: 1,
+        decidedCount: 0,
+        awayCount: 0,
+        undecidedCount: 0
+      }
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => update })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState({
+      apiBaseUrl: "https://current-lunch.example",
+      activeGroupId: "group-2",
+      sessionsByGroupId: {
+        "group-2": { token: "current-group-session-token" }
+      }
+    });
+
+    await expect(putTodayParticipationForStorage(snapshot, {
+      status: "joining"
+    })).resolves.toEqual(update);
+    await expect(postFeedbackForStorage(snapshot, {
+      date: "2026-07-09",
+      restaurantId: "restaurant-1",
+      recommendationId: "recommendation-1",
+      type: "want"
+    })).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      new URL(`https://captured-lunch.example${GROUP_ROUTES.participationToday("group-1")}`),
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({
+          [AUTHORIZATION_HEADER]: "Bearer captured-group-session-token"
+        }),
+        body: JSON.stringify({ status: "joining" })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      new URL(`https://captured-lunch.example${GROUP_ROUTES.feedback("group-1")}`),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          [AUTHORIZATION_HEADER]: "Bearer captured-group-session-token"
+        }),
+        body: JSON.stringify({
+          officeDate: "2026-07-09",
+          restaurantId: "restaurant-1",
+          recommendationId: "recommendation-1",
+          type: "want"
+        })
+      })
+    );
   });
 
   it("uses the captured group cache after a network failure even if the active group changes", async () => {
