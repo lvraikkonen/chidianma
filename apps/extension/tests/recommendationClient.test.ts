@@ -4,6 +4,7 @@ import { STORAGE_KEYS } from "../src/config";
 import {
   decideTodayRecommendation,
   ensureGroupTodayRecommendations,
+  fetchTodayParticipation,
   fetchTodayRecommendations,
   postFeedback,
   putTodayParticipation,
@@ -424,6 +425,38 @@ describe("group recommendation client", () => {
         body: JSON.stringify({ status: "joining" })
       })
     );
+  });
+
+  it("reads participation and returns the typed update response", async () => {
+    const participation = {
+      groupId: "group-1",
+      officeDate: "2026-07-10",
+      summary: {
+        joiningCount: 1,
+        decidedCount: 0,
+        awayCount: 0,
+        undecidedCount: 0
+      },
+      members: [{
+        membershipId: "membership-1",
+        displayName: "小林",
+        status: "joining" as const
+      }]
+    };
+    const update = {
+      groupId: "group-1",
+      officeDate: "2026-07-10",
+      participation: participation.members[0],
+      summary: participation.summary
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => participation })
+      .mockResolvedValueOnce({ ok: true, json: async () => update });
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState();
+
+    await expect(fetchTodayParticipation()).resolves.toEqual(participation);
+    await expect(putTodayParticipation({ status: "joining" })).resolves.toEqual(update);
   });
 
   it("records the selected recommendation as today's decision", async () => {

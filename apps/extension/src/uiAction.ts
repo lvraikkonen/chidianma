@@ -8,7 +8,7 @@ export async function runButtonAction(input: {
   pendingText: string;
   successText: string;
   failurePrefix: string;
-  action: () => Promise<void>;
+  action: () => Promise<unknown>;
   onStart?: (() => void) | undefined;
   onFailure: (message: string) => void;
 }): Promise<void> {

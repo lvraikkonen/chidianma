@@ -5,9 +5,16 @@ import {
   type FeedbackType,
   type GroupTodayRecommendationItem,
   type GroupTodayRecommendationsResponse,
+  type ParticipationTodayResponse,
   type PutParticipationTodayRequest,
+  type PutParticipationTodayResponse,
   type TodayRecommendationResponse
 } from "@lunch/shared";
+import {
+  ExtensionApiError,
+  isServiceUnavailable,
+  requestJson
+} from "./apiClient";
 import {
   getRecommendationCache,
   getStorageState,
@@ -15,19 +22,6 @@ import {
   saveRecommendationCache,
   type ExtensionStorageShape
 } from "./storage";
-
-class ApiError extends Error {
-  constructor(public readonly status: number, public readonly error?: string | undefined) {
-    super(error ? `HTTP ${status}: ${error}` : `HTTP ${status}`);
-  }
-}
-
-class NetworkRequestError extends Error {
-  constructor(error: unknown) {
-    super(error instanceof Error ? error.message : String(error));
-    this.name = "NetworkRequestError";
-  }
-}
 
 interface ActiveGroupRequestContext {
   apiBaseUrl: string;
@@ -61,43 +55,27 @@ async function requireActiveGroupRequestContext(): Promise<ActiveGroupRequestCon
   return context;
 }
 
-async function activeGroupRequest(
+async function activeGroupJson<T>(
   context: ActiveGroupRequestContext,
   path: string,
   init: RequestInit = {}
-): Promise<Response> {
-  let response: Response;
-  try {
-    response = await fetch(new URL(path, context.apiBaseUrl), {
-      ...init,
-      headers: {
-        ...(init.headers ?? {}),
-        [AUTHORIZATION_HEADER]: `Bearer ${context.token}`
-      }
-    });
-  } catch (error) {
-    throw new NetworkRequestError(error);
-  }
-  if (!response.ok) {
-    let error: string | undefined;
-    try {
-      error = ((await response.json()) as { error?: string }).error;
-    } catch {
-      error = undefined;
+): Promise<T> {
+  return requestJson<T>(new URL(path, context.apiBaseUrl), {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      [AUTHORIZATION_HEADER]: `Bearer ${context.token}`
     }
-    throw new ApiError(response.status, error);
-  }
-  return response;
+  });
 }
 
 async function fetchGroupTodayRecommendationsNetworkOnlyForContext(
   context: ActiveGroupRequestContext
 ): Promise<GroupTodayRecommendationsResponse> {
-  const response = await activeGroupRequest(
+  const data = await activeGroupJson<GroupTodayRecommendationsResponse>(
     context,
     GROUP_ROUTES.todayRecommendations(context.groupId)
   );
-  const data = (await response.json()) as GroupTodayRecommendationsResponse;
   await saveGroupRecommendationCache(context.groupId, data);
   return data;
 }
@@ -111,8 +89,7 @@ async function getGroupCacheFallback(
 }
 
 function isCacheFallbackEligible(error: unknown): boolean {
-  return error instanceof NetworkRequestError
-    || (error instanceof ApiError && error.status >= 500 && error.status < 600);
+  return isServiceUnavailable(error);
 }
 
 async function fetchGroupTodayRecommendationsWithCacheFallbackForContext(
@@ -131,12 +108,11 @@ async function fetchGroupTodayRecommendationsWithCacheFallbackForContext(
 async function refreshGroupTodayRecommendationsForContext(
   context: ActiveGroupRequestContext
 ): Promise<GroupTodayRecommendationsResponse> {
-  const response = await activeGroupRequest(
+  const data = await activeGroupJson<GroupTodayRecommendationsResponse>(
     context,
     GROUP_ROUTES.refreshTodayRecommendations(context.groupId),
     { method: "POST" }
   );
-  const data = (await response.json()) as GroupTodayRecommendationsResponse;
   await saveGroupRecommendationCache(context.groupId, data);
   return data;
 }
@@ -165,9 +141,9 @@ export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecom
     return await fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
   } catch (error) {
     if (
-      error instanceof ApiError &&
+      error instanceof ExtensionApiError &&
       error.status === 404 &&
-      error.error === "no_current_batch"
+      error.code === "no_current_batch"
     ) {
       return refreshGroupTodayRecommendationsForContext(context);
     }
@@ -186,18 +162,11 @@ async function fetchLegacyTodayRecommendations(
   if (options.forceRefresh) url.searchParams.set("forceRefresh", "true");
 
   try {
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: {
-          [READ_TOKEN_HEADER]: settings.readToken
-        }
-      });
-    } catch (error) {
-      throw new NetworkRequestError(error);
-    }
-    if (!response.ok) throw new ApiError(response.status);
-    const data = (await response.json()) as TodayRecommendationResponse;
+    const data = await requestJson<TodayRecommendationResponse>(url, {
+      headers: {
+        [READ_TOKEN_HEADER]: settings.readToken
+      }
+    });
     await saveRecommendationCache(data);
     return data;
   } catch (error) {
@@ -229,11 +198,19 @@ export async function refreshTodayRecommendations(): Promise<ExtensionRecommenda
   return fetchLegacyTodayRecommendations(settings, { forceRefresh: true });
 }
 
+export async function fetchTodayParticipation(): Promise<ParticipationTodayResponse> {
+  const context = await requireActiveGroupRequestContext();
+  return activeGroupJson<ParticipationTodayResponse>(
+    context,
+    GROUP_ROUTES.participationToday(context.groupId)
+  );
+}
+
 export async function putTodayParticipation(
   input: PutParticipationTodayRequest
-): Promise<void> {
+): Promise<PutParticipationTodayResponse> {
   const context = await requireActiveGroupRequestContext();
-  await activeGroupRequest(
+  return activeGroupJson<PutParticipationTodayResponse>(
     context,
     GROUP_ROUTES.participationToday(context.groupId),
     {
@@ -265,7 +242,7 @@ export async function postFeedback(input: {
   const settings = await getStorageState();
   const context = getActiveGroupRequestContext(settings);
   if (context) {
-    await activeGroupRequest(context, GROUP_ROUTES.feedback(context.groupId), {
+    await activeGroupJson(context, GROUP_ROUTES.feedback(context.groupId), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
