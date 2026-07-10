@@ -9,7 +9,6 @@ import {
   type TodayRecommendationResponse
 } from "@lunch/shared";
 import {
-  getActiveGroupRecommendationCache,
   getRecommendationCache,
   getStorageState,
   saveGroupRecommendationCache,
@@ -20,6 +19,13 @@ import {
 class ApiError extends Error {
   constructor(public readonly status: number, public readonly error?: string | undefined) {
     super(error ? `HTTP ${status}: ${error}` : `HTTP ${status}`);
+  }
+}
+
+class NetworkRequestError extends Error {
+  constructor(error: unknown) {
+    super(error instanceof Error ? error.message : String(error));
+    this.name = "NetworkRequestError";
   }
 }
 
@@ -45,7 +51,7 @@ function getActiveGroupRequestContext(
   const groupId = state.activeGroupId;
   if (!groupId) return null;
   const token = state.sessionsByGroupId[groupId]?.token;
-  if (!token) return null;
+  if (!token) throw new Error("No active group session configured");
   return { apiBaseUrl: state.apiBaseUrl, groupId, token };
 }
 
@@ -60,13 +66,18 @@ async function activeGroupRequest(
   path: string,
   init: RequestInit = {}
 ): Promise<Response> {
-  const response = await fetch(new URL(path, context.apiBaseUrl), {
-    ...init,
-    headers: {
-      ...(init.headers ?? {}),
-      [AUTHORIZATION_HEADER]: `Bearer ${context.token}`
-    }
-  });
+  let response: Response;
+  try {
+    response = await fetch(new URL(path, context.apiBaseUrl), {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        [AUTHORIZATION_HEADER]: `Bearer ${context.token}`
+      }
+    });
+  } catch (error) {
+    throw new NetworkRequestError(error);
+  }
   if (!response.ok) {
     let error: string | undefined;
     try {
@@ -94,8 +105,14 @@ async function fetchGroupTodayRecommendationsNetworkOnlyForContext(
 async function getGroupCacheFallback(
   groupId: string
 ): Promise<GroupTodayRecommendationsResponse | null> {
-  const cached = await getActiveGroupRecommendationCache();
+  const state = await getStorageState();
+  const cached = state.lastRecommendationsByGroupId[groupId];
   return cached?.groupId === groupId ? { ...cached, fromCache: true } : null;
+}
+
+function isCacheFallbackEligible(error: unknown): boolean {
+  return error instanceof NetworkRequestError
+    || (error instanceof ApiError && error.status >= 500 && error.status < 600);
 }
 
 async function fetchGroupTodayRecommendationsWithCacheFallbackForContext(
@@ -104,6 +121,7 @@ async function fetchGroupTodayRecommendationsWithCacheFallbackForContext(
   try {
     return await fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
   } catch (error) {
+    if (!isCacheFallbackEligible(error)) throw error;
     const cached = await getGroupCacheFallback(context.groupId);
     if (cached) return cached;
     throw error;
@@ -153,6 +171,7 @@ export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecom
     ) {
       return refreshGroupTodayRecommendationsForContext(context);
     }
+    if (!isCacheFallbackEligible(error)) throw error;
     const cached = await getGroupCacheFallback(context.groupId);
     if (cached) return cached;
     throw error;
@@ -167,16 +186,22 @@ async function fetchLegacyTodayRecommendations(
   if (options.forceRefresh) url.searchParams.set("forceRefresh", "true");
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        [READ_TOKEN_HEADER]: settings.readToken
-      }
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          [READ_TOKEN_HEADER]: settings.readToken
+        }
+      });
+    } catch (error) {
+      throw new NetworkRequestError(error);
+    }
+    if (!response.ok) throw new ApiError(response.status);
     const data = (await response.json()) as TodayRecommendationResponse;
     await saveRecommendationCache(data);
     return data;
   } catch (error) {
+    if (!isCacheFallbackEligible(error)) throw error;
     const cached = await getRecommendationCache();
     if (cached) return { ...cached, fromCache: true };
     throw error;

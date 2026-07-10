@@ -50,7 +50,156 @@ function stubGroupedState(extra: Partial<ReturnType<typeof getDefaultStorageStat
   return { get, set, locks };
 }
 
+function groupRecommendationResponse(groupId: string, batchId: string) {
+  return {
+    groupId,
+    officeDate: "2026-07-09",
+    batchId,
+    batchNo: 1,
+    generatedAt: "2026-07-09T03:30:00.000Z",
+    participationSummary: {
+      joiningCount: 0,
+      decidedCount: 0,
+      awayCount: 0,
+      undecidedCount: 1
+    },
+    items: []
+  };
+}
+
 describe("group recommendation client", () => {
+  it("uses the captured group cache after a network failure even if the active group changes", async () => {
+    const groupOneCache = groupRecommendationResponse("group-1", "group-1-cache");
+    const groupTwoCache = groupRecommendationResponse("group-2", "group-2-cache");
+    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+    const { get } = stubGroupedState();
+    get.mockReset();
+    get
+      .mockResolvedValueOnce({
+        [STORAGE_KEYS.state]: {
+          ...getDefaultStorageState(),
+          apiBaseUrl: "https://old-lunch.example",
+          activeGroupId: "group-1",
+          sessionsByGroupId: {
+            "group-1": { token: "old-group-session-token" }
+          },
+          lastRecommendationsByGroupId: {
+            "group-1": groupOneCache,
+            "group-2": groupTwoCache
+          }
+        }
+      })
+      .mockResolvedValue({
+        [STORAGE_KEYS.state]: {
+          ...getDefaultStorageState(),
+          apiBaseUrl: "https://new-lunch.example",
+          activeGroupId: "group-2",
+          sessionsByGroupId: {
+            "group-2": { token: "new-group-session-token" }
+          },
+          lastRecommendationsByGroupId: {
+            "group-1": groupOneCache,
+            "group-2": groupTwoCache
+          }
+        }
+      });
+
+    await expect(fetchTodayRecommendations()).resolves.toMatchObject({
+      groupId: "group-1",
+      batchId: "group-1-cache",
+      fromCache: true
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://old-lunch.example/api/groups/group-1/today-recommendations"),
+      expect.objectContaining({
+        headers: { [AUTHORIZATION_HEADER]: "Bearer old-group-session-token" }
+      })
+    );
+  });
+
+  it("uses the matching group cache after a recoverable 5xx response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: "service_unavailable" })
+    }));
+    stubGroupedState({
+      lastRecommendationsByGroupId: {
+        "group-1": groupRecommendationResponse("group-1", "group-1-cache")
+      }
+    });
+
+    await expect(fetchTodayRecommendations()).resolves.toMatchObject({
+      groupId: "group-1",
+      batchId: "group-1-cache",
+      fromCache: true
+    });
+  });
+
+  it.each([400, 401, 403, 404])(
+    "does not hide HTTP %s group responses with cache",
+    async (status) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => ({ error: "request_rejected" })
+      }));
+      stubGroupedState({
+        lastRecommendationsByGroupId: {
+          "group-1": groupRecommendationResponse("group-1", "group-1-cache")
+        }
+      });
+
+      await expect(fetchTodayRecommendations()).rejects.toThrow(`HTTP ${status}`);
+    }
+  );
+
+  it.each([
+    ["read", () => fetchTodayRecommendations()],
+    ["refresh", () => refreshTodayRecommendations()],
+    ["feedback", () => postFeedback({
+      date: "2026-07-09",
+      restaurantId: "restaurant-1",
+      type: "want"
+    })]
+  ])("rejects group %s when activeGroupId has no session without using legacy", async (
+    _operation,
+    run
+  ) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ date: "2026-07-09", headline: "legacy", items: [] })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    stubGroupedState({
+      activeGroupId: "group-1",
+      sessionsByGroupId: {},
+      lastRecommendationsByGroupId: {
+        "group-1": groupRecommendationResponse("group-1", "group-1-cache")
+      }
+    });
+
+    await expect(run()).rejects.toThrow("No active group session configured");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a successful response for another group instead of hiding it with cache", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => groupRecommendationResponse("group-2", "group-2-batch")
+    }));
+    stubGroupedState({
+      lastRecommendationsByGroupId: {
+        "group-1": groupRecommendationResponse("group-1", "group-1-cache")
+      }
+    });
+
+    await expect(fetchTodayRecommendations()).rejects.toThrow(
+      "recommendation_cache_group_mismatch"
+    );
+  });
+
   it("uses one storage snapshot for the group host, path, token, and cache bucket", async () => {
     const fetchMock = vi.fn(async (
       _input: RequestInfo | URL,
@@ -348,6 +497,72 @@ describe("group recommendation client", () => {
 });
 
 describe("legacy recommendation client fallback", () => {
+  it("uses legacy read only when activeGroupId itself is absent", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        date: "2026-07-09",
+        headline: "今天吃什么",
+        items: []
+      })
+    } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({
+            [STORAGE_KEYS.state]: {
+              ...getDefaultStorageState(),
+              apiBaseUrl: "https://lunch.example",
+              readToken: "read-token"
+            }
+          }),
+          set: vi.fn().mockResolvedValue(undefined)
+        }
+      }
+    });
+
+    await expect(fetchTodayRecommendations()).resolves.toMatchObject({
+      date: "2026-07-09",
+      headline: "今天吃什么"
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://lunch.example/api/today-recommendations"),
+      { headers: { [READ_TOKEN_HEADER]: "read-token" } }
+    );
+  });
+
+  it("does not hide a legacy 401 response with cache", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "unauthorized" })
+    }));
+    const get = vi.fn(async (key: string | string[]) => {
+      if (key === STORAGE_KEYS.lastRecommendation) {
+        return {
+          [STORAGE_KEYS.lastRecommendation]: {
+            date: "2026-07-08",
+            headline: "旧缓存",
+            items: []
+          }
+        };
+      }
+      return {
+        [STORAGE_KEYS.state]: {
+          ...getDefaultStorageState(),
+          apiBaseUrl: "https://lunch.example",
+          readToken: "expired-read-token"
+        }
+      };
+    });
+    vi.stubGlobal("chrome", {
+      storage: { local: { get, set: vi.fn() } }
+    });
+
+    await expect(fetchTodayRecommendations()).rejects.toThrow("HTTP 401");
+  });
+
   it("keeps forceRefresh=true for unified refresh without an active group", async () => {
     const fetchMock = vi.fn(async (
       _input: RequestInfo | URL,
@@ -388,7 +603,7 @@ describe("legacy recommendation client fallback", () => {
     );
   });
 
-  it("keeps legacy feedback fallback when no active group session exists", async () => {
+  it("keeps legacy feedback fallback when activeGroupId is absent", async () => {
     const fetchMock = vi.fn(async () => ({ ok: true } as Response));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("chrome", {

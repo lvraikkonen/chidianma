@@ -131,7 +131,7 @@ export async function getWeatherForGroupOfficeDate(input: {
   }
 }
 
-function snapshotToWeather(snapshot: {
+export function snapshotToWeather(snapshot: {
   temperatureC: number | null;
   condition: string;
   precipitationProbability: number | null;

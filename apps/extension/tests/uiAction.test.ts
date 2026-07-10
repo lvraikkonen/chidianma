@@ -47,4 +47,33 @@ describe("runButtonAction", () => {
     expect(button).toEqual({ textContent: "避雷", disabled: false });
     expect(onFailure).toHaveBeenCalledWith("记录反馈失败：网络断开");
   });
+
+  it("clears a previous failure banner before a successful retry", async () => {
+    const button = { textContent: "今天参与", disabled: false };
+    let status = "";
+    const action = vi.fn()
+      .mockRejectedValueOnce(new Error("网络断开"))
+      .mockResolvedValueOnce(undefined);
+    const input = {
+      button,
+      pendingText: "记录中...",
+      successText: "已记录参与",
+      failurePrefix: "记录参与失败",
+      action,
+      onStart: () => {
+        status = "";
+      },
+      onFailure: (message: string) => {
+        status = message;
+      }
+    };
+
+    await runButtonAction(input);
+    expect(status).toBe("记录参与失败：网络断开");
+
+    await runButtonAction(input);
+
+    expect(button).toEqual({ textContent: "已记录参与", disabled: true });
+    expect(status).toBe("");
+  });
 });

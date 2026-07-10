@@ -83,6 +83,7 @@ function renderGroupResponse(response: GroupTodayRecommendationsResponse) {
       successText: "已记录参与",
       failurePrefix: "记录参与失败",
       action: () => putTodayParticipation({ status: "joining" }),
+      onStart: hideStatus,
       onFailure: setStatus
     });
   });
@@ -98,6 +99,7 @@ function renderGroupResponse(response: GroupTodayRecommendationsResponse) {
       successText: "已记录不吃",
       failurePrefix: "记录不吃失败",
       action: () => putTodayParticipation({ status: "away" }),
+      onStart: hideStatus,
       onFailure: setStatus
     });
   });
@@ -144,6 +146,7 @@ function createGroupCard(
       successText: "已决定",
       failurePrefix: "记录决定失败",
       action: () => decideTodayRecommendation(item),
+      onStart: hideStatus,
       onFailure: setStatus
     });
   });
@@ -209,6 +212,7 @@ function createCard(item: RecommendationItem, date: string): HTMLElement {
             : {}),
           type
         }),
+        onStart: hideStatus,
         onFailure: setStatus
       });
     });

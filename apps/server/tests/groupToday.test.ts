@@ -28,6 +28,67 @@ afterEach(() => {
 });
 
 describe("group today recommendation service", () => {
+  it("restores persisted weather when returning an existing current batch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const prisma = buildPrismaForExistingBatchTest({
+      weatherSnapshotId: "weather-1",
+      weatherSnapshot: {
+        id: "weather-1",
+        city: "Shanghai",
+        temperatureC: 22,
+        condition: "rainy",
+        precipitationProbability: 70,
+        windLevel: "light"
+      }
+    });
+
+    await expect(getCurrentGroupTodayRecommendations({
+      prisma: prisma as unknown as PrismaClient,
+      env,
+      groupId: "group-1"
+    })).resolves.toMatchObject({
+      groupId: "group-1",
+      batchId: "batch-1",
+      weather: {
+        city: "Shanghai",
+        temperatureC: 22,
+        condition: "rainy",
+        precipitationProbability: 70,
+        windLevel: "light",
+        summary: "今天有雨，优先推荐近一点、热乎一点的选择。"
+      },
+      weatherUnavailable: false
+    });
+
+    expect(prisma.weatherSnapshot.findUnique).toHaveBeenCalledWith({
+      where: { id: "weather-1" }
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("marks weather unavailable when an existing current batch has no snapshot", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const prisma = buildPrismaForExistingBatchTest({
+      weatherSnapshotId: null,
+      weatherSnapshot: null
+    });
+
+    await expect(getCurrentGroupTodayRecommendations({
+      prisma: prisma as unknown as PrismaClient,
+      env,
+      groupId: "group-1"
+    })).resolves.toMatchObject({
+      groupId: "group-1",
+      batchId: "batch-1",
+      weatherUnavailable: true
+    });
+
+    expect(prisma.weatherSnapshot.findUnique).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("returns 404 service error without creating a batch when no current batch exists", async () => {
     const prisma = {
       lunchGroup: {
@@ -220,6 +281,39 @@ describe("group today recommendation service", () => {
     expect(response.items[0]?.scoreBreakdown.weatherMatch).toBe(0);
   });
 });
+
+function buildPrismaForExistingBatchTest(input: {
+  weatherSnapshotId: string | null;
+  weatherSnapshot: Record<string, unknown> | null;
+}) {
+  return {
+    lunchGroup: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: "group-1",
+        officeCity: "Shanghai",
+        officeTimezone: "Asia/Shanghai"
+      })
+    },
+    dailyRecommendationBatch: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "batch-1",
+        batchNo: 1,
+        createdAt: new Date("2026-07-09T03:30:00.000Z"),
+        weatherSnapshotId: input.weatherSnapshotId,
+        items: []
+      })
+    },
+    weatherSnapshot: {
+      findUnique: vi.fn().mockResolvedValue(input.weatherSnapshot)
+    },
+    groupMembership: {
+      findMany: vi.fn().mockResolvedValue([{ id: "membership-1" }])
+    },
+    dailyParticipation: {
+      findMany: vi.fn().mockResolvedValue([])
+    }
+  };
+}
 
 function buildPrismaForRefreshTest(options: {
   weatherSnapshot?: Record<string, unknown> | null;

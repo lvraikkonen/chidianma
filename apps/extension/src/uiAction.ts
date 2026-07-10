@@ -9,9 +9,11 @@ export async function runButtonAction(input: {
   successText: string;
   failurePrefix: string;
   action: () => Promise<void>;
+  onStart?: (() => void) | undefined;
   onFailure: (message: string) => void;
 }): Promise<void> {
   const originalText = input.button.textContent;
+  input.onStart?.();
   input.button.disabled = true;
   input.button.textContent = input.pendingText;
 

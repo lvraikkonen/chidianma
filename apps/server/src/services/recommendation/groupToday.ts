@@ -11,7 +11,10 @@ import type { AppEnv } from "../../env.js";
 import { getOfficeDate, getOfficeWeekdayTag } from "../dates.js";
 import type { MembershipContext } from "../groups/memberships.js";
 import type { WeatherSummary } from "../weather/mockWeather.js";
-import { getWeatherForGroupOfficeDate } from "../weather/officeWeather.js";
+import {
+  getWeatherForGroupOfficeDate,
+  snapshotToWeather
+} from "../weather/officeWeather.js";
 import { rankRestaurantCandidates } from "./scorer.js";
 
 export const GROUP_RECOMMENDATION_ALGORITHM_VERSION = "group-v1";
@@ -40,13 +43,27 @@ export async function getCurrentGroupTodayRecommendations(input: {
     }
   });
   if (!batch) throw new NoCurrentBatchError(input.groupId, officeDate);
+  const weatherSnapshot = batch.weatherSnapshotId
+    ? await input.prisma.weatherSnapshot.findUnique({
+        where: { id: batch.weatherSnapshotId }
+      })
+    : null;
 
   const summary = await buildParticipationSummary({
     prisma: input.prisma,
     groupId: input.groupId,
     officeDate
   });
-  return formatBatchResponse({ groupId: input.groupId, officeDate, batch, summary });
+  return formatBatchResponse({
+    groupId: input.groupId,
+    officeDate,
+    batch,
+    summary,
+    weather: weatherSnapshot
+      ? weatherToSharedWeather(weatherSnapshot.city, snapshotToWeather(weatherSnapshot))
+      : undefined,
+    weatherUnavailable: !weatherSnapshot
+  });
 }
 
 export async function refreshGroupTodayRecommendations(input: {
