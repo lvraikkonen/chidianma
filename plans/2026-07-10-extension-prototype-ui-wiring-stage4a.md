@@ -100,8 +100,8 @@ Out of scope:
   - Provide the production detail shell.
 - Modify: `apps/extension/styles/detail.css`
   - Port expanded-card and fallback-page styles.
-- Modify: `apps/extension/src/background.ts`
-  - Keep notification behavior compatible while passing an optional selected restaurant to detail fallback when available.
+- Verify unchanged behavior: `apps/extension/src/background.ts`
+  - Keep `chrome.action.openPopup()` first and the fallback URL exactly `detail.html`; optional focus is handled by the detail page query itself.
 - Create: `apps/extension/tests/apiClient.test.ts`
 - Create: `apps/extension/tests/groupClient.test.ts`
 - Create: `apps/extension/tests/popupController.test.ts`
@@ -2201,23 +2201,35 @@ git commit -m "feat: add extension restaurant quick entry"
 - Modify: `apps/extension/detail.html`
 - Modify: `apps/extension/src/detail.ts`
 - Modify: `apps/extension/styles/detail.css`
-- Modify: `apps/extension/src/background.ts`
+- Verify unchanged behavior: `apps/extension/src/background.ts`
+- Modify: `plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md`
 
 **Interfaces:**
 
 - Consumes: popup/current-group clients, recommendation view models, group restaurant list, and optional `restaurantId` URL query.
 - Produces:
   - `loadDetailState(dependencies, restaurantId?)`
+  - `runDetailActionWithContext(state, loadStorage, action)`
+  - `applyDetailDecisionUpdate(state, update)`
+  - `mergeDetailAnnouncement(state, announcement)`
   - focused or expanded-list detail rendering
-  - existing notification fallback with optional focus URL.
+  - exact existing notification fallback URL `detail.html`; optional focus remains a detail-page query capability for other entry points.
 
-- [ ] **Step 1: Write focused and cached detail tests**
+- [ ] **Step 1: Write detail loading, error-parity, and action-context tests**
 
 Create `apps/extension/tests/detailController.test.ts`:
 
 ```ts
+import type { PutParticipationTodayResponse } from "@lunch/shared";
 import { describe, expect, it, vi } from "vitest";
-import { loadDetailState } from "../src/detailController";
+import { ExtensionApiError } from "../src/apiClient";
+import {
+  applyDetailDecisionUpdate,
+  loadDetailState,
+  mergeDetailAnnouncement,
+  runDetailActionWithContext
+} from "../src/detailController";
+import { getDefaultStorageState } from "../src/storage";
 
 describe("standalone detail controller", () => {
   it("focuses the requested restaurant and enriches it with real recommendations", async () => {
@@ -2235,12 +2247,113 @@ describe("standalone detail controller", () => {
     const state = await loadDetailState(detailDependencies({ fromCache: true }));
     expect(state).toMatchObject({ kind: "cached", readOnly: true });
   });
+
+  it("returns every today item when the notification fallback has no focus", async () => {
+    const state = await loadDetailState(detailDependencies());
+    expect(state.kind === "ready" && state.items.map(({ item }) => item.restaurantId))
+      .toEqual(["restaurant-1", "restaurant-2"]);
+  });
+
+  it("keeps fresh today items when optional restaurant enrichment fails", async () => {
+    const state = await loadDetailState(detailDependencies({
+      loadRestaurants: vi.fn().mockRejectedValue(new TypeError("offline"))
+    }));
+    expect(state).toMatchObject({
+      kind: "ready",
+      items: [
+        { item: { restaurantId: "restaurant-1" }, recommendations: [] },
+        { item: { restaurantId: "restaurant-2" }, recommendations: [] }
+      ]
+    });
+  });
+
+  it("does not request restaurant enrichment for an empty fresh batch", async () => {
+    const loadRestaurants = vi.fn();
+    const state = await loadDetailState(detailDependencies({
+      response: { ...todayResponse(), items: [] },
+      loadRestaurants
+    }));
+    expect(state).toMatchObject({ kind: "ready", items: [] });
+    expect(loadRestaurants).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new ExtensionApiError({ kind: "http", status: 404, code: "no_current_batch" }), "no-current-batch"],
+    [new ExtensionApiError({ kind: "http", status: 401 }), "session-expired"],
+    [new ExtensionApiError({ kind: "http", status: 403 }), "forbidden"]
+  ] as const)("maps structured recommendation failure to %s", async (error, kind) => {
+    const state = await loadDetailState(detailDependencies({
+      loadRecommendations: vi.fn().mockRejectedValue(error)
+    }));
+    expect(state.kind).toBe(kind);
+  });
+
+  it("returns a retryable safe error for network recommendation failure", async () => {
+    const state = await loadDetailState(detailDependencies({
+      loadRecommendations: vi.fn().mockRejectedValue(new TypeError("offline"))
+    }));
+    expect(state).toEqual({
+      kind: "error",
+      message: "暂时无法加载推荐详情，请重试。",
+      retryable: true
+    });
+  });
+
+  it("prevents a rendered group action after the active group changes", async () => {
+    const action = vi.fn();
+    const result = await runDetailActionWithContext(
+      readyDetailState(),
+      vi.fn().mockResolvedValue(connectedStorage("group-2")),
+      action
+    );
+    expect(result.kind).toBe("stale");
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it("passes one captured storage snapshot to a matching group action", async () => {
+    const storage = connectedStorage("group-1");
+    const action = vi.fn().mockResolvedValue("saved");
+    await expect(runDetailActionWithContext(
+      readyDetailState(),
+      vi.fn().mockResolvedValue(storage),
+      action
+    )).resolves.toMatchObject({ kind: "performed", value: "saved" });
+    expect(action).toHaveBeenCalledWith(storage);
+  });
+
+  it("replaces the local decided restaurant and participation summary", () => {
+    const update = participationUpdate("restaurant-2");
+    expect(applyDetailDecisionUpdate(readyDetailState("restaurant-1"), update))
+      .toMatchObject({
+        kind: "ready",
+        decidedRestaurantId: "restaurant-2",
+        response: { participationSummary: update.summary }
+      });
+  });
+
+  it.each([
+    { groupId: "group-2" },
+    { officeDate: "2026-07-11" }
+  ])("does not merge a decision from another recommendation batch", (override) => {
+    const state = readyDetailState("restaurant-1");
+    const update = { ...participationUpdate("restaurant-2"), ...override };
+    expect(applyDetailDecisionUpdate(state, update)).toBe(state);
+  });
+
+  it("keeps cached content visibly marked when adding an announcement", () => {
+    expect(mergeDetailAnnouncement(
+      cachedDetailState(),
+      "当前小组已切换，已加载当前小组内容，请重新操作。"
+    )).toBe(
+      "当前小组已切换，已加载当前小组内容，请重新操作。 缓存内容仅供查看"
+    );
+  });
 });
 ```
 
-The dependency factory returns two today items and a `RestaurantListResponse` containing matching recommendation reasons without relying on `createdByName`.
+The dependency factory returns two today items and a `RestaurantListResponse` containing matching recommendation reasons without relying on `createdByName`. It accepts exact overrides for `response`, `loadRecommendations`, and `loadRestaurants`. `connectedStorage(groupId)` starts from `getDefaultStorageState()` and includes the requested active group, matching group summary, and session token. `readyDetailState(decidedRestaurantId?)` is a fresh `ready` state for `group-1`; `cachedDetailState()` contains the same response with `fromCache: true`, empty enrichment, and `readOnly: true`. `participationUpdate(restaurantId)` returns a typed `PutParticipationTodayResponse` whose member status is `decided` and whose summary has `decidedCount: 1`.
 
-- [ ] **Step 2: Run the detail test and verify failure**
+- [ ] **Step 2: Run the expanded detail tests and verify failure**
 
 Run:
 
@@ -2248,19 +2361,22 @@ Run:
 pnpm --filter @lunch/extension test -- detailController.test.ts
 ```
 
-Expected: FAIL because the controller is missing.
+Expected: FAIL because structured detail states, optional-enrichment fallback, captured action context, batch-safe decision-state replacement, and cached announcement merging are missing.
 
-- [ ] **Step 3: Implement detail loading**
+- [ ] **Step 3: Implement detail loading, popup-equivalent error rules, and pure action state**
 
-Create `detailController.ts` with this implementation:
+Create `detailController.ts` with these exact state and helper contracts:
 
 ```ts
 import type {
   GroupTodayRecommendationItem,
   GroupTodayRecommendationsResponse,
+  PutParticipationTodayResponse,
   RecommendationSummary,
   RestaurantListResponse
 } from "@lunch/shared";
+import { classifyPopupError } from "./popupController";
+import type { ExtensionStorageShape } from "./storage";
 
 export interface DetailItem {
   item: GroupTodayRecommendationItem;
@@ -2268,9 +2384,53 @@ export interface DetailItem {
 }
 
 export type DetailViewState =
-  | { kind: "ready"; response: GroupTodayRecommendationsResponse; items: DetailItem[]; readOnly: false }
+  | { kind: "ready"; response: GroupTodayRecommendationsResponse; items: DetailItem[]; readOnly: false; decidedRestaurantId?: string | undefined }
   | { kind: "cached"; response: GroupTodayRecommendationsResponse; items: DetailItem[]; readOnly: true }
-  | { kind: "error"; message: string };
+  | { kind: "disconnected" }
+  | { kind: "no-current-batch" }
+  | { kind: "session-expired" }
+  | { kind: "forbidden" }
+  | { kind: "error"; message: string; retryable: boolean };
+
+export type DetailRecommendationState = Extract<
+  DetailViewState,
+  { kind: "ready" | "cached" }
+>;
+
+export type DetailActionContextResult<T> =
+  | { kind: "performed"; storage: ExtensionStorageShape; value: T }
+  | { kind: "stale"; storage: ExtensionStorageShape; message: string };
+
+function detailFailureState(error: unknown): DetailViewState {
+  const kind = classifyPopupError(error);
+  if (kind === "no-current-batch") return { kind };
+  if (kind === "session-expired") return { kind };
+  if (kind === "forbidden") return { kind };
+  return {
+    kind: "error",
+    message: "暂时无法加载推荐详情，请重试。",
+    retryable: true
+  };
+}
+
+function readyItems(
+  response: GroupTodayRecommendationsResponse,
+  selected: GroupTodayRecommendationItem[],
+  restaurants?: RestaurantListResponse
+): Extract<DetailViewState, { kind: "ready" }> {
+  const byId = new Map(
+    (restaurants?.restaurants ?? []).map((restaurant) => [restaurant.id, restaurant])
+  );
+  return {
+    kind: "ready",
+    response,
+    readOnly: false,
+    items: selected.map((item) => ({
+      item,
+      recommendations: byId.get(item.restaurantId)?.recommendations ?? []
+    }))
+  };
+}
 
 export async function loadDetailState(
   dependencies: {
@@ -2285,7 +2445,11 @@ export async function loadDetailState(
       ? response.items.filter((item) => item.restaurantId === restaurantId)
       : response.items;
     if (restaurantId && selected.length === 0) {
-      return { kind: "error", message: "今天的推荐里没有这家餐厅。" };
+      return {
+        kind: "error",
+        message: "今天的推荐里没有这家餐厅。",
+        retryable: false
+      };
     }
     if (response.fromCache) {
       return {
@@ -2295,24 +2459,76 @@ export async function loadDetailState(
         items: selected.map((item) => ({ item, recommendations: [] }))
       };
     }
-    const restaurants = await dependencies.loadRestaurants();
-    const byId = new Map(restaurants.restaurants.map((restaurant) => [restaurant.id, restaurant]));
-    return {
-      kind: "ready",
-      response,
-      readOnly: false,
-      items: selected.map((item) => ({
-        item,
-        recommendations: byId.get(item.restaurantId)?.recommendations ?? []
-      }))
-    };
-  } catch {
-    return { kind: "error", message: "暂时无法加载推荐详情，请重试。" };
+    if (selected.length === 0) return readyItems(response, selected);
+    try {
+      return readyItems(response, selected, await dependencies.loadRestaurants());
+    } catch (error) {
+      const kind = classifyPopupError(error);
+      if (kind === "session-expired") return { kind };
+      if (kind === "forbidden") return { kind };
+      return readyItems(response, selected);
+    }
+  } catch (error) {
+    return detailFailureState(error);
   }
+}
+
+export async function runDetailActionWithContext<T>(
+  state: DetailRecommendationState,
+  loadStorage: () => Promise<ExtensionStorageShape>,
+  action: (storage: ExtensionStorageShape) => Promise<T>
+): Promise<DetailActionContextResult<T>> {
+  const storage = await loadStorage();
+  const groupId = state.response.groupId;
+  if (
+    storage.activeGroupId !== groupId
+    || !storage.sessionsByGroupId[groupId]?.token
+  ) {
+    return {
+      kind: "stale",
+      storage,
+      message: "当前小组已切换，已加载当前小组内容，请重新操作。"
+    };
+  }
+  return {
+    kind: "performed",
+    storage,
+    value: await action(storage)
+  };
+}
+
+export function mergeDetailAnnouncement(
+  state: DetailViewState,
+  announcement: string
+): string {
+  return state.kind === "cached"
+    ? `${announcement} 缓存内容仅供查看`
+    : announcement;
+}
+
+export function applyDetailDecisionUpdate(
+  state: DetailViewState,
+  update: PutParticipationTodayResponse
+): DetailViewState {
+  if (
+    state.kind !== "ready"
+    || update.groupId !== state.response.groupId
+    || update.officeDate !== state.response.officeDate
+    || update.participation.status !== "decided"
+    || !update.participation.restaurantId
+  ) return state;
+  return {
+    ...state,
+    decidedRestaurantId: update.participation.restaurantId,
+    response: {
+      ...state.response,
+      participationSummary: update.summary
+    }
+  };
 }
 ```
 
-- [ ] **Step 4: Replace detail HTML and renderer**
+- [ ] **Step 4: Replace detail HTML and render every recoverable state**
 
 Use this production shell in `detail.html`:
 
@@ -2327,7 +2543,23 @@ Use this production shell in `detail.html`:
 </main>
 ```
 
-`detail.ts` reads `new URLSearchParams(location.search).get("restaurantId")`, loads state, and renders expanded cards with feedback and decision buttons only when `readOnly` is false. Reuse `toRecommendationCardModel` and `scoreBreakdownRows`; do not duplicate formatting.
+`detail.ts` reads `new URLSearchParams(location.search).get("restaurantId")`, captures one storage snapshot for the load, and returns `disconnected` before any request when the active group, matching group summary, or active-group session is missing. It renders these exact recovery states:
+
+- `disconnected`: “请先在设置中连接小组。” plus a settings button.
+- `no-current-batch`: “今天还没有生成推荐。” plus an `index.html` link labeled “打开插件生成推荐”.
+- `session-expired`: “当前小组连接已失效，请在设置中重新连接。” plus a settings button.
+- `forbidden`: “你已被移出当前小组，请在设置中选择其他小组。” plus a settings button.
+- retryable `error`: safe message plus a “重试” button that reruns the full load.
+- non-retryable focus error: safe message without a retry button.
+- `ready` and `cached`: expanded cards; cached state visibly says “缓存内容仅供查看” and creates no write buttons.
+
+Reuse `toRecommendationCardModel` and `scoreBreakdownRows`; do not duplicate formatting. All server values use DOM creation plus `textContent`.
+
+For fresh writes, capture the rendered `DetailRecommendationState` in each handler and call `runDetailActionWithContext`. Pass the returned storage snapshot to `postFeedbackForStorage` or `putTodayParticipationForStorage`; do not call the helpers that reread storage. A stale result reruns the full detail load and displays its stable stale-group message. Map 401/403 action failures to `session-expired`/`forbidden`; keep other action failures inline.
+
+Create one page-level `createExclusiveActionGate`. Every currently enabled feedback and decision button has `data-write-action="true"`; the already-decided button is disabled and omits that attribute. The gate's `onPendingChange` disables or restores the current `[data-write-action="true"]` buttons so two cards cannot submit concurrently without re-enabling the selected decision. After a successful decision, call `applyDetailDecisionUpdate`. If it returns the identical rendered state because the response group/date or participation payload does not match, rerun the full load with “操作结果无法确认，已重新加载当前详情。” and do not show success. Otherwise rerender all cards, label only the chosen restaurant “已决定，就是这家”, and leave other restaurants available for an explicit later switch.
+
+When `reloadDetail(announcement)` receives an announcement, pass the newly loaded state and announcement through `mergeDetailAnnouncement` before assigning `status.textContent`. This preserves the visible “缓存内容仅供查看” marker when a stale action reload falls back to cache.
 
 - [ ] **Step 5: Port detail CSS and keep background side effects isolated**
 
@@ -2381,7 +2613,7 @@ Expected: all commands PASS; no extension test imports `background.ts`; manifest
 - [ ] **Step 7: Commit Task 8**
 
 ```bash
-git add apps/extension/detail.html apps/extension/src/detail.ts apps/extension/src/detailController.ts apps/extension/src/background.ts apps/extension/styles/detail.css apps/extension/tests/detailController.test.ts
+git add plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md apps/extension/detail.html apps/extension/src/detail.ts apps/extension/src/detailController.ts apps/extension/styles/detail.css apps/extension/tests/detailController.test.ts
 git commit -m "feat: rebuild extension recommendation detail"
 ```
 

@@ -7,12 +7,13 @@
     <link rel="stylesheet" href="/styles/detail.css" />
   </head>
   <body>
-    <main class="detail">
-      <header>
-        <p>吃饭才是正事</p>
-        <h1>今日午饭推荐</h1>
+    <main class="detail-page">
+      <header class="detail-header">
+        <a href="index.html" class="brand"><span aria-hidden="true">♨</span>中午吃点啥</a>
+        <button id="detail-settings" type="button">设置</button>
       </header>
-      <section id="detail-root"></section>
+      <section id="detail-status" aria-live="polite"></section>
+      <section id="detail-content" class="detail-content"></section>
     </main>
     <script type="module" src="/src/detail.ts"></script>
   </body>
