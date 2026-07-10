@@ -2,7 +2,8 @@ import type {
   GroupSummary,
   GroupTodayRecommendationsResponse,
   ParticipationMember,
-  ParticipationTodayResponse
+  ParticipationTodayResponse,
+  PutParticipationTodayResponse
 } from "@lunch/shared";
 import { ExtensionApiError } from "./apiClient";
 import type { ExtensionStorageShape } from "./storage";
@@ -66,6 +67,32 @@ export function currentMemberParticipation(
   return participation.members.find(
     (member) => member.membershipId === membershipId
   );
+}
+
+export function applyParticipationUpdate(
+  state: PopupViewState,
+  update: PutParticipationTodayResponse
+): PopupViewState {
+  if (state.kind !== "ready") return state;
+  return {
+    ...state,
+    currentMember: update.participation,
+    response: {
+      ...state.response,
+      participationSummary: update.summary
+    },
+    participation: state.participation
+      ? {
+          ...state.participation,
+          summary: update.summary,
+          members: state.participation.members.map((member) =>
+            member.membershipId === update.participation.membershipId
+              ? update.participation
+              : member
+          )
+        }
+      : undefined
+  };
 }
 
 export async function loadPopupState(

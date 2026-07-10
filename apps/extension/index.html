@@ -7,20 +7,29 @@
     <link rel="stylesheet" href="/styles/popup.css" />
   </head>
   <body>
-    <main class="popup">
-      <header class="header">
-        <p>吃饭才是正事</p>
-        <h1>中午吃点啥呢？</h1>
-        <span id="date"></span>
+    <main class="popup-shell">
+      <header class="popup-header">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">♨</span>
+          <span><strong>中午吃点啥</strong><small id="active-group-name"></small></span>
+        </div>
+        <button id="open-settings" class="icon-button" type="button" aria-label="打开设置">⚙</button>
       </header>
-      <section id="status" class="status" hidden></section>
-      <section id="weather" class="weather"></section>
-      <section id="items" class="items"></section>
-      <footer class="actions">
-        <button id="refresh" type="button">换一批</button>
-        <button id="settings" type="button">设置</button>
+      <section id="popup-status" class="status-panel" aria-live="polite"></section>
+      <section id="popup-content" class="popup-content"></section>
+      <footer id="popup-actions" class="popup-actions" hidden>
+        <button id="refresh" class="button secondary" type="button">换一批</button>
+        <button id="quick-add" class="button ghost" type="button">加个新店</button>
       </footer>
     </main>
+    <template id="recommendation-card-template">
+      <article class="recommendation-card">
+        <button class="card-open" type="button">
+          <span class="rank"></span><strong class="name"></strong><span class="dish"></span>
+          <span class="metadata"></span><span class="reason"></span><span class="chips"></span>
+        </button>
+      </article>
+    </template>
     <script type="module" src="/src/popup.ts"></script>
   </body>
 </html>

@@ -1,10 +1,12 @@
 import type {
   GroupTodayRecommendationsResponse,
-  ParticipationTodayResponse
+  ParticipationTodayResponse,
+  PutParticipationTodayResponse
 } from "@lunch/shared";
 import { describe, expect, it, vi } from "vitest";
 import { ExtensionApiError } from "../src/apiClient";
 import {
+  applyParticipationUpdate,
   classifyPopupError,
   currentMemberParticipation,
   loadPopupState,
@@ -173,6 +175,63 @@ describe("popup controller", () => {
       kind: "ready",
       response: todayResponse("group-1"),
       participationUnavailable: true
+    });
+  });
+
+  it("applies a participation update to the current member and summaries immutably", async () => {
+    const participation = participationResponse();
+    participation.members[0] = {
+      ...participation.members[0]!,
+      status: "away"
+    };
+    participation.summary = {
+      joiningCount: 0,
+      decidedCount: 0,
+      awayCount: 1,
+      undecidedCount: 0
+    };
+    const readyState = await loadPopupState(popupDependencies({
+      loadParticipation: vi.fn().mockResolvedValue(participation)
+    }));
+    expect(readyState.kind).toBe("ready");
+    if (readyState.kind !== "ready") throw new Error("expected ready state");
+
+    const update: PutParticipationTodayResponse = {
+      groupId: "group-1",
+      officeDate: "2026-07-10",
+      participation: {
+        membershipId: "membership-1",
+        displayName: "小林",
+        status: "joining"
+      },
+      summary: {
+        joiningCount: 1,
+        decidedCount: 0,
+        awayCount: 0,
+        undecidedCount: 0
+      }
+    };
+
+    const nextState = applyParticipationUpdate(readyState, update);
+
+    expect(nextState).toMatchObject({
+      kind: "ready",
+      currentMember: { status: "joining" },
+      response: {
+        participationSummary: {
+          joiningCount: 1,
+          decidedCount: 0,
+          awayCount: 0,
+          undecidedCount: 0
+        }
+      }
+    });
+    expect(nextState).not.toBe(readyState);
+    expect(readyState.currentMember?.status).toBe("away");
+    expect(readyState.participation?.members[0]?.status).toBe("away");
+    expect(nextState.kind === "ready" && nextState.participation).toMatchObject({
+      summary: update.summary,
+      members: [{ status: "joining" }]
     });
   });
 });
