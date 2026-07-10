@@ -6,6 +6,7 @@ import type {
 } from "@lunch/shared";
 import {
   applyParticipationUpdate,
+  loadRefreshedPopupState,
   loadPopupState,
   type PopupViewState
 } from "./popupController";
@@ -594,23 +595,28 @@ async function runRecommendationRefresh(
   successMessage: string,
   failurePrefix: string
 ): Promise<void> {
-  let refreshed = false;
+  let refreshedState: PopupViewState | undefined;
   await runButtonAction({
     button,
     pendingText,
     successText: "已更新",
     failurePrefix,
     action: async () => {
-      await refreshGroupTodayRecommendations();
-      refreshed = true;
+      refreshedState = await loadRefreshedPopupState({
+        loadStorage: getStorageState,
+        loadRecommendations: fetchGroupTodayRecommendationsWithCacheFallback,
+        loadParticipation: fetchTodayParticipation,
+        refreshRecommendations: refreshGroupTodayRecommendations
+      });
     },
     onStart: hideStatus,
     onFailure: setStatus
   });
-  if (!refreshed) return;
+  if (!refreshedState) return;
 
+  currentState = refreshedState;
   selectedRestaurantId = null;
-  await reloadPopup();
+  renderPopup(currentState);
   if (currentState.kind === "ready" || currentState.kind === "empty") {
     setStatus(successMessage);
   }

@@ -50,6 +50,10 @@ export interface PopupDependencies {
   loadParticipation: () => Promise<ParticipationTodayResponse>;
 }
 
+export interface PopupRefreshDependencies extends PopupDependencies {
+  refreshRecommendations: () => Promise<GroupTodayRecommendationsResponse>;
+}
+
 export function classifyPopupError(error: unknown): PopupFailureKind {
   if (!(error instanceof ExtensionApiError)) return "error";
   if (error.status === 404 && error.code === "no_current_batch") {
@@ -140,4 +144,14 @@ export async function loadPopupState(
       message: "暂时无法加载今日推荐，请重试。"
     };
   }
+}
+
+export async function loadRefreshedPopupState(
+  dependencies: PopupRefreshDependencies
+): Promise<PopupViewState> {
+  const response = await dependencies.refreshRecommendations();
+  return loadPopupState({
+    ...dependencies,
+    loadRecommendations: async () => response
+  });
 }

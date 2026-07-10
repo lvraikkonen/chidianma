@@ -9,6 +9,7 @@ import {
   applyParticipationUpdate,
   classifyPopupError,
   currentMemberParticipation,
+  loadRefreshedPopupState,
   loadPopupState,
   type PopupDependencies
 } from "../src/popupController";
@@ -175,6 +176,35 @@ describe("popup controller", () => {
       kind: "ready",
       response: todayResponse("group-1"),
       participationUnavailable: true
+    });
+  });
+
+  it("uses the authoritative refresh response without a redundant recommendation read", async () => {
+    const freshResponse = {
+      ...todayResponse("group-1"),
+      batchId: "batch-2",
+      batchNo: 2
+    };
+    const redundantRead = vi.fn().mockResolvedValue({
+      ...freshResponse,
+      fromCache: true
+    });
+
+    const state = await loadRefreshedPopupState({
+      ...popupDependencies({ loadRecommendations: redundantRead }),
+      refreshRecommendations: vi.fn().mockResolvedValue(freshResponse)
+    });
+
+    expect({
+      stateKind: state.kind,
+      redundantReads: redundantRead.mock.calls.length
+    }).toEqual({
+      stateKind: "ready",
+      redundantReads: 0
+    });
+    expect(state).toMatchObject({
+      kind: "ready",
+      response: { batchId: "batch-2" }
     });
   });
 
