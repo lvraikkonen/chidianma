@@ -29,6 +29,21 @@ describe("extension api client", () => {
     });
   });
 
+  it("preserves HTTP status when the error body is valid non-object JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: vi.fn().mockResolvedValue(null)
+    }));
+
+    await expect(requestJson("https://lunch.example/api/test")).rejects.toMatchObject({
+      name: "ExtensionApiError",
+      kind: "http",
+      status: 503,
+      message: "HTTP 503"
+    });
+  });
+
   it("classifies fetch rejection as a retryable network failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
 
@@ -47,6 +62,12 @@ describe("extension api client", () => {
     )).toBe(true);
     expect(isServiceUnavailable(
       new ExtensionApiError({ kind: "http", status: 401, code: "invalid_token" })
+    )).toBe(false);
+  });
+
+  it("does not treat status 600 as a 5xx service failure", () => {
+    expect(isServiceUnavailable(
+      new ExtensionApiError({ kind: "http", status: 600, code: "invalid_status" })
     )).toBe(false);
   });
 });
