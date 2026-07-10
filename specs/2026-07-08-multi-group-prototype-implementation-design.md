@@ -801,5 +801,5 @@ pnpm --filter @lunch/admin typecheck
 - 本规格接续 `specs/2026-07-07-lunch-chrome-extension-design.md` 和 `plans/2026-07-07-lunch-vertical-slice.md`。
 - 实现计划必须存放在项目根目录 `plans/`。
 - 重大行为变化必须先更新规格或计划。
-- Codex 如需创建 subagent，必须显式使用 GPT-5.5；如果工具无法保证 GPT-5.5，则不得创建 subagent。
+- Codex 的 subagent 模型选择规则以 [`specs/2026-07-09-subagent-model-policy-design.md`](2026-07-09-subagent-model-policy-design.md) 为准，该规则已取代本规格原有的 GPT-5.5-only 要求；如果派发接口没有 model selector，允许使用 platform-selected、inherited 或 default 模型，且不得声称未显式选择或无法验证的具体模型。
 - Codex 交付必须说明 changed files、tests added、tests run、known issues、source-of-truth updates 和 subagent disclosure。

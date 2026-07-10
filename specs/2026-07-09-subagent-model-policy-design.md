@@ -1,7 +1,7 @@
 # Subagent Model Policy Design
 
 **Date:** 2026-07-09
-**Status:** Approved design, pending implementation
+**Status:** Implemented
 
 ## Context
 
@@ -23,7 +23,7 @@ This project-level decision overrides generic workflow guidance that assumes eve
 
 ## Source-of-Truth Changes
 
-Implementation will make the policy consistent in these locations:
+The implemented policy is consistent in these locations:
 
 1. `AGENTS.md`
    - Add a short subagent model-selection compatibility rule.
@@ -32,7 +32,10 @@ Implementation will make the policy consistent in these locations:
 3. `plans/2026-07-09-today-recommendation-batch-participation-stage3.md`
    - Remove the GPT-5.5 execution override and global constraint.
    - Update Task 7 handoff and self-review language so Tasks 2 onward can use Subagent-Driven Development.
-4. `.superpowers/sdd/progress.md`
+4. `specs/2026-07-08-multi-group-prototype-implementation-design.md`
+   - Explicitly supersede the earlier GPT-5.5-only rule with this policy.
+   - Allow platform-selected, inherited, or default models when no selector is exposed, while prohibiting unverifiable model claims.
+5. `.superpowers/sdd/progress.md`
    - Preserve the historical fact that Task 1 used inline fallback under the policy active at that time.
    - Add a note that the policy was corrected for subsequent tasks.
 
