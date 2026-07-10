@@ -30,10 +30,14 @@
 - Generated batches must store `scoringWeightsSnapshot`, `weatherSnapshotId`, `algorithmVersion`, `batchNo`, and item-level `scoreBreakdown`.
 - Participation states are `undecided`, `joining`, `away`, and `decided`.
 - When participation status is `decided`, `restaurantId` is required; when status is not `decided`, `restaurantId`, `recommendationId`, and `decidedAt` must be cleared.
+- When `restaurantId` or `recommendationId` is present in a participation request, it must be a non-empty trimmed string; malformed values return 400/`invalid_participation_request` and write nothing.
 - Feedback writes remain group-scoped; `avoid` feedback does not change restaurant `blocked` status.
 - Extension state must persist through `chrome.storage`; do not rely on long-lived globals.
 - Extension storage must bucket sessions and last recommendations by `groupId`.
 - Cache fallback must read only `lastRecommendationsByGroupId[activeGroupId]`.
+- Partial `lunchState` updates must use `updateStorageState(updater)` under the Web Locks exclusive lock `lunch-extension-storage-state`, and must re-read state only after acquiring the lock.
+- `saveStorageState(state)` is reserved for full-state replacement and uses the same lock; Task 6 options writes must use `updateStorageState`.
+- Recommendation cache writes require `groupId === response.groupId`; active cache reads return `null` when the bucket key and stored response `groupId` differ.
 - Chrome extension uses `chrome.alarms`, not `setTimeout` or `setInterval`, for long-term scheduling.
 - Extension tests must not import side-effectful `background.ts`.
 - Extension manifest must still be emitted to `apps/extension/dist/manifest.json`.
@@ -66,6 +70,9 @@ Before Task 1 execution, keep these plan-level rules in force for every task:
 9. Merge extension storage in this order: defaults -> legacy settings -> current grouped state.
 10. Treat `decided` participation as valid only for active restaurants in the path group; return 400/`restaurant_not_active` for paused or blocked restaurants.
 11. Count only active memberships in participation summaries and ignore old `dailyParticipation` rows for removed memberships.
+12. Serialize every extension `lunchState` write with Web Locks lock `lunch-extension-storage-state`; partial writers must re-read and merge inside the lock and must fail when the lock API is unavailable.
+13. Reject recommendation cache bucket/response group mismatches and ignore mismatched stored cache values on active-group reads.
+14. Reject present but non-string, empty, or whitespace-only participation `restaurantId`/`recommendationId` values with 400/`invalid_participation_request` before any upsert.
 
 ## Scope Of This Plan
 
@@ -115,12 +122,15 @@ Stage 3 is complete only when:
 - Participation can be read and updated for today's group office date.
 - `decided` participation requires a restaurant in the path group and stores optional recommendation only when it belongs to that restaurant and group.
 - Non-`decided` participation clears restaurant, recommendation, and decision timestamp.
+- Malformed present participation resource IDs return 400/`invalid_participation_request` and do not call `dailyParticipation.upsert`.
 - Today recommendation responses include `participationSummary`.
 - Extension options can store the active group ID and its group session token without embedding `TEAM_INVITE_CODE`.
 - Extension requests send `Authorization: Bearer <groupSessionToken>` for new group APIs.
 - Extension manual refresh calls `POST /api/groups/:groupId/today-recommendations/refresh`, not legacy `forceRefresh=true`.
 - Extension notification flow can ensure a current batch by GET followed by refresh on 404/`no_current_batch`.
 - Extension cache fallback never shows another group's cached recommendations.
+- Concurrent settings, active-group/session, and recommendation-cache writes preserve every update through the shared Web Locks mutation helper.
+- Extension cache helpers reject bucket/response `groupId` mismatches and ignore mismatched stored cache entries.
 - Existing legacy recommendation, feedback, admin, and Stage 2 group knowledge tests still pass.
 - Relevant shared, server, extension tests, typechecks, and builds pass.
 
@@ -1978,7 +1988,9 @@ git commit -m "feat: add group participation API"
 
 ---
 
-### Task 5: Extension Group Storage
+### Completed Task 5: Extension Group Storage (Historical Baseline)
+
+> Stage 3 hardening amendment: Task 5 was completed at `1f32dec`. Do not re-execute its original whole-state read-modify-write snippets. Task 5A below is the current execution baseline and supersedes those mutation details.
 
 **Files:**
 - Modify: `apps/extension/src/config.ts`
@@ -2212,6 +2224,354 @@ Expected: PASS.
 ```bash
 git add apps/extension/src/config.ts apps/extension/src/storage.ts apps/extension/tests/storage.test.ts
 git commit -m "feat: add grouped extension storage"
+```
+
+---
+
+### Task 5: Review Hardening For Participation And Extension State Isolation
+
+**Files:**
+- Modify: `apps/server/src/routes/groupParticipation.ts`
+- Modify: `apps/server/tests/groupParticipation.test.ts`
+- Modify: `apps/extension/src/storage.ts`
+- Modify: `apps/extension/tests/storage.test.ts`
+
+**Interfaces:**
+- Consumes:
+  - Existing `ExtensionStorageShape`, `getStorageState()`, `saveStorageState(state)`, `saveSettings(settings)`, `saveGroupRecommendationCache(groupId, response)`, and `getActiveGroupRecommendationCache()`.
+  - Existing `parseParticipationBody(body)` and `ParticipationValidationError`.
+- Produces:
+  - `STORAGE_STATE_LOCK_NAME = "lunch-extension-storage-state"`.
+  - `updateStorageState(updater: (state: ExtensionStorageShape) => ExtensionStorageShape): Promise<ExtensionStorageShape>`.
+  - 400/`invalid_participation_request` for present but non-string, empty, or whitespace-only resource IDs.
+  - `recommendation_cache_group_mismatch` rejection without a cache write.
+  - `null` active-cache fallback for a stored response whose `groupId` does not match its bucket.
+
+- [ ] **Step 1: Add failing participation resource-shape tests**
+
+Add this table test to `apps/server/tests/groupParticipation.test.ts`:
+
+```ts
+it.each([
+  ["numeric restaurantId", { status: "joining", restaurantId: 123 }],
+  ["blank restaurantId", { status: "joining", restaurantId: "   " }],
+  ["object recommendationId", {
+    status: "decided",
+    restaurantId: "restaurant-1",
+    recommendationId: { id: "recommendation-1" }
+  }],
+  ["blank recommendationId", {
+    status: "decided",
+    restaurantId: "restaurant-1",
+    recommendationId: ""
+  }]
+] as const)("rejects malformed participation resource ids: %s", async (_label, payload) => {
+  seedActiveMemberships([{ id: "membership-1", displayName: "小陈" }]);
+  seedRestaurant({ id: "restaurant-1", groupId: "group-1" });
+
+  const app = await buildTestApp();
+  const response = await app.inject({
+    method: "PUT",
+    url: "/api/groups/group-1/participation/today",
+    headers: { authorization: `Bearer ${groupToken()}` },
+    payload
+  });
+
+  expect(response.statusCode).toBe(400);
+  expect(response.json()).toMatchObject({ error: "invalid_participation_request" });
+  expect(prisma.dailyParticipation.upsert).not.toHaveBeenCalled();
+  await app.close();
+});
+```
+
+- [ ] **Step 2: Run the participation test to verify RED**
+
+Run:
+
+```bash
+pnpm --filter @lunch/server exec vitest run tests/groupParticipation.test.ts -t "malformed participation resource ids" --reporter=verbose
+```
+
+Expected: FAIL because the current parser silently treats non-string IDs as absent or accepts blank optional IDs.
+
+- [ ] **Step 3: Reject malformed present participation IDs**
+
+In `apps/server/src/routes/groupParticipation.ts`, add and use this helper from `parseParticipationBody`:
+
+```ts
+function parseOptionalResourceId(
+  record: Record<string, unknown>,
+  key: "restaurantId" | "recommendationId"
+): string | undefined {
+  if (!(key in record)) return undefined;
+  const value = record[key];
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ParticipationValidationError(
+      "invalid_participation_request",
+      `${key} must be a non-empty string when provided`
+    );
+  }
+  return value.trim();
+}
+
+const restaurantId = parseOptionalResourceId(record, "restaurantId");
+const recommendationId = parseOptionalResourceId(record, "recommendationId");
+```
+
+Keep the existing `decision_restaurant_required`, active-restaurant, path-group, recommendation ownership, and non-`decided` clearing behavior unchanged.
+
+- [ ] **Step 4: Verify the participation tests are GREEN**
+
+Run:
+
+```bash
+pnpm --filter @lunch/server test -- groupParticipation.test.ts groupTodayRoutes.test.ts
+```
+
+Expected: PASS, including every existing Task 4 auth, ownership, active-restaurant, and clearing test.
+
+- [ ] **Step 5: Add failing storage lock and cache-invariant tests**
+
+Update the Vitest import in `apps/extension/tests/storage.test.ts` to include `beforeEach`, and the storage import to include `updateStorageState`. Add this serial Web Locks fake and make it the default for every existing writer test:
+
+```ts
+function serialLockManager() {
+  let queue = Promise.resolve();
+  return {
+    request: vi.fn((
+      _name: string,
+      _options: LockOptions,
+      callback: () => Promise<unknown>
+    ) => {
+      const run = queue.then(callback);
+      queue = run.then(() => undefined, () => undefined);
+      return run;
+    })
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal("navigator", { locks: serialLockManager() });
+});
+```
+
+Add the concurrency regression. Its mutable fake must update `storedState` from every `chrome.storage.local.set` call so later lock holders re-read the previous holder's write:
+
+```ts
+it("serializes settings, active group session, and cache mutations without lost updates", async () => {
+  let storedState = getDefaultStorageState();
+  const locks = serialLockManager();
+  const get = vi.fn(async () => ({ [STORAGE_KEYS.state]: structuredClone(storedState) }));
+  const set = vi.fn(async (value: Record<string, unknown>) => {
+    storedState = structuredClone(value[STORAGE_KEYS.state]) as typeof storedState;
+  });
+  vi.stubGlobal("navigator", { locks });
+  vi.stubGlobal("chrome", {
+    storage: { local: { get, set } },
+    runtime: { sendMessage: vi.fn().mockResolvedValue(undefined) }
+  });
+
+  await Promise.all([
+    saveSettings({
+      apiBaseUrl: "https://lunch.example",
+      readToken: "read-token",
+      reminderTime: "12:00",
+      enabled: false
+    }),
+    updateStorageState((state) => ({
+      ...state,
+      activeGroupId: "group-2",
+      sessionsByGroupId: {
+        ...state.sessionsByGroupId,
+        "group-2": { token: "group-session-token" }
+      }
+    })),
+    saveGroupRecommendationCache(
+      "group-1",
+      recommendationResponse("group-1", "batch-1")
+    )
+  ]);
+
+  expect(locks.request).toHaveBeenCalledTimes(3);
+  expect(storedState).toMatchObject({
+    apiBaseUrl: "https://lunch.example",
+    reminderTime: "12:00",
+    enabled: false,
+    activeGroupId: "group-2",
+    sessionsByGroupId: {
+      "group-2": { token: "group-session-token" }
+    },
+    lastRecommendationsByGroupId: {
+      "group-1": expect.objectContaining({ groupId: "group-1", fromCache: true })
+    }
+  });
+});
+```
+
+Add cache mismatch and lock-unavailable regressions:
+
+```ts
+it("rejects a recommendation response for another cache group", async () => {
+  const set = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { locks: serialLockManager() });
+  vi.stubGlobal("chrome", {
+    storage: { local: { get: vi.fn(), set } }
+  });
+
+  await expect(
+    saveGroupRecommendationCache(
+      "group-1",
+      recommendationResponse("group-2", "batch-2")
+    )
+  ).rejects.toThrow("recommendation_cache_group_mismatch");
+  expect(set).not.toHaveBeenCalled();
+});
+
+it("ignores a stored cache whose response group does not match the active bucket", async () => {
+  vi.stubGlobal("chrome", {
+    storage: {
+      local: {
+        get: vi.fn().mockResolvedValue({
+          [STORAGE_KEYS.state]: {
+            ...getDefaultStorageState(),
+            activeGroupId: "group-1",
+            lastRecommendationsByGroupId: {
+              "group-1": recommendationResponse("group-2", "batch-2")
+            }
+          }
+        })
+      }
+    }
+  });
+
+  await expect(getActiveGroupRecommendationCache()).resolves.toBeNull();
+});
+
+it("fails writes when Web Locks is unavailable", async () => {
+  vi.stubGlobal("navigator", {});
+  vi.stubGlobal("chrome", {
+    storage: { local: { get: vi.fn(), set: vi.fn() } }
+  });
+
+  await expect(
+    updateStorageState((state) => state)
+  ).rejects.toThrow("storage_lock_unavailable");
+});
+```
+
+- [ ] **Step 6: Run the storage tests to verify RED**
+
+Run:
+
+```bash
+pnpm --filter @lunch/extension test -- storage.test.ts
+```
+
+Expected: FAIL because `updateStorageState` does not exist, writes do not acquire Web Locks, and cache helpers do not enforce response/bucket `groupId` equality.
+
+- [ ] **Step 7: Implement the Web Locks state mutation boundary**
+
+In `apps/extension/src/storage.ts`, add the locked write helpers:
+
+```ts
+export const STORAGE_STATE_LOCK_NAME = "lunch-extension-storage-state";
+
+export type StorageStateUpdater = (
+  state: ExtensionStorageShape
+) => ExtensionStorageShape;
+
+function getStorageLockManager(): LockManager {
+  const locks = globalThis.navigator?.locks;
+  if (!locks) throw new Error("storage_lock_unavailable");
+  return locks;
+}
+
+async function writeStorageStateUnlocked(state: ExtensionStorageShape): Promise<void> {
+  await chrome.storage.local.set({ [STORAGE_KEYS.state]: state });
+}
+
+export async function saveStorageState(state: ExtensionStorageShape): Promise<void> {
+  await getStorageLockManager().request(
+    STORAGE_STATE_LOCK_NAME,
+    { mode: "exclusive" },
+    () => writeStorageStateUnlocked(state)
+  );
+}
+
+export async function updateStorageState(
+  updater: StorageStateUpdater
+): Promise<ExtensionStorageShape> {
+  return getStorageLockManager().request(
+    STORAGE_STATE_LOCK_NAME,
+    { mode: "exclusive" },
+    async () => {
+      const current = await getStorageState();
+      const next = updater(current);
+      await writeStorageStateUnlocked(next);
+      return next;
+    }
+  );
+}
+```
+
+Do not call `saveStorageState` from inside `updateStorageState`; nested requests for the same exclusive lock can deadlock.
+
+- [ ] **Step 8: Move partial writers behind `updateStorageState` and enforce cache group invariants**
+
+Replace partial state writes in `apps/extension/src/storage.ts`:
+
+```ts
+export async function saveSettings(settings: ExtensionSettings): Promise<void> {
+  await updateStorageState((state) => ({ ...state, ...settings }));
+  await chrome.runtime.sendMessage({ type: "settingsChanged" }).catch(() => undefined);
+}
+
+export async function saveGroupRecommendationCache(
+  groupId: string,
+  response: GroupTodayRecommendationsResponse
+): Promise<void> {
+  if (response.groupId !== groupId) {
+    throw new Error("recommendation_cache_group_mismatch");
+  }
+  await updateStorageState((state) => ({
+    ...state,
+    lastRecommendationsByGroupId: {
+      ...state.lastRecommendationsByGroupId,
+      [groupId]: { ...response, fromCache: true }
+    }
+  }));
+}
+
+export async function getActiveGroupRecommendationCache(): Promise<GroupTodayRecommendationsResponse | null> {
+  const state = await getStorageState();
+  const groupId = state.activeGroupId;
+  if (!groupId) return null;
+  const cached = state.lastRecommendationsByGroupId[groupId];
+  return cached?.groupId === groupId ? cached : null;
+}
+```
+
+- [ ] **Step 9: Run focused and package verification**
+
+Run:
+
+```bash
+pnpm --filter @lunch/server test -- groupParticipation.test.ts groupTodayRoutes.test.ts
+pnpm --filter @lunch/server typecheck
+pnpm --filter @lunch/server build
+pnpm --filter @lunch/extension test -- storage.test.ts
+pnpm --filter @lunch/extension typecheck
+pnpm --filter @lunch/extension build
+git diff --check
+```
+
+Expected: PASS. Extension build still emits `apps/extension/dist/manifest.json`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add apps/server/src/routes/groupParticipation.ts apps/server/tests/groupParticipation.test.ts apps/extension/src/storage.ts apps/extension/tests/storage.test.ts
+git commit -m "fix: harden stage 3 group state"
 ```
 
 ---
@@ -2772,13 +3132,24 @@ Modify `apps/extension/options.html` with inputs:
 </label>
 ```
 
-Modify `apps/extension/src/options.ts` to load/save these fields through `getStorageState` and `saveStorageState`. When `activeGroupId` and `groupSessionToken` are non-empty, save:
+Modify `apps/extension/src/options.ts` to load through `getStorageState` and save partial fields through `updateStorageState`. Do not pass a snapshot previously returned by `getStorageState` into `saveStorageState`. Import the hardened helpers:
 
 ```ts
-sessionsByGroupId: {
-  ...state.sessionsByGroupId,
-  [activeGroupId.value]: { token: groupSessionToken.value }
-}
+import { getStorageState, updateStorageState } from "./storage";
+```
+
+When `activeGroupId` and `groupSessionToken` are non-empty, save inside the updater:
+
+```ts
+await updateStorageState((state) => ({
+  ...state,
+  activeGroupId: activeGroupId.value.trim(),
+  identityToken: identityToken.value.trim() || undefined,
+  sessionsByGroupId: {
+    ...state.sessionsByGroupId,
+    [activeGroupId.value.trim()]: { token: groupSessionToken.value.trim() }
+  }
+}));
 ```
 
 - [ ] **Step 8: Run extension tests, typecheck, and build**
