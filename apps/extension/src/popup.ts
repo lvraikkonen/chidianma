@@ -40,6 +40,7 @@ import {
   type QuickAddInput,
   type QuickAddState
 } from "./quickAddController";
+import { applyQuickAddControls } from "./quickAddViewState";
 import { getStorageState, type ExtensionStorageShape } from "./storage";
 import { createExclusiveActionGate, runButtonAction } from "./uiAction";
 
@@ -317,6 +318,20 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
   );
   popupContent.append(header, form);
 
+  const updateControls = (state: QuickAddState): void => {
+    applyQuickAddControls(state, {
+      cancelButton,
+      fields: Array.from(
+        form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+          "input, textarea"
+        )
+      ),
+      partialSuccess,
+      submitButton
+    });
+  };
+  updateControls({ kind: "idle" });
+
   let controller: ReturnType<typeof createQuickAddController> | null = null;
 
   form.addEventListener("submit", (event) => {
@@ -354,8 +369,7 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
     runExclusive(async () => {
       hideStatus();
       fieldError.hidden = true;
-      setQuickAddFieldsDisabled(form, true);
-      submitButton.disabled = true;
+      updateControls({ kind: "submitting-restaurant" });
       submitButton.textContent = "正在保存餐厅...";
 
       let result: PopupActionContextResult<QuickAddState>;
@@ -368,10 +382,11 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
             return controller.submit(input);
           }
         );
+      } catch (error) {
+        updateControls({ kind: "idle" });
+        throw error;
       } finally {
         submitButton.textContent = "加入干饭名单";
-        submitButton.disabled = false;
-        setQuickAddFieldsDisabled(form, false);
       }
 
       if (result.kind === "stale") {
@@ -382,10 +397,9 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
       await handleQuickAddState(
         result.value,
         hostState,
-        form,
         fieldError,
         partialSuccess,
-        submitButton,
+        updateControls,
         controller
       );
     });
@@ -413,16 +427,13 @@ function createQuickAddForStorage(
 async function handleQuickAddState(
   state: QuickAddState,
   hostState: QuickAddHostState,
-  form: HTMLFormElement,
   fieldError: HTMLElement,
   partialSuccess: HTMLElement,
-  submitButton: HTMLButtonElement,
+  updateControls: (state: QuickAddState) => void,
   controller: ReturnType<typeof createQuickAddController>
 ): Promise<void> {
   partialSuccess.replaceChildren();
-  partialSuccess.hidden = true;
-  submitButton.hidden = false;
-  submitButton.disabled = false;
+  updateControls(state);
 
   if (state.kind === "restaurant-error") {
     showQuickAddError(fieldError, state.message);
@@ -430,10 +441,6 @@ async function handleQuickAddState(
   }
   if (state.kind === "recommendation-error") {
     fieldError.hidden = true;
-    setQuickAddFieldsDisabled(form, true);
-    submitButton.hidden = true;
-    submitButton.disabled = true;
-    partialSuccess.hidden = false;
     const message = document.createElement("p");
     message.textContent = state.message;
     const actions = document.createElement("div");
@@ -442,6 +449,10 @@ async function handleQuickAddState(
     const finishButton = createButton("完成并返回", "button ghost");
     retryButton.addEventListener("click", () => {
       runExclusive(async () => {
+        updateControls({
+          kind: "submitting-recommendation",
+          restaurantId: state.restaurantId
+        });
         retryButton.disabled = true;
         finishButton.disabled = true;
         retryButton.textContent = "正在重试...";
@@ -452,6 +463,9 @@ async function handleQuickAddState(
             getStorageState,
             () => controller.retryRecommendation()
           );
+        } catch (error) {
+          updateControls(state);
+          throw error;
         } finally {
           retryButton.textContent = "重试保存推荐";
           retryButton.disabled = false;
@@ -464,10 +478,9 @@ async function handleQuickAddState(
         await handleQuickAddState(
           result.value,
           hostState,
-          form,
           fieldError,
           partialSuccess,
-          submitButton,
+          updateControls,
           controller
         );
       });
@@ -586,15 +599,6 @@ function quickAddValidationMessage(fields: {
   if (!fields.averagePriceCents.validity.valid) return "人均价格请填写不小于 0 的数字。";
   if (!fields.distanceMinutes.validity.valid) return "步行时间请填写不小于 0 的整数。";
   return null;
-}
-
-function setQuickAddFieldsDisabled(form: HTMLFormElement, disabled: boolean): void {
-  const fields = Array.from(
-    form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")
-  );
-  for (const field of fields) {
-    field.disabled = disabled;
-  }
 }
 
 function showQuickAddError(element: HTMLElement, message: string): void {
