@@ -1,6 +1,6 @@
 # Stage 4 Prototype UI Wiring Design
 
-Status: `Review Requested`
+Status: `Approved for Planning`
 
 Date: 2026-07-10
 

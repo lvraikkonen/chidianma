@@ -33,7 +33,7 @@ extension smoke testing.
 | Stage 1 | Multi-Group Foundation | Done | [`plans/2026-07-08-multi-group-foundation-stage1.md`](plans/2026-07-08-multi-group-foundation-stage1.md) | Identity, groups, memberships, sessions, invites, permissions, migration foundation |
 | Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
 | Stage 3 | Today Recommendation Batch + Participation | Done | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md) | Core lunch loop plus minimal extension auth/storage/API client |
-| Stage 4 | Prototype UI Wiring | Not Started | Write after Stage 3 | Extension and admin prototype screens connect to real Stage 1-3 APIs |
+| Stage 4 | Prototype UI Wiring | Planned | [Stage 4A Extension](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)<br>[Stage 4B Admin](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
 | Stage 5 | Dashboard / Settings / Weights | Not Started | Write after Stage 4 | Historical review, dashboard metrics, member contribution, reminders, weights |
 | Stage 6 | Deploy Hardening | Not Started | Write after Stage 5 | Production hosting, migration verification, extension smoke test, Railway checks |
 
@@ -149,7 +149,12 @@ visual rebuild.
 
 ## Stage 4: Prototype UI Wiring
 
-**Status:** Not Started.
+**Status:** Planned; implementation plans are awaiting execution review.
+
+**Detailed plans:**
+
+- [`plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md`](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)
+- [`plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md`](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md)
 
 **Goal:** Connect the Open Designer extension and admin prototype screens to the
 real APIs built in Stage 1-3.
@@ -157,12 +162,16 @@ real APIs built in Stage 1-3.
 **Expected scope:**
 
 - Extension `popup`, `detail`, and `settings` rebuilt in prototype style.
+- Extension product-facing identity/create/join/switch flow and restaurant +
+  first-recommendation quick-add.
 - Admin `login`, `today`, and `restaurants` rebuilt in prototype style.
 - Static demo data replaced with real API data.
 - Loading, empty, error, cache, session-expired, and permission states.
 - Multi-group switching reflected consistently in extension and admin surfaces.
 - No new server-only lunch-loop semantics should be invented here; Stage 4 uses
   the API contracts and storage model proven by Stage 1-3.
+- Extension history plus Admin history, dashboard, members, and settings remain
+  deferred to Stage 5.
 
 **Exit target:** The product feels like the prototype for the main daily-use
 flows.
@@ -216,7 +225,7 @@ extension handoff.
 - [x] Stage 2 implemented and verified.
 - [x] Stage 3 detailed implementation plan written.
 - [x] Stage 3 implemented and verified.
-- [ ] Stage 4 detailed implementation plan written.
+- [x] Stage 4 detailed implementation plan written.
 - [ ] Stage 4 implemented and verified.
 - [ ] Stage 5 detailed implementation plan written.
 - [ ] Stage 5 implemented and verified.
