@@ -9,6 +9,7 @@ import {
   applyParticipationUpdate,
   classifyPopupError,
   classifyPopupRetryOutcome,
+  composeStaleReloadStatus,
   currentMemberParticipation,
   loadRefreshedPopupState,
   loadRefreshedPopupStateForStorage,
@@ -344,14 +345,7 @@ describe("popup controller", () => {
     expect(JSON.stringify(resolution)).not.toContain("private-session-token");
   });
 
-  it.each([
-    "participation",
-    "decision",
-    "feedback",
-    "refresh"
-  ])("blocks a rendered-group-A %s action after storage switches to group B", async (
-    _actionName
-  ) => {
+  it("blocks a rendered-group-A action after storage switches to group B", async () => {
     const renderedState = await loadPopupState(popupDependencies());
     const storage = storageForGroup("group-2", "membership-2");
     const loadStorage = vi.fn().mockResolvedValue(storage);
@@ -366,10 +360,59 @@ describe("popup controller", () => {
     expect(result).toEqual({
       kind: "stale",
       storage,
-      message: "当前小组已切换，已加载最新内容，请重新操作。"
+      message: "当前小组已切换，已加载当前小组内容，请重新操作。"
     });
     expect(loadStorage).toHaveBeenCalledOnce();
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it("keeps cached/read-only copy after a stale-action reload", async () => {
+    const state = await loadPopupState(popupDependencies({
+      loadRecommendations: vi.fn().mockResolvedValue({
+        ...todayResponse("group-1"),
+        fromCache: true
+      })
+    }));
+
+    const status = composeStaleReloadStatus(
+      state,
+      "当前小组已切换，已加载当前小组内容，请重新操作。"
+    );
+
+    expect(status).toBe(
+      "缓存内容仅供查看，写入操作已停用。你仍可重试或打开设置。"
+    );
+    expect(status).not.toContain("最新");
+  });
+
+  it("keeps participation-unavailable copy after a stale-action reload", async () => {
+    const state = await loadPopupState(popupDependencies({
+      loadParticipation: vi.fn().mockRejectedValue(
+        new ExtensionApiError({ kind: "http", status: 503 })
+      )
+    }));
+
+    expect(composeStaleReloadStatus(
+      state,
+      "当前小组已切换，已加载当前小组内容，请重新操作。"
+    )).toBe("参与状态暂时无法读取，推荐内容仍可查看和重试。");
+  });
+
+  it("announces fresh group switches without obscuring auth or error recovery", async () => {
+    const freshState = await loadPopupState(popupDependencies());
+    const switchMessage = "当前小组已切换，已加载当前小组内容，请重新操作。";
+
+    expect(composeStaleReloadStatus(freshState, switchMessage)).toBe(
+      switchMessage
+    );
+    expect(composeStaleReloadStatus({
+      kind: "session-expired",
+      group: freshState.kind === "ready" ? freshState.group : undefined
+    }, switchMessage)).toBeNull();
+    expect(composeStaleReloadStatus({
+      kind: "error",
+      message: "暂时无法加载今日推荐，请重试。"
+    }, switchMessage)).toBeNull();
   });
 
   it("passes the one verified click snapshot into the write", async () => {

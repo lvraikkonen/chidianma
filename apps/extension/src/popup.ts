@@ -7,6 +7,7 @@ import type {
 import {
   applyParticipationUpdate,
   classifyPopupRetryOutcome,
+  composeStaleReloadStatus,
   loadRefreshedPopupStateForStorage,
   loadPopupState,
   loadPopupStateForStorage,
@@ -791,8 +792,11 @@ async function handleStalePopupAction(
   result: Extract<PopupActionContextResult<unknown>, { kind: "stale" }>
 ): Promise<void> {
   selectedRestaurantId = null;
-  await reloadPopup(result.storage);
-  setStatus(result.message);
+  const reloadedState = await reloadPopup(result.storage);
+  const finalStatus = composeStaleReloadStatus(reloadedState, result.message);
+  if (finalStatus && popupStatus.textContent !== finalStatus) {
+    setStatus(finalStatus);
+  }
 }
 
 function hideStatus(): void {

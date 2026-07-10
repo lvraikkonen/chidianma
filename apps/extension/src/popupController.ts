@@ -162,7 +162,7 @@ export async function runPopupActionWithContext<T>(
     return {
       kind: "stale",
       storage,
-      message: "当前小组已切换，已加载最新内容，请重新操作。"
+      message: "当前小组已切换，已加载当前小组内容，请重新操作。"
     };
   }
   return {
@@ -238,6 +238,27 @@ export function classifyPopupRetryOutcome(
     };
   }
   return { kind: "handled-state", announcement: null };
+}
+
+export function composeStaleReloadStatus(
+  state: PopupViewState,
+  switchMessage: string
+): string | null {
+  if (state.kind === "cached") {
+    return "缓存内容仅供查看，写入操作已停用。你仍可重试或打开设置。";
+  }
+  if (state.kind === "ready" && state.participationUnavailable) {
+    return "参与状态暂时无法读取，推荐内容仍可查看和重试。";
+  }
+  if (
+    state.kind === "disconnected"
+    || state.kind === "session-expired"
+    || state.kind === "forbidden"
+    || state.kind === "error"
+  ) {
+    return null;
+  }
+  return switchMessage;
 }
 
 export function restoreRecommendationFocus(
