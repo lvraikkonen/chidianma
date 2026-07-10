@@ -10,11 +10,11 @@ import {
 } from "@lunch/shared";
 import {
   getActiveGroupRecommendationCache,
-  getActiveGroupSession,
   getRecommendationCache,
   getStorageState,
   saveGroupRecommendationCache,
-  saveRecommendationCache
+  saveRecommendationCache,
+  type ExtensionStorageShape
 } from "./storage";
 
 class ApiError extends Error {
@@ -23,7 +23,8 @@ class ApiError extends Error {
   }
 }
 
-interface ActiveGroupSession {
+interface ActiveGroupRequestContext {
+  apiBaseUrl: string;
   groupId: string;
   token: string;
 }
@@ -38,23 +39,32 @@ export function isGroupResponse(
   return "groupId" in response && "officeDate" in response;
 }
 
-async function requireActiveGroupSession(): Promise<ActiveGroupSession> {
-  const session = await getActiveGroupSession();
-  if (!session) throw new Error("No active group session configured");
-  return session;
+function getActiveGroupRequestContext(
+  state: ExtensionStorageShape
+): ActiveGroupRequestContext | null {
+  const groupId = state.activeGroupId;
+  if (!groupId) return null;
+  const token = state.sessionsByGroupId[groupId]?.token;
+  if (!token) return null;
+  return { apiBaseUrl: state.apiBaseUrl, groupId, token };
+}
+
+async function requireActiveGroupRequestContext(): Promise<ActiveGroupRequestContext> {
+  const context = getActiveGroupRequestContext(await getStorageState());
+  if (!context) throw new Error("No active group session configured");
+  return context;
 }
 
 async function activeGroupRequest(
-  session: ActiveGroupSession,
+  context: ActiveGroupRequestContext,
   path: string,
   init: RequestInit = {}
 ): Promise<Response> {
-  const state = await getStorageState();
-  const response = await fetch(new URL(path, state.apiBaseUrl), {
+  const response = await fetch(new URL(path, context.apiBaseUrl), {
     ...init,
     headers: {
       ...(init.headers ?? {}),
-      [AUTHORIZATION_HEADER]: `Bearer ${session.token}`
+      [AUTHORIZATION_HEADER]: `Bearer ${context.token}`
     }
   });
   if (!response.ok) {
@@ -69,15 +79,15 @@ async function activeGroupRequest(
   return response;
 }
 
-async function fetchGroupTodayRecommendationsNetworkOnlyForSession(
-  session: ActiveGroupSession
+async function fetchGroupTodayRecommendationsNetworkOnlyForContext(
+  context: ActiveGroupRequestContext
 ): Promise<GroupTodayRecommendationsResponse> {
   const response = await activeGroupRequest(
-    session,
-    GROUP_ROUTES.todayRecommendations(session.groupId)
+    context,
+    GROUP_ROUTES.todayRecommendations(context.groupId)
   );
   const data = (await response.json()) as GroupTodayRecommendationsResponse;
-  await saveGroupRecommendationCache(session.groupId, data);
+  await saveGroupRecommendationCache(context.groupId, data);
   return data;
 }
 
@@ -88,76 +98,71 @@ async function getGroupCacheFallback(
   return cached?.groupId === groupId ? { ...cached, fromCache: true } : null;
 }
 
-async function fetchGroupTodayRecommendationsWithCacheFallbackForSession(
-  session: ActiveGroupSession
+async function fetchGroupTodayRecommendationsWithCacheFallbackForContext(
+  context: ActiveGroupRequestContext
 ): Promise<GroupTodayRecommendationsResponse> {
   try {
-    return await fetchGroupTodayRecommendationsNetworkOnlyForSession(session);
+    return await fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
   } catch (error) {
-    const cached = await getGroupCacheFallback(session.groupId);
+    const cached = await getGroupCacheFallback(context.groupId);
     if (cached) return cached;
     throw error;
   }
 }
 
-async function refreshGroupTodayRecommendationsForSession(
-  session: ActiveGroupSession
+async function refreshGroupTodayRecommendationsForContext(
+  context: ActiveGroupRequestContext
 ): Promise<GroupTodayRecommendationsResponse> {
   const response = await activeGroupRequest(
-    session,
-    GROUP_ROUTES.refreshTodayRecommendations(session.groupId),
+    context,
+    GROUP_ROUTES.refreshTodayRecommendations(context.groupId),
     { method: "POST" }
   );
   const data = (await response.json()) as GroupTodayRecommendationsResponse;
-  await saveGroupRecommendationCache(session.groupId, data);
+  await saveGroupRecommendationCache(context.groupId, data);
   return data;
 }
 
 export async function fetchGroupTodayRecommendationsNetworkOnly(): Promise<GroupTodayRecommendationsResponse> {
-  const session = await requireActiveGroupSession();
-  return fetchGroupTodayRecommendationsNetworkOnlyForSession(session);
+  const context = await requireActiveGroupRequestContext();
+  return fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
 }
 
 export async function fetchGroupTodayRecommendationsWithCacheFallback(): Promise<GroupTodayRecommendationsResponse> {
-  const session = await requireActiveGroupSession();
-  return fetchGroupTodayRecommendationsWithCacheFallbackForSession(session);
+  const context = await requireActiveGroupRequestContext();
+  return fetchGroupTodayRecommendationsWithCacheFallbackForContext(context);
 }
 
 export const fetchGroupTodayRecommendations =
   fetchGroupTodayRecommendationsWithCacheFallback;
 
 export async function refreshGroupTodayRecommendations(): Promise<GroupTodayRecommendationsResponse> {
-  const session = await requireActiveGroupSession();
-  return refreshGroupTodayRecommendationsForSession(session);
+  const context = await requireActiveGroupRequestContext();
+  return refreshGroupTodayRecommendationsForContext(context);
 }
 
 export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecommendationsResponse> {
-  const session = await requireActiveGroupSession();
+  const context = await requireActiveGroupRequestContext();
   try {
-    return await fetchGroupTodayRecommendationsNetworkOnlyForSession(session);
+    return await fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
   } catch (error) {
     if (
       error instanceof ApiError &&
       error.status === 404 &&
       error.error === "no_current_batch"
     ) {
-      return refreshGroupTodayRecommendationsForSession(session);
+      return refreshGroupTodayRecommendationsForContext(context);
     }
-    const cached = await getGroupCacheFallback(session.groupId);
+    const cached = await getGroupCacheFallback(context.groupId);
     if (cached) return cached;
     throw error;
   }
 }
 
-export async function fetchTodayRecommendations(options: {
-  forceRefresh?: boolean;
-} = {}): Promise<ExtensionRecommendationResponse> {
-  const session = await getActiveGroupSession();
-  if (session) {
-    return fetchGroupTodayRecommendationsWithCacheFallbackForSession(session);
-  }
-
-  const settings = await getStorageState();
+async function fetchLegacyTodayRecommendations(
+  settings: ExtensionStorageShape,
+  options: { forceRefresh?: boolean } = {}
+): Promise<TodayRecommendationResponse> {
   const url = new URL("/api/today-recommendations", settings.apiBaseUrl);
   if (options.forceRefresh) url.searchParams.set("forceRefresh", "true");
 
@@ -178,13 +183,34 @@ export async function fetchTodayRecommendations(options: {
   }
 }
 
+export async function fetchTodayRecommendations(options: {
+  forceRefresh?: boolean;
+} = {}): Promise<ExtensionRecommendationResponse> {
+  const settings = await getStorageState();
+  const context = getActiveGroupRequestContext(settings);
+  if (context) {
+    return fetchGroupTodayRecommendationsWithCacheFallbackForContext(context);
+  }
+
+  return fetchLegacyTodayRecommendations(settings, options);
+}
+
+export async function refreshTodayRecommendations(): Promise<ExtensionRecommendationResponse> {
+  const settings = await getStorageState();
+  const context = getActiveGroupRequestContext(settings);
+  if (context) {
+    return refreshGroupTodayRecommendationsForContext(context);
+  }
+  return fetchLegacyTodayRecommendations(settings, { forceRefresh: true });
+}
+
 export async function putTodayParticipation(
   input: PutParticipationTodayRequest
 ): Promise<void> {
-  const session = await requireActiveGroupSession();
+  const context = await requireActiveGroupRequestContext();
   await activeGroupRequest(
-    session,
-    GROUP_ROUTES.participationToday(session.groupId),
+    context,
+    GROUP_ROUTES.participationToday(context.groupId),
     {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -211,9 +237,10 @@ export async function postFeedback(input: {
   recommendationId?: string | undefined;
   type: FeedbackType;
 }): Promise<void> {
-  const session = await getActiveGroupSession();
-  if (session) {
-    await activeGroupRequest(session, GROUP_ROUTES.feedback(session.groupId), {
+  const settings = await getStorageState();
+  const context = getActiveGroupRequestContext(settings);
+  if (context) {
+    await activeGroupRequest(context, GROUP_ROUTES.feedback(context.groupId), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -228,7 +255,6 @@ export async function postFeedback(input: {
     return;
   }
 
-  const settings = await getStorageState();
   const url = new URL("/api/feedback", settings.apiBaseUrl);
   const response = await fetch(url, {
     method: "POST",

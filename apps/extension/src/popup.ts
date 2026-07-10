@@ -10,9 +10,10 @@ import {
   isGroupResponse,
   postFeedback,
   putTodayParticipation,
-  refreshGroupTodayRecommendations,
+  refreshTodayRecommendations,
   type ExtensionRecommendationResponse
 } from "./recommendationClient";
+import { runButtonAction } from "./uiAction";
 
 const dateEl = document.querySelector<HTMLSpanElement>("#date")!;
 const statusEl = document.querySelector<HTMLElement>("#status")!;
@@ -46,8 +47,8 @@ async function renderRefresh() {
   setStatus("正在重新生成今日推荐...");
   itemsEl.replaceChildren();
   try {
-    const response = await refreshGroupTodayRecommendations();
-    renderGroupResponse(response);
+    const response = await refreshTodayRecommendations();
+    renderResponse(response);
   } catch (error) {
     setStatus(`刷新失败：${error instanceof Error ? error.message : String(error)}`);
   }
@@ -75,18 +76,30 @@ function renderGroupResponse(response: GroupTodayRecommendationsResponse) {
   const joinButton = document.createElement("button");
   joinButton.type = "button";
   joinButton.textContent = "今天参与";
-  joinButton.addEventListener("click", async () => {
-    await putTodayParticipation({ status: "joining" });
-    joinButton.textContent = "已记录参与";
+  joinButton.addEventListener("click", () => {
+    void runButtonAction({
+      button: joinButton,
+      pendingText: "记录中...",
+      successText: "已记录参与",
+      failurePrefix: "记录参与失败",
+      action: () => putTodayParticipation({ status: "joining" }),
+      onFailure: setStatus
+    });
   });
   participation.appendChild(joinButton);
 
   const awayButton = document.createElement("button");
   awayButton.type = "button";
   awayButton.textContent = "今天不吃";
-  awayButton.addEventListener("click", async () => {
-    await putTodayParticipation({ status: "away" });
-    awayButton.textContent = "已记录不吃";
+  awayButton.addEventListener("click", () => {
+    void runButtonAction({
+      button: awayButton,
+      pendingText: "记录中...",
+      successText: "已记录不吃",
+      failurePrefix: "记录不吃失败",
+      action: () => putTodayParticipation({ status: "away" }),
+      onFailure: setStatus
+    });
   });
   participation.appendChild(awayButton);
   itemsEl.appendChild(participation);
@@ -124,10 +137,15 @@ function createGroupCard(
   const decideButton = document.createElement("button");
   decideButton.type = "button";
   decideButton.textContent = "就决定是你了";
-  decideButton.addEventListener("click", async () => {
-    await decideTodayRecommendation(item);
-    decideButton.textContent = "已决定";
-    decideButton.disabled = true;
+  decideButton.addEventListener("click", () => {
+    void runButtonAction({
+      button: decideButton,
+      pendingText: "提交中...",
+      successText: "已决定",
+      failurePrefix: "记录决定失败",
+      action: () => decideTodayRecommendation(item),
+      onFailure: setStatus
+    });
   });
   card.appendChild(decideButton);
   return card;
@@ -177,17 +195,22 @@ function createCard(item: RecommendationItem, date: string): HTMLElement {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = label;
-    button.addEventListener("click", async () => {
-      await postFeedback({
-        date,
-        restaurantId: item.restaurantId,
-        ...(item.recommendationId
-          ? { recommendationId: item.recommendationId }
-          : {}),
-        type
+    button.addEventListener("click", () => {
+      void runButtonAction({
+        button,
+        pendingText: "提交中...",
+        successText: "已记录",
+        failurePrefix: "记录反馈失败",
+        action: () => postFeedback({
+          date,
+          restaurantId: item.restaurantId,
+          ...(item.recommendationId
+            ? { recommendationId: item.recommendationId }
+            : {}),
+          type
+        }),
+        onFailure: setStatus
       });
-      button.textContent = "已记录";
-      button.disabled = true;
     });
     feedback.appendChild(button);
   }
