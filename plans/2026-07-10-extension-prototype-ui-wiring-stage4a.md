@@ -2198,6 +2198,8 @@ git commit -m "feat: add extension restaurant quick entry"
 
 - Create: `apps/extension/src/detailController.ts`
 - Create: `apps/extension/tests/detailController.test.ts`
+- Create: `apps/extension/src/detailPageController.ts`
+- Create: `apps/extension/tests/detailPageController.test.ts`
 - Modify: `apps/extension/detail.html`
 - Modify: `apps/extension/src/detail.ts`
 - Modify: `apps/extension/styles/detail.css`
@@ -2212,10 +2214,12 @@ git commit -m "feat: add extension restaurant quick entry"
   - `runDetailActionWithContext(state, loadStorage, action)`
   - `applyDetailDecisionUpdate(state, update)`
   - `mergeDetailAnnouncement(state, announcement)`
+  - `toDetailPageRenderModel(state)`
+  - `createDetailPageActionCoordinator(dependencies)`
   - focused or expanded-list detail rendering
   - exact existing notification fallback URL `detail.html`; optional focus remains a detail-page query capability for other entry points.
 
-- [ ] **Step 1: Write detail loading, error-parity, and action-context tests**
+- [ ] **Step 1: Write detail loading, presenter, and action-context tests**
 
 Create `apps/extension/tests/detailController.test.ts`:
 
@@ -2353,17 +2357,26 @@ describe("standalone detail controller", () => {
 
 The dependency factory returns two today items and a `RestaurantListResponse` containing matching recommendation reasons without relying on `createdByName`. It accepts exact overrides for `response`, `loadRecommendations`, and `loadRestaurants`. `connectedStorage(groupId)` starts from `getDefaultStorageState()` and includes the requested active group, matching group summary, and session token. `readyDetailState(decidedRestaurantId?)` is a fresh `ready` state for `group-1`; `cachedDetailState()` contains the same response with `fromCache: true`, empty enrichment, and `readOnly: true`. `participationUpdate(restaurantId)` returns a typed `PutParticipationTodayResponse` whose member status is `decided` and whose summary has `decidedCount: 1`.
 
+Create `apps/extension/tests/detailPageController.test.ts` without adding a DOM test framework. Test the same pure production presenter and action coordinator that `detail.ts` consumes:
+
+- Recovery render models expose the exact disconnected, no-current-batch, session-expired, forbidden, retryable-error, and non-retryable-error copy plus `settings`, `index`, or `retry` controls.
+- Cached recommendations expose `readOnly: true`, `canWrite: false`, and the visible cache marker; fresh recommendations expose `canWrite: true`.
+- One pending action rejects a second cross-card action and drives one shared pending callback through disable/restore transitions.
+- Stale group results reload with the stable announcement and do not announce success.
+- Action-time 401/403 render session-expired/forbidden states.
+- Successful decisions render the complete updated detail state; group/date mismatch reloads with `操作结果无法确认，已重新加载当前详情。` and does not announce success.
+
 - [ ] **Step 2: Run the expanded detail tests and verify failure**
 
 Run:
 
 ```bash
-pnpm --filter @lunch/extension test -- detailController.test.ts
+pnpm --filter @lunch/extension test -- detailPageController.test.ts detailController.test.ts
 ```
 
-Expected: FAIL because structured detail states, optional-enrichment fallback, captured action context, batch-safe decision-state replacement, and cached announcement merging are missing.
+Expected: FAIL because structured detail states, the production presenter/action coordinator, cross-card exclusion, action recovery, batch-safe decision-state replacement, and cached announcement merging are missing.
 
-- [ ] **Step 3: Implement detail loading, popup-equivalent error rules, and pure action state**
+- [ ] **Step 3: Implement detail loading, page presentation, and pure action state**
 
 Create `detailController.ts` with these exact state and helper contracts:
 
@@ -2528,6 +2541,8 @@ export function applyDetailDecisionUpdate(
 }
 ```
 
+Create `detailPageController.ts` as the DOM-free page behavior boundary. `toDetailPageRenderModel` owns all recovery copy/control selection and ready/cached write capability. `createDetailPageActionCoordinator` owns the page-level `createExclusiveActionGate`, storage-scoped feedback/decision calls, stale reload, action 401/403 mapping, decision rerender, and mismatch reload. It receives storage, write clients, reload, render, announcement, and pending-change dependencies so the real page and unit tests exercise the same implementation.
+
 - [ ] **Step 4: Replace detail HTML and render every recoverable state**
 
 Use this production shell in `detail.html`:
@@ -2543,7 +2558,7 @@ Use this production shell in `detail.html`:
 </main>
 ```
 
-`detail.ts` reads `new URLSearchParams(location.search).get("restaurantId")`, captures one storage snapshot for the load, and returns `disconnected` before any request when the active group, matching group summary, or active-group session is missing. It renders these exact recovery states:
+`detail.ts` reads `new URLSearchParams(location.search).get("restaurantId")`, captures one storage snapshot for the load, and returns `disconnected` before any request when the active group, matching group summary, or active-group session is missing. It delegates recovery/cached/ready interpretation to `toDetailPageRenderModel`, maps the returned control kind to DOM, and sends write events to `createDetailPageActionCoordinator`. It renders these exact recovery states:
 
 - `disconnected`: “请先在设置中连接小组。” plus a settings button.
 - `no-current-batch`: “今天还没有生成推荐。” plus an `index.html` link labeled “打开插件生成推荐”.
@@ -2557,7 +2572,7 @@ Reuse `toRecommendationCardModel` and `scoreBreakdownRows`; do not duplicate for
 
 For fresh writes, capture the rendered `DetailRecommendationState` in each handler and call `runDetailActionWithContext`. Pass the returned storage snapshot to `postFeedbackForStorage` or `putTodayParticipationForStorage`; do not call the helpers that reread storage. A stale result reruns the full detail load and displays its stable stale-group message. Map 401/403 action failures to `session-expired`/`forbidden`; keep other action failures inline.
 
-Create one page-level `createExclusiveActionGate`. Every currently enabled feedback and decision button has `data-write-action="true"`; the already-decided button is disabled and omits that attribute. The gate's `onPendingChange` disables or restores the current `[data-write-action="true"]` buttons so two cards cannot submit concurrently without re-enabling the selected decision. After a successful decision, call `applyDetailDecisionUpdate`. If it returns the identical rendered state because the response group/date or participation payload does not match, rerun the full load with “操作结果无法确认，已重新加载当前详情。” and do not show success. Otherwise rerender all cards, label only the chosen restaurant “已决定，就是这家”, and leave other restaurants available for an explicit later switch.
+The production action coordinator owns one page-level `createExclusiveActionGate`. Every currently enabled feedback and decision button has `data-write-action="true"`; the already-decided button is disabled and omits that attribute. The gate's `onPendingChange` disables or restores the current `[data-write-action="true"]` buttons so two cards cannot submit concurrently without re-enabling the selected decision. After a successful decision, call `applyDetailDecisionUpdate`. If it returns the identical rendered state because the response group/date or participation payload does not match, rerun the full load with “操作结果无法确认，已重新加载当前详情。” and do not show success. Otherwise rerender all cards, label only the chosen restaurant “已决定，就是这家”, and leave other restaurants available for an explicit later switch.
 
 When `reloadDetail(announcement)` receives an announcement, pass the newly loaded state and announcement through `mergeDetailAnnouncement` before assigning `status.textContent`. This preserves the visible “缓存内容仅供查看” marker when a stale action reload falls back to cache.
 
@@ -2613,7 +2628,7 @@ Expected: all commands PASS; no extension test imports `background.ts`; manifest
 - [ ] **Step 7: Commit Task 8**
 
 ```bash
-git add plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md apps/extension/detail.html apps/extension/src/detail.ts apps/extension/src/detailController.ts apps/extension/styles/detail.css apps/extension/tests/detailController.test.ts
+git add plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md apps/extension/detail.html apps/extension/src/detail.ts apps/extension/src/detailController.ts apps/extension/src/detailPageController.ts apps/extension/styles/detail.css apps/extension/tests/detailController.test.ts apps/extension/tests/detailPageController.test.ts
 git commit -m "feat: rebuild extension recommendation detail"
 ```
 

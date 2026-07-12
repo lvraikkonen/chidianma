@@ -1,20 +1,19 @@
 import type {
-  FeedbackType,
   GroupTodayRecommendationItem,
-  PutParticipationTodayResponse,
   RecommendationSummary
 } from "@lunch/shared";
-import { classifyPopupError } from "./popupController";
 import {
-  applyDetailDecisionUpdate,
   loadDetailState,
   mergeDetailAnnouncement,
-  runDetailActionWithContext,
-  type DetailActionContextResult,
   type DetailItem,
-  type DetailRecommendationState,
   type DetailViewState
 } from "./detailController";
+import {
+  createDetailPageActionCoordinator,
+  toDetailPageRenderModel,
+  type DetailPageControl,
+  type DetailPageRenderModel
+} from "./detailPageController";
 import { listGroupRestaurants, type GroupApiContext } from "./groupClient";
 import {
   fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
@@ -26,7 +25,6 @@ import {
   toRecommendationCardModel
 } from "./recommendationViewModel";
 import { getStorageState } from "./storage";
-import { createExclusiveActionGate, runButtonAction } from "./uiAction";
 
 const status = document.querySelector<HTMLElement>("#detail-status")!;
 const content = document.querySelector<HTMLElement>("#detail-content")!;
@@ -35,7 +33,15 @@ const settingsButton = document.querySelector<HTMLButtonElement>(
 )!;
 const restaurantId = new URLSearchParams(location.search).get("restaurantId")
   ?? undefined;
-const actionGate = createExclusiveActionGate({
+const actionCoordinator = createDetailPageActionCoordinator({
+  loadStorage: getStorageState,
+  postFeedback: postFeedbackForStorage,
+  putParticipation: putTodayParticipationForStorage,
+  reload: reloadDetail,
+  render: renderDetailState,
+  announce: (message) => {
+    status.textContent = message;
+  },
   onPendingChange: syncWriteActionButtons
 });
 
@@ -84,51 +90,18 @@ async function loadCurrentDetailState(): Promise<DetailViewState> {
 function renderDetailState(state: DetailViewState): void {
   content.replaceChildren();
   status.replaceChildren();
-  if (state.kind === "disconnected") {
+  const model = toDetailPageRenderModel(state);
+  if (model.kind === "recovery") {
     renderRecoveryState(
-      "请先在设置中连接小组。",
-      createSettingsButton()
+      model.message,
+      createRecoveryControl(model.control)
     );
-    return;
-  }
-  if (state.kind === "no-current-batch") {
-    const link = document.createElement("a");
-    link.href = "index.html";
-    link.textContent = "打开插件生成推荐";
-    renderRecoveryState("今天还没有生成推荐。", link);
-    return;
-  }
-  if (state.kind === "session-expired") {
-    renderRecoveryState(
-      "当前小组连接已失效，请在设置中重新连接。",
-      createSettingsButton()
-    );
-    return;
-  }
-  if (state.kind === "forbidden") {
-    renderRecoveryState(
-      "你已被移出当前小组，请在设置中选择其他小组。",
-      createSettingsButton()
-    );
-    return;
-  }
-  if (state.kind === "error") {
-    const retryButton = state.retryable
-      ? createButton("重试", "detail-retry")
-      : undefined;
-    retryButton?.addEventListener("click", () => {
-      void reloadDetail();
-    });
-    renderRecoveryState(state.message, retryButton);
     return;
   }
 
-  status.textContent = state.readOnly
-    ? "缓存内容仅供查看"
-    : state.response.weather?.summary
-      ?? "今天先按距离、星期和同事推荐来挑。";
+  status.textContent = model.status;
 
-  if (state.items.length === 0) {
+  if (model.state.items.length === 0) {
     const empty = document.createElement("p");
     empty.className = "detail-error";
     empty.textContent = "今天还没有可用推荐。";
@@ -136,10 +109,30 @@ function renderDetailState(state: DetailViewState): void {
     return;
   }
 
-  for (const detailItem of state.items) {
-    content.appendChild(createExpandedCard(detailItem, state));
+  for (const detailItem of model.state.items) {
+    content.appendChild(createExpandedCard(detailItem, model));
   }
-  syncWriteActionButtons(actionGate.isPending());
+  syncWriteActionButtons(actionCoordinator.isPending());
+}
+
+function createRecoveryControl(
+  control?: DetailPageControl
+): HTMLElement | undefined {
+  if (!control) return undefined;
+  if (control.kind === "settings") {
+    return createSettingsButton(control.label);
+  }
+  if (control.kind === "index") {
+    const link = document.createElement("a");
+    link.href = control.href;
+    link.textContent = control.label;
+    return link;
+  }
+  const button = createButton(control.label, "detail-retry");
+  button.addEventListener("click", () => {
+    void reloadDetail();
+  });
+  return button;
 }
 
 function renderRecoveryState(
@@ -157,7 +150,7 @@ function renderRecoveryState(
 
 function createExpandedCard(
   detailItem: DetailItem,
-  state: DetailRecommendationState
+  pageModel: Extract<DetailPageRenderModel, { kind: "recommendations" }>
 ): HTMLElement {
   const { item, recommendations } = detailItem;
   const model = toRecommendationCardModel(item);
@@ -200,7 +193,9 @@ function createExpandedCard(
 
   appendTeamRecommendations(card, recommendations);
   appendScoreBreakdown(card, item, model.scoreLabel);
-  if (state.kind === "ready") appendWriteActions(card, state, item);
+  if (pageModel.canWrite && pageModel.state.kind === "ready") {
+    appendWriteActions(card, pageModel.state, item);
+  }
   return card;
 }
 
@@ -259,7 +254,7 @@ function appendWriteActions(
     const button = createButton(label, "feedback-button");
     button.dataset.writeAction = "true";
     button.addEventListener("click", () => {
-      runExclusive(() => submitFeedback(button, state, item, type));
+      void actionCoordinator.submitFeedback(state, item, type);
     });
     feedback.appendChild(button);
   }
@@ -273,102 +268,10 @@ function appendWriteActions(
   if (!alreadyDecided) {
     decideButton.dataset.writeAction = "true";
     decideButton.addEventListener("click", () => {
-      runExclusive(() => submitDecision(decideButton, state, item));
+      void actionCoordinator.submitDecision(state, item);
     });
   }
   card.append(feedbackTitle, feedback, decideButton);
-}
-
-async function submitFeedback(
-  button: HTMLButtonElement,
-  renderedState: Extract<DetailViewState, { kind: "ready" }>,
-  item: GroupTodayRecommendationItem,
-  type: FeedbackType
-): Promise<void> {
-  let result: DetailActionContextResult<void> | undefined;
-  await runButtonAction({
-    button,
-    pendingText: "提交中...",
-    successText: "已记录",
-    failureMessage: "记录反馈失败，请重试。",
-    action: async () => {
-      result = await runDetailActionWithContext(
-        renderedState,
-        getStorageState,
-        (storage) => postFeedbackForStorage(storage, {
-          date: renderedState.response.officeDate,
-          restaurantId: item.restaurantId,
-          ...(item.recommendationId
-            ? { recommendationId: item.recommendationId }
-            : {}),
-          type
-        })
-      );
-    },
-    onStart: () => status.replaceChildren(),
-    onFailure: handleActionFailure
-  });
-  if (!result) return;
-  if (result.kind === "stale") {
-    await reloadDetail(result.message);
-    return;
-  }
-  status.textContent = "反馈已记录。";
-}
-
-async function submitDecision(
-  button: HTMLButtonElement,
-  renderedState: Extract<DetailViewState, { kind: "ready" }>,
-  item: GroupTodayRecommendationItem
-): Promise<void> {
-  let result: DetailActionContextResult<PutParticipationTodayResponse>
-    | undefined;
-  await runButtonAction({
-    button,
-    pendingText: "提交中...",
-    successText: "已决定",
-    failureMessage: "记录决定失败，请重试。",
-    action: async () => {
-      result = await runDetailActionWithContext(
-        renderedState,
-        getStorageState,
-        (storage) => putTodayParticipationForStorage(storage, {
-          status: "decided",
-          restaurantId: item.restaurantId,
-          ...(item.recommendationId
-            ? { recommendationId: item.recommendationId }
-            : {})
-        })
-      );
-    },
-    onStart: () => status.replaceChildren(),
-    onFailure: handleActionFailure
-  });
-  if (!result) return;
-  if (result.kind === "stale") {
-    await reloadDetail(result.message);
-    return;
-  }
-  const nextState = applyDetailDecisionUpdate(renderedState, result.value);
-  if (nextState === renderedState) {
-    await reloadDetail("操作结果无法确认，已重新加载当前详情。");
-    return;
-  }
-  renderDetailState(nextState);
-  status.textContent = "今天的午饭决定已记录。";
-}
-
-function handleActionFailure(message: string, error: unknown): void {
-  const kind = classifyPopupError(error);
-  if (kind === "session-expired") {
-    renderDetailState({ kind });
-    return;
-  }
-  if (kind === "forbidden") {
-    renderDetailState({ kind });
-    return;
-  }
-  status.textContent = message;
 }
 
 function syncWriteActionButtons(pending: boolean): void {
@@ -379,8 +282,8 @@ function syncWriteActionButtons(pending: boolean): void {
   });
 }
 
-function createSettingsButton(): HTMLButtonElement {
-  const button = createButton("设置", "detail-settings-action");
+function createSettingsButton(label: string): HTMLButtonElement {
+  const button = createButton(label, "detail-settings-action");
   button.addEventListener("click", openSettings);
   return button;
 }
@@ -395,10 +298,4 @@ function createButton(label: string, className: string): HTMLButtonElement {
 
 function openSettings(): void {
   void chrome.runtime.openOptionsPage();
-}
-
-function runExclusive(action: () => Promise<void>): void {
-  void actionGate.run(action).catch(() => {
-    status.textContent = "操作失败，请重试。";
-  });
 }
