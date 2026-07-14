@@ -1,5 +1,6 @@
 import type { CreateGroupRequest } from "@lunch/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AdminApiError } from "../api";
 import {
   createGroup,
   createIdentity,
@@ -7,6 +8,12 @@ import {
   listGroups,
   refreshGroupSession
 } from "../clients/groups";
+import {
+  getParticipation,
+  getToday,
+  refreshToday,
+  type AdminGroupContext
+} from "../clients/today";
 import { AppShell } from "../components/AppShell";
 import { GroupEntryPanel } from "../components/GroupEntryPanel";
 import { StatusPanel } from "../components/StatusPanel";
@@ -14,7 +21,14 @@ import {
   createAuthController,
   type AuthViewState
 } from "../features/auth/authModel";
+import {
+  loadTodayView,
+  refreshTodayView,
+  type TodayDependencies,
+  type TodayViewState
+} from "../features/today/todayModel";
 import { LoginPage } from "../pages/LoginPage";
+import { TodayPage } from "../pages/TodayPage";
 import {
   clearGroupSession,
   disconnectAdmin,
@@ -37,6 +51,8 @@ export function App() {
     parseAdminRoute(window.location.hash)
   ));
   const [groupEntryOpen, setGroupEntryOpen] = useState(false);
+  const [todayState, setTodayState] = useState<TodayViewState>({ kind: "loading" });
+  const [todayReload, setTodayReload] = useState(0);
   const requestGate = useRef(createRequestGate());
   const authController = useMemo(() => createAuthController({
     readSession: readAdminSession,
@@ -69,8 +85,52 @@ export function App() {
     }
   }, [authState.kind, route]);
 
+  const connectedState = authState.kind === "authenticated" || authState.kind === "switching"
+    ? authState
+    : null;
+  const activeGroupId = connectedState?.session.activeGroupId;
+  const activeGroupSession = activeGroupId
+    ? connectedState?.session.sessionsByGroupId[activeGroupId]
+    : undefined;
+  const groupContext: AdminGroupContext | null = activeGroupId && activeGroupSession
+    ? {
+        apiBaseUrl: connectedState.session.apiBaseUrl,
+        groupId: activeGroupId,
+        token: activeGroupSession.token
+      }
+    : null;
+
+  useEffect(() => {
+    if (route !== "today" || !groupContext) return;
+    const request = requestGate.current.begin();
+    setTodayState({ kind: "loading" });
+    void loadTodayView(todayDependencies(groupContext)).then((next) => {
+      if (requestGate.current.isCurrent(request)) setTodayState(next);
+    });
+    return () => requestGate.current.invalidate();
+  }, [route, groupContext?.groupId, groupContext?.token, todayReload]);
+
+  useEffect(() => {
+    if (!groupContext) return;
+    if (todayState.kind === "session-expired") {
+      void authController.handleGroupError(new AdminApiError({
+        kind: "http",
+        status: 401,
+        code: "invalid_session"
+      }), groupContext.groupId);
+    }
+    if (todayState.kind === "forbidden") {
+      void authController.handleGroupError(new AdminApiError({
+        kind: "http",
+        status: 403,
+        code: "removed_member"
+      }), groupContext.groupId);
+    }
+  }, [authController, groupContext?.groupId, todayState.kind]);
+
   async function runActiveGroupMutation(operation: () => Promise<void>) {
     const before = readAdminSession().activeGroupId;
+    requestGate.current.invalidate();
     await operation();
     const after = readAdminSession().activeGroupId;
     if (after && after !== before) requestGate.current.invalidate();
@@ -93,6 +153,13 @@ export function App() {
     setGroupEntryOpen(false);
     authController.disconnect();
     navigate("login");
+  }
+
+  async function handleTodayRefresh() {
+    if (!groupContext) return;
+    const request = requestGate.current.begin();
+    const next = await refreshTodayView(todayState, todayDependencies(groupContext));
+    if (requestGate.current.isCurrent(request)) setTodayState(next);
   }
 
   const switchingHasUsableActiveGroup = authState.kind === "switching"
@@ -167,11 +234,22 @@ export function App() {
           message="小组连接已就绪；餐厅数据页面将在 Stage4B Task 6～7 接入。"
         />
       ) : (
-        <StatusPanel
-          title="今日推荐"
-          message="小组连接已就绪；今日推荐页面将在 Stage4B Task 4～5 接入。"
+        <TodayPage
+          state={todayState}
+          onGenerate={handleTodayRefresh}
+          onRefresh={handleTodayRefresh}
+          onRetry={() => setTodayReload((value) => value + 1)}
+          onOpenRestaurants={() => navigate("restaurants")}
         />
       )}
     </AppShell>
   );
+}
+
+function todayDependencies(context: AdminGroupContext): TodayDependencies {
+  return {
+    getToday: () => getToday(context),
+    refreshToday: () => refreshToday(context),
+    getParticipation: () => getParticipation(context)
+  };
 }
