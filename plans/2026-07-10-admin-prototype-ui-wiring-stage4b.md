@@ -8,17 +8,24 @@
 
 **Tech Stack:** TypeScript 5.7, pnpm workspaces, React 19, React DOM 19, Vite 6, Vitest 2, native Fetch API, browser `localStorage`, `@lunch/shared` contracts.
 
-**Status:** Review Requested
+**Status:** Approved for Execution
+
+**Review amendments (2026-07-14):** Preserve the one-time invite code in the
+authenticated auth state; expose authenticated create/join entry without
+discarding the current group; classify participation membership failures at the
+Today page level; and harden the final residue scan and optional Railway dev API
+smoke scope.
 
 ## Global Constraints
 
 - Source design: `specs/2026-07-10-prototype-ui-wiring-stage4-design.md`.
 - Roadmap stage: `roadmap.md` Stage 4B, Admin Prototype UI Wiring.
-- Stage 1, Stage 2, Stage 3, and the approved Stage 4A shared-contract state are prerequisites.
+- Stage 1, Stage 2, Stage 3, and the implemented/QA-verified Stage 4A shared-contract state are prerequisites.
 - Use existing Stage 1-3 API routes; do not add a database model, migration, server route, or lunch-loop semantic.
 - Remove the legacy `/api/session`, `/api/restaurants`, and `/api/recommendations` production UI path from Admin.
 - Identity APIs use `identityToken`; every `/api/groups/:groupId/*` request uses the captured group's `groupSessionToken`.
 - Tokens are stored locally but never rendered, logged, placed in route state, or included in errors.
+- The one-time invite code lives only in in-memory `AuthViewState`; never persist it in `localStorage` or a URL.
 - Group switching is commit-after-success: obtain a fresh session first, then change `activeGroupId`.
 - Each page request captures `apiBaseUrl + groupId + token`; a stale response from Group A must never overwrite active Group B state.
 - UI role/ownership controls improve clarity but never replace server permission checks.
@@ -29,6 +36,7 @@
 - `POST /api/groups/:groupId/today-recommendations/refresh` creates a new batch and must prevent duplicate submission.
 - The strategy panel uses only returned weather, reasons, and `scoreBreakdown`; do not invent weights, algorithm versions, people, counts, or historical metrics.
 - Admin navigation exposes only login/group entry, today recommendations, and restaurant library in Stage 4B.
+- The authenticated shell exposes a “创建/加入小组” action that reuses group entry without clearing identity or the current active group.
 - Do not add React Router, Redux, Zustand, a UI framework, or a large DOM test framework.
 - Use a small hash router with `#login`, `#today`, and `#restaurants` for static-host compatibility.
 - Port the production visual language from `demo-design/`, but remove prototype overview links, `data-od-*`, static data, recommendation history, dashboard, members, and settings.
@@ -42,7 +50,7 @@ In scope:
 
 - Versioned local Admin session state for identity, active group, group summaries, and group sessions.
 - Structured API errors with explicit captured request contexts.
-- Identity creation, group creation/join/list, fresh group session, disconnect, and group switching.
+- Identity creation, first-time and authenticated group creation/join, group list, fresh group session, disconnect, and group switching.
 - Hash routes and prototype-aligned authenticated shell.
 - Today current batch, weather, strategy, score breakdown, participation groups, generate, refresh, empty, and error states.
 - Restaurant search, cuisine/status filtering, duplicate warning, create/edit, recommendation create/edit, and admin status governance.
@@ -80,6 +88,7 @@ Out of scope:
 - Create: `apps/admin/src/app/App.tsx`
   - Own top-level route, session, and active-group coordination.
 - Create: `apps/admin/src/components/AppShell.tsx`
+- Create: `apps/admin/src/components/GroupEntryPanel.tsx`
 - Create: `apps/admin/src/components/Modal.tsx`
 - Create: `apps/admin/src/components/StatusPanel.tsx`
 - Create: `apps/admin/src/pages/LoginPage.tsx`
@@ -95,12 +104,15 @@ Out of scope:
 - Create: `apps/admin/tests/authModel.test.ts`
 - Create: `apps/admin/tests/router.test.ts`
 - Create: `apps/admin/tests/requestGate.test.ts`
+- Create: `apps/admin/tests/authMarkup.test.tsx`
 - Create: `apps/admin/tests/todayClient.test.ts`
 - Create: `apps/admin/tests/todayModel.test.ts`
 - Create: `apps/admin/tests/todayMarkup.test.tsx`
 - Create: `apps/admin/tests/restaurantClient.test.ts`
 - Create: `apps/admin/tests/restaurantModel.test.ts`
 - Create: `apps/admin/tests/restaurantMarkup.test.tsx`
+- Modify: `vitest.config.ts`
+  - Collect React markup tests with the existing `*.test.tsx` naming used by this plan.
 - Create: `qa/2026-07-10-admin-prototype-ui-wiring-stage4b.md`
 - Modify: `README.md`
 - Modify: `roadmap.md`
@@ -533,12 +545,19 @@ Create `apps/admin/tests/authModel.test.ts`:
 it("retains a created identity after group join fails", async () => {
   const saveIdentity = vi.fn();
   const controller = createAuthController(authDependencies({
+    readSession: vi.fn()
+      .mockReturnValueOnce(disconnectedSession())
+      .mockReturnValue(identityOnlySession()),
     createIdentity: vi.fn().mockResolvedValue({
       identityId: "identity-1",
       identityToken: "identity-token"
     }),
     saveIdentity,
-    joinGroup: vi.fn().mockRejectedValue(new Error("invalid invite"))
+    joinGroup: vi.fn().mockRejectedValue(new AdminApiError({
+      kind: "http",
+      status: 400,
+      code: "invalid_invite_code"
+    }))
   }));
 
   await controller.createIdentity("小林");
@@ -565,9 +584,58 @@ it("commits the requested group only after fresh session succeeds", async () => 
   await switching;
   expect(saveGroupSession).toHaveBeenCalledWith(groupSessionResponse("group-2"));
 });
+
+it("surfaces the one-time invite code after creating a group", async () => {
+  const controller = createAuthController(authDependencies({
+    createGroup: vi.fn().mockResolvedValue({
+      identityToken: "fresh-identity-token",
+      groupSessionToken: "group-session-token",
+      group: groupSummary("group-1"),
+      inviteCode: "LUNCH-ABC123"
+    })
+  }));
+
+  await controller.createGroup({ groupName: "设计组" });
+
+  expect(controller.getState()).toMatchObject({
+    kind: "authenticated",
+    inviteCode: "LUNCH-ABC123"
+  });
+});
+
+it.each(["create", "join"] as const)(
+  "keeps the prior authenticated group when %s another group fails",
+  async (operation) => {
+    const saveGroupSession = vi.fn();
+    const failure = new AdminApiError({ kind: "network" });
+    const controller = createAuthController(authDependencies({
+      saveGroupSession,
+      ...(operation === "create"
+        ? { createGroup: vi.fn().mockRejectedValue(failure) }
+        : { joinGroup: vi.fn().mockRejectedValue(failure) })
+    }));
+
+    if (operation === "create") await controller.createGroup({ groupName: "新小组" });
+    else await controller.joinGroup("LUNCH-NEW123");
+
+    expect(saveGroupSession).not.toHaveBeenCalled();
+    expect(controller.getState()).toMatchObject({
+      kind: "authenticated",
+      session: {
+        identityToken: "identity-token",
+        activeGroupId: "group-1"
+      },
+      error: "操作没有完成，请检查网络后重试。"
+    });
+  }
+);
 ```
 
-Add typed factories for the full dependency interface with a valid identity state and deterministic default mocks.
+Add typed factories for disconnected, identity-only, and authenticated sessions
+plus the full dependency interface with deterministic default mocks. The
+authenticated default fixture has `identityToken: "identity-token"` and usable
+active `group-1`; tests for first-time entry explicitly use the identity-only
+fixture.
 
 - [ ] **Step 3: Run tests and verify failure**
 
@@ -645,7 +713,7 @@ export type AuthViewState =
   | { kind: "identity-entry"; error?: string | undefined }
   | { kind: "group-entry"; session: AdminSessionState; groups: GroupSummary[]; inviteCode?: string | undefined; error?: string | undefined }
   | { kind: "switching"; session: AdminSessionState; groups: GroupSummary[]; pendingGroupId: string }
-  | { kind: "authenticated"; session: AdminSessionState; groups: GroupSummary[]; error?: string | undefined };
+  | { kind: "authenticated"; session: AdminSessionState; groups: GroupSummary[]; inviteCode?: string | undefined; error?: string | undefined };
 
 export interface AuthControllerDependencies {
   readSession: () => AdminSessionState;
@@ -681,6 +749,31 @@ export function isMembershipInvalid(error: unknown): boolean {
   );
 }
 
+function hasUsableActiveGroup(session: AdminSessionState): boolean {
+  const groupId = session.activeGroupId;
+  return Boolean(
+    groupId
+    && session.sessionsByGroupId[groupId]
+    && session.groupSummariesById[groupId]
+  );
+}
+
+function groupEntryFailureState(
+  session: AdminSessionState,
+  error: unknown,
+  inviteCode?: string
+): AuthViewState {
+  const common = {
+    session,
+    groups: Object.values(session.groupSummariesById),
+    ...(inviteCode ? { inviteCode } : {}),
+    error: authMessage(error)
+  };
+  return hasUsableActiveGroup(session)
+    ? { kind: "authenticated", ...common }
+    : { kind: "group-entry", ...common };
+}
+
 export function createAuthController(dependencies: AuthControllerDependencies) {
   let state: AuthViewState = { kind: "loading" };
   const commit = (next: AuthViewState) => {
@@ -702,13 +795,13 @@ export function createAuthController(dependencies: AuthControllerDependencies) {
       });
       dependencies.syncGroups(response.groups);
       const synced = dependencies.readSession();
-      const usableActiveGroup = Boolean(
-        synced.activeGroupId
-        && synced.sessionsByGroupId[synced.activeGroupId]
-        && synced.groupSummariesById[synced.activeGroupId]
-      );
-      const next = usableActiveGroup
-        ? { kind: "authenticated" as const, session: synced, groups: response.groups }
+      const next = hasUsableActiveGroup(synced)
+        ? {
+            kind: "authenticated" as const,
+            session: synced,
+            groups: response.groups,
+            ...(inviteCode ? { inviteCode } : {})
+          }
         : {
             kind: "group-entry" as const,
             session: synced,
@@ -722,7 +815,7 @@ export function createAuthController(dependencies: AuthControllerDependencies) {
         dependencies.disconnectAdmin();
         commit({ kind: "identity-entry", error: authMessage(error) });
       } else {
-        commit({ kind: "group-entry", session, groups: [], error: authMessage(error) });
+        commit(groupEntryFailureState(session, error, inviteCode));
       }
       return state;
     }
@@ -754,12 +847,7 @@ export function createAuthController(dependencies: AuthControllerDependencies) {
       dependencies.saveGroupSession(response);
       await load(response.inviteCode);
     } catch (error) {
-      commit({
-        kind: "group-entry",
-        session: current.session,
-        groups: Object.values(current.session.groupSummariesById),
-        error: authMessage(error)
-      });
+      commit(groupEntryFailureState(current.session, error));
     }
   }
 
@@ -771,12 +859,7 @@ export function createAuthController(dependencies: AuthControllerDependencies) {
       dependencies.saveGroupSession(response);
       await load();
     } catch (error) {
-      commit({
-        kind: "group-entry",
-        session: current.session,
-        groups: Object.values(current.session.groupSummariesById),
-        error: authMessage(error)
-      });
+      commit(groupEntryFailureState(current.session, error));
     }
   }
 
@@ -853,18 +936,21 @@ git commit -m "feat: add admin group entry flow"
 - Create: `apps/admin/src/app/requestGate.ts`
 - Create: `apps/admin/src/app/App.tsx`
 - Create: `apps/admin/src/components/AppShell.tsx`
+- Create: `apps/admin/src/components/GroupEntryPanel.tsx`
 - Create: `apps/admin/src/components/StatusPanel.tsx`
 - Create: `apps/admin/src/pages/LoginPage.tsx`
 - Modify: `apps/admin/src/main.tsx`
+- Create: `apps/admin/tests/authMarkup.test.tsx`
 - Create: `apps/admin/tests/router.test.ts`
 - Create: `apps/admin/tests/requestGate.test.ts`
+- Modify: `vitest.config.ts`
 
 **Interfaces:**
 
 - Consumes: Task 2 auth controller and Task 1 session snapshots.
-- Produces: `AdminRoute`, route subscription, monotonic request tokens, login/group entry UI, and authenticated two-link shell.
+- Produces: `AdminRoute`, route subscription, monotonic request tokens, reusable group-entry UI, and an authenticated shell with two navigation links plus a create/join action.
 
-- [ ] **Step 1: Write router and stale-request tests**
+- [ ] **Step 1: Write router, stale-request, and auth-shell markup tests**
 
 Create `apps/admin/tests/router.test.ts`:
 
@@ -902,12 +988,27 @@ it("invalidates every earlier request when a new generation begins", () => {
 });
 ```
 
+Create `apps/admin/tests/authMarkup.test.tsx` with
+`react-dom/server` markup checks that lock these authenticated-shell states:
+
+- The closed shell renders a “创建/加入小组” button in addition to, but not as,
+  a third navigation link.
+- Opening the action renders the same `GroupEntryPanel` used by first-time
+  entry, with create and join forms and an empty invite input default.
+- An authenticated state carrying `inviteCode: "LUNCH-ABC123"` renders that
+  one-time code in an `aria-live="polite"` region.
+- No token value is rendered in either closed or open markup.
+
+Update the root `vitest.config.ts` include globs from `*.test.ts` to
+`*.test.{ts,tsx}` so these React markup tests, and the Task 5/7 markup tests,
+are actually collected.
+
 - [ ] **Step 2: Run tests and verify failure**
 
 Run:
 
 ```bash
-pnpm --filter @lunch/admin test -- router.test.ts requestGate.test.ts
+pnpm --filter @lunch/admin test -- router.test.ts requestGate.test.ts authMarkup.test.tsx
 ```
 
 Expected: FAIL because the app helpers are missing.
@@ -951,11 +1052,30 @@ export function createRequestGate() {
 
 - [ ] **Step 4: Build the shell and login/group-entry page**
 
-`AppShell` must render only two navigation buttons/links, an active-group `<select>`, display name, and disconnect action. Do not render dashboard, history, settings, member, prototype, or extension links.
+`AppShell` must render only two navigation buttons/links, an active-group
+`<select>`, display name, disconnect action, and a non-navigation
+“创建/加入小组” action. Do not render dashboard, history, settings, member,
+prototype, or extension links.
 
-`LoginPage` receives `AuthViewState` plus callbacks for identity, create group, join group, switch group, and disconnect. Invite input starts as `""`. One-time invite code appears in an `aria-live` region only when present in the model.
+Extract `GroupEntryPanel` and reuse it in both `LoginPage` and the authenticated
+shell. `LoginPage` receives `AuthViewState` plus callbacks for identity, create
+group, join group, switch group, and disconnect. Invite input starts as `""`.
+One-time invite code appears in an `aria-live="polite"` region only when
+present in the model.
 
-`App.tsx` owns auth state, route state, and request gate. On successful group switch it calls `requestGate.invalidate()` before rendering the active page. If there is no active group context, it forces the login/group-entry page.
+`App.tsx` owns a local open/closed state for the authenticated group-entry
+panel. Opening or closing it does not clear identity, group sessions, the
+current `activeGroupId`, or current same-group page data. Create/join keeps the
+panel open when the controller returns an inline failure; success commits and
+switches to the returned group only after its endpoint returns the fresh group
+session. A successful create keeps the panel or authenticated banner visible
+long enough to surface the one-time invite code from `AuthViewState`.
+
+`App.tsx` owns auth state, route state, and request gate. On successful group
+switch, authenticated create, or authenticated join it calls
+`requestGate.invalidate()`, clears the previous group's page data, and only
+then renders the returned active group. If there is no active group context, it
+forces the login/group-entry page.
 
 Replace `main.tsx` with:
 
@@ -972,7 +1092,7 @@ createRoot(document.getElementById("root")!).render(<App />);
 Run:
 
 ```bash
-pnpm --filter @lunch/admin test -- router.test.ts requestGate.test.ts authModel.test.ts
+pnpm --filter @lunch/admin test -- router.test.ts requestGate.test.ts authModel.test.ts authMarkup.test.tsx
 pnpm --filter @lunch/admin typecheck
 pnpm --filter @lunch/admin build
 ```
@@ -982,7 +1102,7 @@ Expected: PASS; production bundle contains no `/api/session` literal.
 - [ ] **Step 6: Commit Task 3**
 
 ```bash
-git add apps/admin/src/app apps/admin/src/components/AppShell.tsx apps/admin/src/components/StatusPanel.tsx apps/admin/src/pages/LoginPage.tsx apps/admin/src/main.tsx apps/admin/tests/router.test.ts apps/admin/tests/requestGate.test.ts
+git add vitest.config.ts apps/admin/src/app apps/admin/src/components/AppShell.tsx apps/admin/src/components/GroupEntryPanel.tsx apps/admin/src/components/StatusPanel.tsx apps/admin/src/pages/LoginPage.tsx apps/admin/src/main.tsx apps/admin/tests/authMarkup.test.tsx apps/admin/tests/router.test.ts apps/admin/tests/requestGate.test.ts
 git commit -m "feat: add admin multi-group shell"
 ```
 
@@ -1044,6 +1164,32 @@ it("groups every active member by participation status", async () => {
     away: [],
     undecided: [expect.objectContaining({ membershipId: "membership-2" })]
   });
+});
+
+it("returns session-expired when participation rejects with 401", async () => {
+  const state = await loadTodayView(todayDependencies({
+    getToday: vi.fn().mockResolvedValue(todayResponse()),
+    getParticipation: vi.fn().mockRejectedValue(new AdminApiError({
+      kind: "http",
+      status: 401,
+      code: "invalid_session"
+    }))
+  }));
+
+  expect(state).toEqual({ kind: "session-expired" });
+});
+
+it("returns forbidden when participation reports a removed membership", async () => {
+  const state = await loadTodayView(todayDependencies({
+    getToday: vi.fn().mockResolvedValue(todayResponse()),
+    getParticipation: vi.fn().mockRejectedValue(new AdminApiError({
+      kind: "http",
+      status: 403,
+      code: "removed_member"
+    }))
+  }));
+
+  expect(state).toEqual({ kind: "forbidden" });
 });
 
 it("derives strategy rows only from the returned breakdown", () => {
@@ -1170,6 +1316,15 @@ export async function loadTodayView(
     dependencies.getToday(),
     dependencies.getParticipation()
   ]);
+
+  if (participationResult.status === "rejected") {
+    const participationFailure = failureState(participationResult.reason);
+    if (participationFailure.kind === "session-expired"
+      || participationFailure.kind === "forbidden") {
+      return participationFailure;
+    }
+  }
+
   const participation = participationResult.status === "fulfilled"
     ? participationResult.value
     : undefined;
@@ -1206,7 +1361,16 @@ export async function refreshTodayView(
 ): Promise<TodayViewState> {
   try {
     const response = await dependencies.refreshToday();
-    const participation = await dependencies.getParticipation().catch(() => undefined);
+    let participation: ParticipationTodayResponse | undefined;
+    try {
+      participation = await dependencies.getParticipation();
+    } catch (error) {
+      const participationFailure = failureState(error);
+      if (participationFailure.kind === "session-expired"
+        || participationFailure.kind === "forbidden") {
+        return participationFailure;
+      }
+    }
     if (response.items.length === 0) {
       return { kind: "empty", response, ...(participation ? { participation } : {}) };
     }
@@ -1932,7 +2096,7 @@ it("keeps the session for an operation permission error", async () => {
 });
 ```
 
-- [ ] **Step 2: Run auth tests and verify failure**
+- [ ] **Step 2: Run auth tests and verify PASS**
 
 Run:
 
@@ -1944,7 +2108,7 @@ Expected: PASS because Task 2 established the classifier; these tests lock the f
 
 - [ ] **Step 3: Implement consistent recovery and stale-data clearing**
 
-Use the Task 2 `isMembershipInvalid` classifier in App. App clears page state and invalidates its request gate on successful group switch, disconnect, membership invalidation, and route exit. It retains same-group data on refresh network/5xx failure and adds a refresh-error banner.
+Use the Task 2 `isMembershipInvalid` classifier in App. App clears page state and invalidates its request gate on successful group switch, authenticated group create/join, disconnect, membership invalidation, and route exit. It retains same-group data on refresh network/5xx failure and adds a refresh-error banner.
 
 - [ ] **Step 4: Replace the legacy stylesheet with production tokens and responsive shell**
 
@@ -2012,7 +2176,7 @@ Run:
 pnpm --filter @lunch/admin test
 pnpm --filter @lunch/admin typecheck
 pnpm --filter @lunch/admin build
-rg -n '/api/session|Demo 同事|#046|张三、李雷|data-od-|admin-dashboard|admin-settings' apps/admin/src apps/admin/dist
+rg -n '/api/session([^[:alnum:]_/-]|$)|/api/restaurants([^[:alnum:]_/-]|$)|/api/recommendations([^[:alnum:]_/-]|$)|Demo 同事|#046|张三、李雷|data-od-|admin-dashboard|admin-history|admin-members|admin-settings|#dashboard|#history|#members|#settings' apps/admin/src apps/admin/dist
 ```
 
 Expected: tests, typecheck, and build PASS; the final `rg` returns no production matches.
@@ -2076,6 +2240,7 @@ Expected: every command PASS.
 Execute and record a result plus evidence for each case:
 
 - First identity creation, group creation, one-time invite display, and second identity join.
+- Authenticated “创建/加入小组” panel, create-another-group invite display, join-another-group success, and create/join failure preserving the prior active group.
 - Returning identity group list and fresh-session group switch.
 - Failed switch preserving the previous active group.
 - Group A slow today/restaurant responses never appearing after switching to Group B.
@@ -2088,9 +2253,16 @@ Execute and record a result plus evidence for each case:
 - Desktop and narrow-screen layout.
 - No dashboard/history/members/settings links or static prototype data.
 
+Optional Railway dev API smoke (supplemental to, not a replacement for, the
+local mutation/error-state QA): run the local Admin build/dev server with
+`VITE_API_BASE_URL=https://lunchserver-production.up.railway.app` and verify
+identity creation, group create/join/list/switch, Today, and Restaurants
+against the Railway dev API. Record whether this optional smoke was run. Do not
+mark Admin static hosting complete; it remains Stage 6 work.
+
 - [ ] **Step 4: Write the Stage 4B QA report with captured evidence**
 
-Create `qa/2026-07-10-admin-prototype-ui-wiring-stage4b.md`. Include the tested commit, browser version, server URL, database fixture description, each command/result, every manual state/result, screenshots or notes available in the workspace, and observed known issues. Do not claim an unexecuted state passed.
+Create `qa/2026-07-10-admin-prototype-ui-wiring-stage4b.md`. Include the tested commit, browser version, server URL, database fixture description, each command/result, every manual state/result, screenshots or notes available in the workspace, and observed known issues. Do not claim an unexecuted state passed. If the optional Railway dev API smoke was run, record it separately from local Admin hosting and keep Stage 6 static-hosting status unchanged.
 
 - [ ] **Step 5: Update roadmap only after both QA reports pass**
 
@@ -2118,7 +2290,7 @@ Spec coverage map:
 | Design requirement | Implementing tasks |
 | --- | --- |
 | Versioned explicit identity/group session state | Tasks 1-2 |
-| Product-facing create/join/list/switch and login recovery | Tasks 2-3 and 8 |
+| Product-facing first-time/authenticated create/join/list/switch and login recovery | Tasks 2-3 and 8 |
 | Hash routing and Stage 4-only shell | Task 3 |
 | Today batch, weather, strategy, breakdown, participation, generate/refresh | Tasks 4-5 |
 | Restaurant filtering, duplicate warning, create/edit/recommendations/status | Tasks 6-7 |
@@ -2130,6 +2302,7 @@ Before marking Stage 4 complete, confirm:
 
 - Admin production UI contains no legacy session/login calls or static prototype values.
 - Returning identities can list and safely switch active groups.
+- Authenticated users can open create/join entry; failure preserves the prior active group and successful create surfaces its one-time invite code.
 - Today and restaurant requests capture group/token context and stale Group A results cannot commit into Group B.
 - Today no-batch, ready, refresh, empty, participation, session-expired, forbidden, and retry states are verified.
 - Restaurant filtering, duplicate warning, permissions, status governance, recommendation ownership, and partial-success retry are verified.

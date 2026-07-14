@@ -284,8 +284,16 @@ creating or joining a group. Returning users with an identity token load
 additional groups while retaining their identity. A failed group create or join
 does not discard the new identity and can be retried.
 
-Creating a group displays the one-time invite code. Selecting a group obtains
-a fresh group session before entering the app shell. Admin also provides an
+The authenticated shell includes an explicit “创建/加入小组” action that opens
+the same group-entry panel without clearing the identity or current active
+group. Create and join switch to the returned group only after the server has
+returned its fresh group session. A failure keeps the previous identity, active
+group, and same-group page state available while showing an inline retryable
+error.
+
+Creating a group displays the one-time invite code in both first-time group
+entry and authenticated create-another-group flows. Selecting a group obtains a
+fresh group session before entering the app shell. Admin also provides an
 explicit change-identity/disconnect action that clears local authentication
 state without mutating server data.
 
@@ -417,6 +425,11 @@ code, and safe message data. UI state mapping follows these rules:
 | Admin network/5xx | Keep the last successful same-group view with a refresh-failed marker. |
 | Unknown | Show stable Chinese fallback copy and keep diagnostic detail development-only. |
 
+When the Today page loads the current batch and participation concurrently, a
+membership-level `401` or `403` from either request controls the whole page
+recovery state. A successful current-batch response must not hide an expired
+group session or removed membership reported by participation.
+
 An Admin refresh failure may preserve the last successful view for the same
 group. A group switch never preserves the previous group's page data.
 
@@ -451,8 +464,12 @@ Extension tests must continue to avoid importing side-effectful
   session clearing.
 - Correct identity-token and group-session authorization headers.
 - Login, create, join, group-list, and group-selection state transitions.
+- Authenticated create/join panel access, one-time invite display, and failure
+  preservation of the prior identity and active group.
 - Stale Group A responses cannot overwrite active Group B state.
 - Today no-batch, ready, refresh, empty, and participation grouping view models.
+- Today membership-level `401`/`403` recovery when either the batch or
+  participation request reports it.
 - Restaurant search, filtering, duplicate warning, permission derivation, and
   two-step create controller behavior.
 - Member versus admin status controls and recommendation ownership rules.

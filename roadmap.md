@@ -33,7 +33,7 @@ extension smoke testing.
 | Stage 1 | Multi-Group Foundation | Done | [`plans/2026-07-08-multi-group-foundation-stage1.md`](plans/2026-07-08-multi-group-foundation-stage1.md) | Identity, groups, memberships, sessions, invites, permissions, migration foundation |
 | Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
 | Stage 3 | Today Recommendation Batch + Participation | Done | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md) | Core lunch loop plus minimal extension auth/storage/API client |
-| Stage 4 | Prototype UI Wiring | Planned | [Stage 4A Extension](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)<br>[Stage 4B Admin](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
+| Stage 4 | Prototype UI Wiring | In Progress | [Stage 4A Extension](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)<br>[Stage 4B Admin](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
 | Stage 5 | Dashboard / Settings / Weights | Not Started | Write after Stage 4 | Historical review, dashboard metrics, member contribution, reminders, weights |
 | Stage 6 | Deploy Hardening | Not Started | Write after Stage 5 | Production hosting, migration verification, extension smoke test, Railway checks |
 
@@ -149,7 +149,8 @@ visual rebuild.
 
 ## Stage 4: Prototype UI Wiring
 
-**Status:** Planned; implementation plans are awaiting execution review.
+**Status:** In Progress. Stage 4A is implemented and QA verified locally and
+against the Railway dev API. Stage 4B is approved for execution.
 
 **Detailed plans:**
 
@@ -226,6 +227,8 @@ extension handoff.
 - [x] Stage 3 detailed implementation plan written.
 - [x] Stage 3 implemented and verified.
 - [x] Stage 4 detailed implementation plan written.
+- [x] Stage 4A implemented and verified.
+- [ ] Stage 4B implemented and verified.
 - [ ] Stage 4 implemented and verified.
 - [ ] Stage 5 detailed implementation plan written.
 - [ ] Stage 5 implemented and verified.

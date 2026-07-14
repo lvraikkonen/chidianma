@@ -8,7 +8,10 @@
 
 **Tech Stack:** TypeScript 5.7, pnpm workspaces, Vite 6, Vitest 2, Chrome Manifest V3, native DOM APIs, `chrome.storage`, Web Locks, `chrome.alarms`, `@lunch/shared` contracts.
 
-**Status:** Review Requested
+**Status:** Implemented and QA Verified
+
+**QA evidence:** `qa/2026-07-10-extension-prototype-ui-wiring-stage4a.md`
+and `qa/2026-07-14-railway-dev-stage4a-qa.md`.
 
 ## Global Constraints
 
