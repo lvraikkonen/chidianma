@@ -1,24 +1,90 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
-const TOKEN_KEY = "lunchAdminSessionToken";
+import type { ApiErrorResponse } from "@lunch/shared";
 
-export function saveAdminToken(token: string): void {
-  window.localStorage.setItem(TOKEN_KEY, token);
+export interface AdminRequestContext {
+  apiBaseUrl: string;
+  token?: string | undefined;
+  signal?: AbortSignal | undefined;
 }
 
-export function getAdminToken(): string {
-  return window.localStorage.getItem(TOKEN_KEY) ?? "";
+export class AdminApiError extends Error {
+  readonly status?: number | undefined;
+  readonly code?: string | undefined;
+  readonly kind: "http" | "network" | "invalid-response";
+
+  constructor(input: {
+    kind: "http" | "network" | "invalid-response";
+    status?: number | undefined;
+    code?: string | undefined;
+    message?: string | undefined;
+  }) {
+    super(input.message ?? input.code ?? input.kind);
+    this.name = "AdminApiError";
+    this.kind = input.kind;
+    this.status = input.status;
+    this.code = input.code;
+  }
 }
 
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getAdminToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(options.headers ?? {})
+function safeMessage(message: string | undefined, token: string | undefined): string | undefined {
+  if (!message || !token) return message;
+  return message.split(token).join("[redacted]");
+}
+
+function requestHeaders(
+  input: HeadersInit | undefined,
+  token: string | undefined
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+  new Headers(input).forEach((value, key) => { headers[key] = value; });
+  if (!("content-type" in headers)) headers["content-type"] = "application/json";
+  if (token) headers.authorization = `Bearer ${token}`;
+  return headers;
+}
+
+export async function requestJson<T>(
+  path: string,
+  context: AdminRequestContext,
+  init: RequestInit = {}
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${context.apiBaseUrl}${path}`, {
+      ...init,
+      ...(context.signal ? { signal: context.signal } : {}),
+      headers: requestHeaders(init.headers, context.token)
+    });
+  } catch (error) {
+    throw new AdminApiError({
+      kind: "network",
+      message: safeMessage(
+        error instanceof Error ? error.message : "network_error",
+        context.token
+      )
+    });
+  }
+
+  if (!response.ok) {
+    let body: Partial<ApiErrorResponse> = {};
+    try {
+      body = await response.json() as Partial<ApiErrorResponse>;
+    } catch {
+      body = {};
     }
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json() as Promise<T>;
+    throw new AdminApiError({
+      kind: "http",
+      status: response.status,
+      code: body.error,
+      message: safeMessage(body.message ?? `HTTP ${response.status}`, context.token)
+    });
+  }
+
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new AdminApiError({
+      kind: "invalid-response",
+      status: response.status,
+      code: "invalid_json_response"
+    });
+  }
 }
