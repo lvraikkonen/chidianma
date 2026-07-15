@@ -117,6 +117,22 @@ export function App() {
     }
   }, [authState.kind, route]);
 
+  useEffect(() => {
+    if (route === "today") {
+      return () => {
+        requestGate.current.invalidate();
+        setTodayState({ kind: "loading" });
+      };
+    }
+    if (route === "restaurants") {
+      return () => {
+        requestGate.current.invalidate();
+        clearRestaurantView();
+      };
+    }
+    return;
+  }, [route]);
+
   const connectedState = authState.kind === "authenticated" || authState.kind === "switching"
     ? authState
     : null;
@@ -148,6 +164,8 @@ export function App() {
   useEffect(() => {
     if (!groupContext) return;
     if (todayState.kind === "session-expired") {
+      requestGate.current.invalidate();
+      clearPageState();
       void authController.handleGroupError(new AdminApiError({
         kind: "http",
         status: 401,
@@ -155,6 +173,8 @@ export function App() {
       }), groupContext.groupId);
     }
     if (todayState.kind === "forbidden") {
+      requestGate.current.invalidate();
+      clearPageState();
       void authController.handleGroupError(new AdminApiError({
         kind: "http",
         status: 403,
@@ -190,15 +210,38 @@ export function App() {
   }, [route, groupContext?.groupId, groupContext?.token, restaurantReload]);
 
   async function runActiveGroupMutation(operation: () => Promise<void>) {
-    const before = readAdminSession().activeGroupId;
+    const before = readAdminSession();
+    const beforeGroupId = before.activeGroupId;
+    const beforeToken = beforeGroupId
+      ? before.sessionsByGroupId[beforeGroupId]?.token
+      : undefined;
+    const reloadTodayOnFailure = route === "today" && todayState.kind === "loading";
+    const reloadRestaurantsOnFailure = route === "restaurants" && restaurantsLoading;
     requestGate.current.invalidate();
-    clearRestaurantView();
     await operation();
-    const after = readAdminSession().activeGroupId;
-    if (after && after !== before) requestGate.current.invalidate();
-    if (route === "restaurants" && after && after === before) {
+    const after = readAdminSession();
+    const afterGroupId = after.activeGroupId;
+    const afterToken = afterGroupId
+      ? after.sessionsByGroupId[afterGroupId]?.token
+      : undefined;
+    const nextAuthState = authController.getState();
+    const succeeded = Boolean(
+      afterGroupId
+      && (
+        afterGroupId !== beforeGroupId
+        || afterToken !== beforeToken
+        || (nextAuthState.kind === "authenticated" && !nextAuthState.error)
+      )
+    );
+    if (succeeded) {
+      requestGate.current.invalidate();
+      clearPageState();
+      setTodayReload((value) => value + 1);
       setRestaurantReload((value) => value + 1);
+      return;
     }
+    if (reloadTodayOnFailure) setTodayReload((value) => value + 1);
+    if (reloadRestaurantsOnFailure) setRestaurantReload((value) => value + 1);
   }
 
   async function handleCreateGroup(input: CreateGroupRequest) {
@@ -215,7 +258,7 @@ export function App() {
 
   function handleDisconnect() {
     requestGate.current.invalidate();
-    clearRestaurantView();
+    clearPageState();
     setGroupEntryOpen(false);
     authController.disconnect();
     navigate("login");
@@ -237,10 +280,7 @@ export function App() {
     if (!requestGate.current.isCurrent(request)) return;
     if (isMembershipInvalid(error)) {
       requestGate.current.invalidate();
-      setRestaurants([]);
-      setRestaurantsLoading(false);
-      setRestaurantEntryState({ kind: "idle" });
-      restaurantEntryController.current = null;
+      clearPageState();
       await authController.handleGroupError(error, context.groupId);
       return;
     }
@@ -256,6 +296,12 @@ export function App() {
     setRestaurantOperationError(undefined);
     setRestaurantEntryState({ kind: "idle" });
     restaurantEntryController.current = null;
+    restaurantGroupId.current = undefined;
+  }
+
+  function clearPageState() {
+    setTodayState({ kind: "loading" });
+    clearRestaurantView();
   }
 
   async function handleCreateRestaurantEntry(

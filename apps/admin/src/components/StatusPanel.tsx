@@ -7,7 +7,10 @@ export function StatusPanel(props: {
   action?: ReactNode;
 }) {
   return (
-    <section className={`status-panel ${props.tone ?? "neutral"}`} role="status">
+    <section
+      className={`status-panel ${props.tone ?? "neutral"}`}
+      role={props.tone === "error" ? "alert" : "status"}
+    >
       <div>
         <h2>{props.title}</h2>
         <p>{props.message}</p>

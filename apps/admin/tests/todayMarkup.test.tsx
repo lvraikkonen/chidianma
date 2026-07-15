@@ -123,6 +123,23 @@ describe("today page markup", () => {
   ])("renders explicit recovery for %j", (state, expected) => {
     expect(render(state)).toContain(expected);
   });
+
+  it("announces a failed refresh while preserving the prior batch", () => {
+    const html = render({
+      ...readyState(),
+      refreshError: "重新生成失败，仍显示上一批结果。"
+    });
+
+    expect(html).toContain("当前批次 #2");
+    expect(html).toContain("重新生成失败，仍显示上一批结果。");
+    expect(html).toContain('aria-live="polite"');
+  });
+
+  it("announces blocking recovery states as alerts", () => {
+    const html = render({ kind: "session-expired" });
+
+    expect(html).toContain('role="alert"');
+  });
 });
 
 function responseWith(

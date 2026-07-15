@@ -255,4 +255,35 @@ describe("auth model", () => {
       error: "操作没有完成，请检查网络后重试。"
     });
   });
+
+  it.each(["active_membership_required", "removed_member"])(
+    "exits the active group for membership error %s",
+    async (code) => {
+      const clearGroupSession = vi.fn();
+      const harness = authHarness({ overrides: { clearGroupSession } });
+      const controller = createAuthController(harness.dependencies);
+
+      await controller.handleGroupError(new AdminApiError({
+        kind: "http",
+        status: 403,
+        code
+      }), "group-1");
+
+      expect(clearGroupSession).toHaveBeenCalledWith("group-1");
+    }
+  );
+
+  it("keeps the session for an operation permission error", async () => {
+    const clearGroupSession = vi.fn();
+    const harness = authHarness({ overrides: { clearGroupSession } });
+    const controller = createAuthController(harness.dependencies);
+
+    await controller.handleGroupError(new AdminApiError({
+      kind: "http",
+      status: 403,
+      code: "restaurant_owner_required"
+    }), "group-1");
+
+    expect(clearGroupSession).not.toHaveBeenCalled();
+  });
 });
