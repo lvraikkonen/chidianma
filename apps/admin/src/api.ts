@@ -32,11 +32,14 @@ function safeMessage(message: string | undefined, token: string | undefined): st
 
 function requestHeaders(
   input: HeadersInit | undefined,
-  token: string | undefined
+  token: string | undefined,
+  hasBody: boolean
 ): Record<string, string> {
   const headers: Record<string, string> = {};
   new Headers(input).forEach((value, key) => { headers[key] = value; });
-  if (!("content-type" in headers)) headers["content-type"] = "application/json";
+  if (hasBody && !("content-type" in headers)) {
+    headers["content-type"] = "application/json";
+  }
   if (token) headers.authorization = `Bearer ${token}`;
   return headers;
 }
@@ -51,7 +54,11 @@ export async function requestJson<T>(
     response = await fetch(`${context.apiBaseUrl}${path}`, {
       ...init,
       ...(context.signal ? { signal: context.signal } : {}),
-      headers: requestHeaders(init.headers, context.token)
+      headers: requestHeaders(
+        init.headers,
+        context.token,
+        init.body !== undefined && init.body !== null
+      )
     });
   } catch (error) {
     throw new AdminApiError({

@@ -33,6 +33,28 @@ describe("admin api", () => {
     );
   });
 
+  it("omits the JSON content type for a request without a body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ refreshed: true })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestJson(
+      "/api/groups/group-1/session",
+      { apiBaseUrl: "https://lunch.example", token: "identity-token" },
+      { method: "POST" }
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lunch.example/api/groups/group-1/session",
+      {
+        method: "POST",
+        headers: { authorization: "Bearer identity-token" }
+      }
+    );
+  });
+
   it("preserves status and server code without leaking the token", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false,
