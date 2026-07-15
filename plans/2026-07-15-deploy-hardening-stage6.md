@@ -1,6 +1,6 @@
 # Stage 6 Deploy Hardening Implementation Plan
 
-Status: `In Progress`
+Status: `Done`
 
 Date: 2026-07-15
 
@@ -125,3 +125,8 @@ must not fall below the Stage 5 baseline.
 - Mark this plan and Roadmap `Done` only when every required gate passes.
 - If external access prevents Railway or Chrome QA, leave Stage 6 In Progress
   and report the exact remaining gate rather than claiming completion.
+
+Completion date: 2026-07-15
+
+QA handoff:
+[`qa/2026-07-15-deploy-hardening-stage6.md`](../qa/2026-07-15-deploy-hardening-stage6.md)

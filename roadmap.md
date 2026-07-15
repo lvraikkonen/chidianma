@@ -35,7 +35,7 @@ extension smoke testing.
 | Stage 3 | Today Recommendation Batch + Participation | Done | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md) | Core lunch loop plus minimal extension auth/storage/API client |
 | Stage 4 | Prototype UI Wiring | Done | [Stage 4A Extension](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)<br>[Stage 4B Admin](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
 | Stage 5 | Dashboard / Settings / Weights | Done | [Stage 5A Shared + Server](plans/2026-07-14-dashboard-settings-weights-stage5a.md)<br>[Stage 5B Admin](plans/2026-07-14-admin-dashboard-settings-stage5b.md)<br>[Stage 5C Extension](plans/2026-07-14-extension-history-reminders-stage5c.md) | Historical review, dashboard metrics, member contribution, reminders, weights |
-| Stage 6 | Deploy Hardening | In Progress | [`plans/2026-07-15-deploy-hardening-stage6.md`](plans/2026-07-15-deploy-hardening-stage6.md) | Production hosting, migration verification, extension smoke test, Railway checks |
+| Stage 6 | Deploy Hardening | Done | [`plans/2026-07-15-deploy-hardening-stage6.md`](plans/2026-07-15-deploy-hardening-stage6.md) | Production hosting, migration verification, extension smoke test, Railway checks |
 
 ## Planning Cadence
 
@@ -217,11 +217,14 @@ and manage group operations from real data.
 
 ## Stage 6: Deploy Hardening
 
-**Status:** In Progress. Design and implementation plan approved on 2026-07-15.
+**Status:** Done. Implementation, Railway fresh release, production Admin QA,
+and unpacked Extension QA completed on 2026-07-15.
 
 **Design:** [`specs/2026-07-15-deploy-hardening-stage6-design.md`](specs/2026-07-15-deploy-hardening-stage6-design.md)
 
 **Detailed plan:** [`plans/2026-07-15-deploy-hardening-stage6.md`](plans/2026-07-15-deploy-hardening-stage6.md)
+
+**QA handoff:** [`qa/2026-07-15-deploy-hardening-stage6.md`](qa/2026-07-15-deploy-hardening-stage6.md)
 
 **Goal:** Prepare the multi-group, prototype-aligned product for reliable
 deployment and manual extension validation.
@@ -262,4 +265,4 @@ extension handoff.
 - [x] Stage 5C implemented and verified.
 - [x] Stage 5 implemented and verified.
 - [x] Stage 6 detailed implementation plan written.
-- [ ] Stage 6 implemented and verified.
+- [x] Stage 6 implemented and verified.
