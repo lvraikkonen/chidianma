@@ -22,8 +22,16 @@ import {
   saveScheduledPrimaryReminder
 } from "./storage";
 
+function runBackgroundTask(label: string, task: Promise<void>): void {
+  void task.catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "unknown_error";
+    console.error(`[lunch-reminder] ${label}: ${message}`);
+  });
+}
+
 const runtime = createReminderRuntime({
   now: () => Date.now(),
+  notificationIconUrl: chrome.runtime.getURL("icon-128.png"),
   getStorageState,
   saveGroupSettingsCache,
   clearGroupSession,
@@ -35,7 +43,11 @@ const runtime = createReminderRuntime({
   clearPendingSecondReminder,
   getAlarm: (name) => chrome.alarms.get(name),
   createAlarm: async (name, scheduledFor) => {
-    await chrome.alarms.create(name, { when: scheduledFor });
+    const alarmInfo = {
+      when: scheduledFor,
+      persistAcrossSessions: true
+    };
+    await chrome.alarms.create(name, alarmInfo);
   },
   clearAlarm: (name) => chrome.alarms.clear(name),
   createNotification: async (id, options) => {
@@ -51,11 +63,11 @@ const runtime = createReminderRuntime({
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  void runtime.rescheduleAll();
+  runBackgroundTask("install reschedule failed", runtime.rescheduleAll());
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void runtime.ensureAlarms();
+  runBackgroundTask("startup restore failed", runtime.ensureAlarms());
 });
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -63,15 +75,15 @@ chrome.runtime.onMessage.addListener((message) => {
     message?.type === "settingsChanged"
     || message?.type === "reminderContextChanged"
   ) {
-    void runtime.rescheduleAll();
+    runBackgroundTask("context reschedule failed", runtime.rescheduleAll());
   }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === PRIMARY_ALARM_NAME) {
-    void runtime.handlePrimaryAlarm();
+    runBackgroundTask("primary handler failed", runtime.handlePrimaryAlarm());
   } else if (alarm.name === SECOND_ALARM_NAME) {
-    void runtime.handleSecondAlarm();
+    runBackgroundTask("second handler failed", runtime.handleSecondAlarm());
   }
 });
 
@@ -80,11 +92,11 @@ chrome.notifications.onClicked.addListener((notificationId) => {
     notificationId === PRIMARY_NOTIFICATION_ID
     || notificationId === SECOND_NOTIFICATION_ID
   ) {
-    void openRecommendationDetail();
+    runBackgroundTask("notification click failed", openRecommendationDetail());
   }
 });
 
-void runtime.ensureAlarms();
+runBackgroundTask("worker restore failed", runtime.restoreWorkerAlarms());
 
 async function openRecommendationDetail(): Promise<void> {
   if (chrome.action.openPopup) {

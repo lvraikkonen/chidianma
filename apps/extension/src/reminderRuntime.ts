@@ -32,6 +32,7 @@ interface AlarmSnapshot {
 
 export interface ReminderRuntimeDependencies {
   now: () => number;
+  notificationIconUrl: string;
   getStorageState: () => Promise<ExtensionStorageShape>;
   saveGroupSettingsCache: (
     groupId: string,
@@ -120,7 +121,8 @@ function contextForEffectiveSettings(
 
 function notificationOptions(
   recommendation: ExtensionRecommendationResponse,
-  effective: EffectiveReminderSettings
+  effective: EffectiveReminderSettings,
+  iconUrl: string
 ): chrome.notifications.NotificationOptions<true> {
   const names = recommendation.items
     .map((item) => item.restaurantName)
@@ -134,7 +136,7 @@ function notificationOptions(
   ].filter((value): value is string => Boolean(value)).join(" · ");
   return {
     type: "basic",
-    iconUrl: "icon-128.png",
+    iconUrl,
     title: effective.notificationTitle,
     message: names || "还没有可用推荐，先去管理页添加几家饭馆。",
     priority: 1,
@@ -143,11 +145,12 @@ function notificationOptions(
 }
 
 function secondNotificationOptions(
-  effective: EffectiveReminderSettings
+  effective: EffectiveReminderSettings,
+  iconUrl: string
 ): chrome.notifications.NotificationOptions<true> {
   return {
     type: "basic",
-    iconUrl: "icon-128.png",
+    iconUrl,
     title: effective.notificationTitle,
     message: "还没人决定午饭，打开看看今天的推荐吧。",
     priority: 1,
@@ -197,14 +200,93 @@ export function createReminderRuntime(
     await dependencies.clearPendingSecondReminder();
   }
 
+  function alarmMatches(
+    alarm: AlarmSnapshot | undefined,
+    scheduledFor: number
+  ): boolean {
+    return alarm?.scheduledTime === scheduledFor;
+  }
+
+  async function ensureActualAlarm(
+    name: string,
+    scheduledFor: number
+  ): Promise<void> {
+    const existing = await dependencies.getAlarm(name);
+    if (alarmMatches(existing, scheduledFor)) return;
+    if (existing) await dependencies.clearAlarm(name);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await dependencies.createAlarm(name, scheduledFor);
+      const created = await dependencies.getAlarm(name);
+      if (alarmMatches(created, scheduledFor)) return;
+    }
+    throw new Error(`alarm_creation_failed:${name}`);
+  }
+
+  async function reconcilePrimaryAfterStaleAttempt(
+    attempted: ScheduledPrimaryReminder
+  ): Promise<void> {
+    const current = await dependencies.getStorageState();
+    const latest = current.scheduledPrimaryReminder;
+    if (
+      latest
+      && isStoredReminderContextCurrent(current, {
+        revision: latest.revision,
+        ...(latest.mode === "group" ? { groupId: latest.groupId } : {})
+      })
+    ) {
+      if (latest.scheduledFor > dependencies.now()) {
+        await ensureActualAlarm(PRIMARY_ALARM_NAME, latest.scheduledFor);
+      }
+      return;
+    }
+    const alarm = await dependencies.getAlarm(PRIMARY_ALARM_NAME);
+    if (alarmMatches(alarm, attempted.scheduledFor)) {
+      await dependencies.clearAlarm(PRIMARY_ALARM_NAME);
+    }
+  }
+
+  async function reconcileSecondAfterStaleAttempt(
+    attempted: PendingSecondReminder
+  ): Promise<void> {
+    const current = await dependencies.getStorageState();
+    const latest = current.pendingSecondReminder;
+    if (
+      latest
+      && isStoredReminderContextCurrent(current, {
+        revision: latest.revision,
+        groupId: latest.groupId
+      })
+    ) {
+      if (latest.scheduledFor > dependencies.now()) {
+        await ensureActualAlarm(SECOND_ALARM_NAME, latest.scheduledFor);
+      }
+      return;
+    }
+    const alarm = await dependencies.getAlarm(SECOND_ALARM_NAME);
+    if (alarmMatches(alarm, attempted.scheduledFor)) {
+      await dependencies.clearAlarm(SECOND_ALARM_NAME);
+    }
+  }
+
   async function createVerifiedPrimaryAlarm(
     context: ScheduledPrimaryReminder
   ): Promise<void> {
     await dependencies.saveScheduledPrimaryReminder(context);
-    await dependencies.createAlarm(PRIMARY_ALARM_NAME, context.scheduledFor);
+    try {
+      await ensureActualAlarm(PRIMARY_ALARM_NAME, context.scheduledFor);
+    } catch (error) {
+      const failed = await dependencies.getStorageState();
+      if (samePrimaryContext(failed.scheduledPrimaryReminder, context)) {
+        await dependencies.clearScheduledPrimaryReminder();
+        throw error;
+      }
+      await reconcilePrimaryAfterStaleAttempt(context);
+      return;
+    }
     const current = await dependencies.getStorageState();
     if (!samePrimaryContext(current.scheduledPrimaryReminder, context)) {
-      await dependencies.clearAlarm(PRIMARY_ALARM_NAME);
+      await reconcilePrimaryAfterStaleAttempt(context);
     }
   }
 
@@ -212,10 +294,20 @@ export function createReminderRuntime(
     context: PendingSecondReminder
   ): Promise<void> {
     await dependencies.savePendingSecondReminder(context);
-    await dependencies.createAlarm(SECOND_ALARM_NAME, context.scheduledFor);
+    try {
+      await ensureActualAlarm(SECOND_ALARM_NAME, context.scheduledFor);
+    } catch (error) {
+      const failed = await dependencies.getStorageState();
+      if (sameSecondContext(failed.pendingSecondReminder, context)) {
+        await dependencies.clearPendingSecondReminder();
+        throw error;
+      }
+      await reconcileSecondAfterStaleAttempt(context);
+      return;
+    }
     const current = await dependencies.getStorageState();
     if (!sameSecondContext(current.pendingSecondReminder, context)) {
-      await dependencies.clearAlarm(SECOND_ALARM_NAME);
+      await reconcileSecondAfterStaleAttempt(context);
     }
   }
 
@@ -247,8 +339,7 @@ export function createReminderRuntime(
     name: string,
     scheduledFor: number
   ): Promise<void> {
-    const existing = await dependencies.getAlarm(name);
-    if (!existing) await dependencies.createAlarm(name, scheduledFor);
+    await ensureActualAlarm(name, scheduledFor);
   }
 
   async function ensureAlarms(): Promise<void> {
@@ -286,6 +377,34 @@ export function createReminderRuntime(
     }
   }
 
+  async function restoreWorkerAlarms(): Promise<void> {
+    const now = dependencies.now();
+    const state = await dependencies.getStorageState();
+    const primary = state.scheduledPrimaryReminder;
+    if (
+      primary
+      && primary.scheduledFor > now
+      && isStoredReminderContextCurrent(state, {
+        revision: primary.revision,
+        ...(primary.mode === "group" ? { groupId: primary.groupId } : {})
+      })
+    ) {
+      await restoreFutureAlarm(PRIMARY_ALARM_NAME, primary.scheduledFor);
+    }
+
+    const second = state.pendingSecondReminder;
+    if (
+      second
+      && second.scheduledFor > now
+      && isStoredReminderContextCurrent(state, {
+        revision: second.revision,
+        groupId: second.groupId
+      })
+    ) {
+      await restoreFutureAlarm(SECOND_ALARM_NAME, second.scheduledFor);
+    }
+  }
+
   async function handlePrimaryAlarm(): Promise<void> {
     const claimed = await dependencies.claimScheduledPrimaryReminder();
     if (!claimed) return;
@@ -310,7 +429,11 @@ export function createReminderRuntime(
       ) return;
       await dependencies.createNotification(
         PRIMARY_NOTIFICATION_ID,
-        notificationOptions(recommendation, effective)
+        notificationOptions(
+          recommendation,
+          effective,
+          dependencies.notificationIconUrl
+        )
       );
 
       if (
@@ -366,18 +489,33 @@ export function createReminderRuntime(
       ) return;
       await dependencies.createNotification(
         SECOND_NOTIFICATION_ID,
-        secondNotificationOptions(effective)
+        secondNotificationOptions(effective, dependencies.notificationIconUrl)
       );
     } catch {
       // The second reminder is deliberately best effort and never retries.
     }
   }
 
+  let operationTail: Promise<void> = Promise.resolve();
+
+  function runSerialized<T>(operation: () => Promise<T>): Promise<T> {
+    const result = operationTail.then(
+      () => operation(),
+      () => operation()
+    );
+    operationTail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
+
   return {
-    ensureAlarms,
-    rescheduleAll,
-    scheduleNextPrimary,
-    handlePrimaryAlarm,
-    handleSecondAlarm
+    ensureAlarms: () => runSerialized(ensureAlarms),
+    restoreWorkerAlarms: () => runSerialized(restoreWorkerAlarms),
+    rescheduleAll: () => runSerialized(rescheduleAll),
+    scheduleNextPrimary: () => runSerialized(scheduleNextPrimary),
+    handlePrimaryAlarm: () => runSerialized(handlePrimaryAlarm),
+    handleSecondAlarm: () => runSerialized(handleSecondAlarm)
   };
 }

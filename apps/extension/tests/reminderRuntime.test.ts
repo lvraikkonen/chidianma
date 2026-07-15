@@ -135,6 +135,7 @@ function runtimeFixture(initial = connectedState()) {
 
   const dependencies: ReminderRuntimeDependencies = {
     now: vi.fn(() => Date.parse("2026-07-14T03:00:00.000Z")),
+    notificationIconUrl: "chrome-extension://test/icon-128.png",
     getStorageState: vi.fn(async () => structuredClone(state)),
     saveGroupSettingsCache: vi.fn(async (_groupId, response, cachedAt) => {
       state.groupSettingsCacheByGroupId[response.groupId] = { response, cachedAt };
@@ -272,7 +273,10 @@ describe("Manifest V3 reminder runtime", () => {
 
     expect(fixture.notifications).toContainEqual(expect.objectContaining({
       id: PRIMARY_NOTIFICATION_ID,
-      options: expect.objectContaining({ title: "午饭时间" })
+      options: expect.objectContaining({
+        title: "午饭时间",
+        iconUrl: "chrome-extension://test/icon-128.png"
+      })
     }));
     expect(fixture.readState().pendingSecondReminder).toMatchObject({
       revision: 1,
@@ -445,6 +449,44 @@ describe("Manifest V3 reminder runtime", () => {
     );
   });
 
+  it("leaves a just-due primary context for the waking alarm event to claim", async () => {
+    const state = connectedState();
+    state.scheduledPrimaryReminder = {
+      ...scheduledPrimary(),
+      scheduledFor: Date.parse("2026-07-14T03:00:00.000Z")
+    };
+    const fixture = runtimeFixture(state);
+    const runtime = createReminderRuntime(fixture.dependencies);
+
+    await runtime.restoreWorkerAlarms();
+
+    expect(fixture.readState().scheduledPrimaryReminder).toEqual(
+      state.scheduledPrimaryReminder
+    );
+    await runtime.handlePrimaryAlarm();
+    expect(fixture.notifications.some(({ id }) => id === PRIMARY_NOTIFICATION_ID))
+      .toBe(true);
+  });
+
+  it("leaves a just-due second context for the waking alarm event to claim", async () => {
+    const state = connectedState();
+    state.pendingSecondReminder = {
+      ...pendingSecond(),
+      scheduledFor: Date.parse("2026-07-14T03:00:00.000Z")
+    };
+    const fixture = runtimeFixture(state);
+    const runtime = createReminderRuntime(fixture.dependencies);
+
+    await runtime.restoreWorkerAlarms();
+
+    expect(fixture.readState().pendingSecondReminder).toEqual(
+      state.pendingSecondReminder
+    );
+    await runtime.handleSecondAlarm();
+    expect(fixture.notifications.some(({ id }) => id === SECOND_NOTIFICATION_ID))
+      .toBe(true);
+  });
+
   it("drops expired contexts on startup without backfilling notifications", async () => {
     const state = connectedState();
     state.scheduledPrimaryReminder = {
@@ -483,5 +525,101 @@ describe("Manifest V3 reminder runtime", () => {
     await runtime.rescheduleAll();
 
     expect(fixture.alarms.has(PRIMARY_ALARM_NAME)).toBe(false);
+  });
+
+  it("keeps a newer primary alarm when an older scheduling attempt loses the race", async () => {
+    const fixture = runtimeFixture();
+    let replaceAfterCreatedCheck = true;
+    vi.mocked(fixture.dependencies.getAlarm).mockImplementation(async (name) => {
+      const scheduledTime = fixture.alarms.get(name);
+      if (scheduledTime === undefined) return undefined;
+      const snapshot = { name, scheduledTime };
+      if (name === PRIMARY_ALARM_NAME && replaceAfterCreatedCheck) {
+        replaceAfterCreatedCheck = false;
+        const newerScheduledFor = scheduledTime + 60_000;
+        const next = fixture.readState();
+        next.reminderRevision += 1;
+        next.scheduledPrimaryReminder = {
+          revision: next.reminderRevision,
+          mode: "group",
+          groupId: "group-1",
+          scheduledFor: newerScheduledFor
+        };
+        fixture.writeState(next);
+        fixture.alarms.set(name, newerScheduledFor);
+      }
+      return snapshot;
+    });
+    const runtime = createReminderRuntime(fixture.dependencies);
+
+    await runtime.rescheduleAll();
+
+    expect(fixture.alarms.get(PRIMARY_ALARM_NAME)).toBe(
+      fixture.readState().scheduledPrimaryReminder?.scheduledFor
+    );
+  });
+
+  it("serializes overlapping reminder reschedules", async () => {
+    const fixture = runtimeFixture();
+    let releaseFirstClear!: () => void;
+    const firstClear = new Promise<void>((resolve) => {
+      releaseFirstClear = resolve;
+    });
+    vi.mocked(fixture.dependencies.clearNotification)
+      .mockImplementationOnce(async () => {
+        await firstClear;
+        return true;
+      })
+      .mockResolvedValue(true);
+    const runtime = createReminderRuntime(fixture.dependencies);
+
+    const first = runtime.rescheduleAll();
+    await vi.waitFor(() => {
+      expect(fixture.dependencies.clearNotification).toHaveBeenCalledTimes(1);
+    });
+    const second = runtime.rescheduleAll();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fixture.dependencies.clearNotification).toHaveBeenCalledTimes(1);
+    releaseFirstClear();
+    await Promise.all([first, second]);
+    expect(fixture.dependencies.clearNotification).toHaveBeenCalledTimes(4);
+  });
+
+  it("retries when Chrome reports no alarm after creation", async () => {
+    const fixture = runtimeFixture();
+    let createCount = 0;
+    vi.mocked(fixture.dependencies.createAlarm).mockImplementation(async (
+      name,
+      scheduledFor
+    ) => {
+      createCount += 1;
+      if (createCount > 1) fixture.alarms.set(name, scheduledFor);
+    });
+    const runtime = createReminderRuntime(fixture.dependencies);
+
+    await runtime.rescheduleAll();
+
+    expect(fixture.dependencies.createAlarm).toHaveBeenCalledTimes(2);
+    expect(fixture.alarms.get(PRIMARY_ALARM_NAME)).toBe(
+      fixture.readState().scheduledPrimaryReminder?.scheduledFor
+    );
+  });
+
+  it("replaces a future Chrome alarm whose scheduled time mismatches storage", async () => {
+    const state = connectedState();
+    state.scheduledPrimaryReminder = scheduledPrimary();
+    const fixture = runtimeFixture(state);
+    fixture.alarms.set(
+      PRIMARY_ALARM_NAME,
+      scheduledPrimary().scheduledFor + 60_000
+    );
+    const runtime = createReminderRuntime(fixture.dependencies);
+
+    await runtime.ensureAlarms();
+
+    expect(fixture.alarms.get(PRIMARY_ALARM_NAME)).toBe(
+      scheduledPrimary().scheduledFor
+    );
   });
 });
