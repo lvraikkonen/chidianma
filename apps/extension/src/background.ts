@@ -1,86 +1,90 @@
-import { LUNCH_HEADLINE } from "@lunch/shared";
-import { getNextAlarmTime } from "./alarmSchedule";
+import { getPrimaryRecommendationsForStorage } from "./recommendationClient";
 import {
-  ensureGroupTodayRecommendations,
-  fetchTodayRecommendations,
-  isGroupResponse
-} from "./recommendationClient";
-import { getSettings } from "./storage";
+  PRIMARY_ALARM_NAME,
+  PRIMARY_NOTIFICATION_ID,
+  SECOND_ALARM_NAME,
+  SECOND_NOTIFICATION_ID,
+  createReminderRuntime
+} from "./reminderRuntime";
+import {
+  getGroupSettingsForContext,
+  getTodayParticipationForContext
+} from "./stage5Client";
+import {
+  claimPendingSecondReminder,
+  claimScheduledPrimaryReminder,
+  clearGroupSession,
+  clearPendingSecondReminder,
+  clearScheduledPrimaryReminder,
+  getStorageState,
+  saveGroupSettingsCache,
+  savePendingSecondReminder,
+  saveScheduledPrimaryReminder
+} from "./storage";
 
-const ALARM_NAME = "lunch-reminder";
-const NOTIFICATION_ID = "today-lunch";
+const runtime = createReminderRuntime({
+  now: () => Date.now(),
+  getStorageState,
+  saveGroupSettingsCache,
+  clearGroupSession,
+  saveScheduledPrimaryReminder,
+  claimScheduledPrimaryReminder,
+  clearScheduledPrimaryReminder,
+  savePendingSecondReminder,
+  claimPendingSecondReminder,
+  clearPendingSecondReminder,
+  getAlarm: (name) => chrome.alarms.get(name),
+  createAlarm: async (name, scheduledFor) => {
+    await chrome.alarms.create(name, { when: scheduledFor });
+  },
+  clearAlarm: (name) => chrome.alarms.clear(name),
+  createNotification: async (id, options) => {
+    await chrome.notifications.create(id, options);
+  },
+  clearNotification: async (id) => {
+    await chrome.notifications.clear(id);
+    return true;
+  },
+  getGroupSettingsForContext,
+  getPrimaryRecommendationsForStorage,
+  getTodayParticipationForContext
+});
 
 chrome.runtime.onInstalled.addListener(() => {
-  void scheduleLunchAlarm();
+  void runtime.rescheduleAll();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void ensureLunchAlarm();
+  void runtime.ensureAlarms();
 });
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === "settingsChanged") {
-    void scheduleLunchAlarm();
+  if (
+    message?.type === "settingsChanged"
+    || message?.type === "reminderContextChanged"
+  ) {
+    void runtime.rescheduleAll();
   }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== ALARM_NAME) return;
-  void showLunchNotification()
-    .catch((error) => {
-      console.error("Failed to show lunch notification", error);
-    })
-    .finally(() => {
-      void scheduleLunchAlarm();
-    });
+  if (alarm.name === PRIMARY_ALARM_NAME) {
+    void runtime.handlePrimaryAlarm();
+  } else if (alarm.name === SECOND_ALARM_NAME) {
+    void runtime.handleSecondAlarm();
+  }
 });
 
 chrome.notifications.onClicked.addListener((notificationId) => {
-  if (notificationId !== NOTIFICATION_ID) return;
-  void openRecommendationDetail();
+  if (
+    notificationId === PRIMARY_NOTIFICATION_ID
+    || notificationId === SECOND_NOTIFICATION_ID
+  ) {
+    void openRecommendationDetail();
+  }
 });
 
-void ensureLunchAlarm();
-
-export async function ensureLunchAlarm(): Promise<void> {
-  const existing = await chrome.alarms.get(ALARM_NAME);
-  if (!existing) {
-    await scheduleLunchAlarm();
-  }
-}
-
-export async function scheduleLunchAlarm(): Promise<void> {
-  const settings = await getSettings();
-  await chrome.alarms.clear(ALARM_NAME);
-  if (!settings.enabled) return;
-  await chrome.alarms.create(ALARM_NAME, {
-    when: getNextAlarmTime(new Date(), settings.reminderTime)
-  });
-}
-
-export async function showLunchNotification(): Promise<void> {
-  const recommendation = await ensureGroupTodayRecommendations().catch(() =>
-    fetchTodayRecommendations()
-  );
-  const names = recommendation.items.map((item) => item.restaurantName).join("、");
-  const weatherSummary = isGroupResponse(recommendation)
-    ? recommendation.weather?.summary
-    : recommendation.weatherSummary;
-
-  const options: chrome.notifications.NotificationOptions<true> = {
-    type: "basic",
-    iconUrl: "icon-128.png",
-    title: LUNCH_HEADLINE,
-    message: names || "还没有可用推荐，先去管理页添加几家饭馆。",
-    priority: 1
-  };
-
-  if (weatherSummary) {
-    options.contextMessage = weatherSummary;
-  }
-
-  await chrome.notifications.create(NOTIFICATION_ID, options);
-}
+void runtime.ensureAlarms();
 
 async function openRecommendationDetail(): Promise<void> {
   if (chrome.action.openPopup) {
@@ -91,7 +95,5 @@ async function openRecommendationDetail(): Promise<void> {
       // Fall through to opening a detail tab.
     }
   }
-  await chrome.tabs.create({
-    url: chrome.runtime.getURL("detail.html")
-  });
+  await chrome.tabs.create({ url: chrome.runtime.getURL("detail.html") });
 }

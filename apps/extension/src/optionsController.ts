@@ -2,12 +2,22 @@ import type {
   CreateGroupRequest,
   CreateGroupResponse,
   CreateIdentityResponse,
+  GroupSettingsResponse,
   GroupsListResponse,
   JoinGroupResponse,
+  PersonalLunchHistoryResponse,
   RefreshGroupSessionResponse
 } from "@lunch/shared";
 import { ExtensionApiError } from "./apiClient";
+import type { ReminderDraft } from "./reminderFormModel";
+import type { ExtensionGroupContext } from "./stage5Client";
 import type { ExtensionStorageShape } from "./storage";
+
+export type OptionsResource<T> =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; data: T }
+  | { status: "error"; message: string };
 
 export type OptionsViewState =
   | { kind: "loading"; storage: ExtensionStorageShape }
@@ -22,6 +32,8 @@ export type OptionsViewState =
     inviteCode?: string | undefined;
     pendingGroupId?: string | undefined;
     error?: string | undefined;
+    groupSettings?: OptionsResource<GroupSettingsResponse> | undefined;
+    personalHistory?: OptionsResource<PersonalLunchHistoryResponse> | undefined;
   };
 
 export interface OptionsControllerDependencies {
@@ -61,6 +73,23 @@ export interface OptionsControllerDependencies {
   }) => Promise<void>;
   replaceApiBaseUrl: (apiBaseUrl: string) => Promise<void>;
   disconnectIdentity: () => Promise<void>;
+  getGroupSettingsForContext?: (
+    context: ExtensionGroupContext
+  ) => Promise<GroupSettingsResponse>;
+  getPersonalHistoryForContext?: (
+    context: ExtensionGroupContext
+  ) => Promise<PersonalLunchHistoryResponse>;
+  saveGroupSettingsCache?: (
+    groupId: string,
+    response: GroupSettingsResponse,
+    cachedAt: string
+  ) => Promise<void>;
+  clearGroupSession?: (groupId: string) => Promise<void>;
+  saveGroupReminderOverride?: (
+    groupId: string,
+    input: ReminderDraft
+  ) => Promise<void>;
+  clearGroupReminderOverride?: (groupId: string) => Promise<void>;
   render: (state: OptionsViewState) => void;
 }
 
@@ -86,11 +115,15 @@ function clearConnectionState(
     sessionsByGroupId: {},
     groupSummariesById: {},
     lastRecommendationsByGroupId: {},
-    localReminderOverridesByGroupId: {}
+    localReminderOverridesByGroupId: {},
+    groupSettingsCacheByGroupId: {},
+    reminderRevision: storage.reminderRevision + 1
   };
   delete cleared.activeGroupId;
   delete cleared.identityDisplayName;
   delete cleared.identityToken;
+  delete cleared.scheduledPrimaryReminder;
+  delete cleared.pendingSecondReminder;
   return cleared;
 }
 
@@ -101,6 +134,12 @@ function normalizeApiBaseUrl(apiBaseUrl: string): string {
 export function createOptionsController(
   dependencies: OptionsControllerDependencies
 ) {
+  let generation = 0;
+  let refreshFlight: {
+    generation: number;
+    groupId: string;
+    promise: Promise<ExtensionGroupContext>;
+  } | undefined;
   let current: OptionsViewState = {
     kind: "loading",
     storage: {
@@ -111,13 +150,254 @@ export function createOptionsController(
       sessionsByGroupId: {},
       groupSummariesById: {},
       lastRecommendationsByGroupId: {},
-      localReminderOverridesByGroupId: {}
+      localReminderOverridesByGroupId: {},
+      groupSettingsCacheByGroupId: {},
+      reminderRevision: 0
     }
   };
 
   function commit(next: OptionsViewState): void {
     current = next;
     dependencies.render(next);
+  }
+
+  function getGroupContext(
+    storage: ExtensionStorageShape,
+    expectedGroupId?: string
+  ): ExtensionGroupContext | null {
+    const groupId = storage.activeGroupId;
+    if (!groupId || (expectedGroupId && groupId !== expectedGroupId)) return null;
+    const membershipId = storage.groupSummariesById[groupId]?.membershipId;
+    const groupSessionToken = storage.sessionsByGroupId[groupId]?.token;
+    if (!membershipId || !groupSessionToken) return null;
+    return {
+      apiBaseUrl: storage.apiBaseUrl,
+      groupId,
+      membershipId,
+      groupSessionToken
+    };
+  }
+
+  function isCurrentContext(
+    loadGeneration: number,
+    context: ExtensionGroupContext
+  ): boolean {
+    if (generation !== loadGeneration || current.kind !== "ready") return false;
+    const active = getGroupContext(current.storage, context.groupId);
+    return active?.apiBaseUrl === context.apiBaseUrl
+      && active.membershipId === context.membershipId;
+  }
+
+  function updateResource(
+    loadGeneration: number,
+    context: ExtensionGroupContext,
+    key: "groupSettings" | "personalHistory",
+    resource: OptionsResource<GroupSettingsResponse>
+      | OptionsResource<PersonalLunchHistoryResponse>,
+    storage?: ExtensionStorageShape
+  ): void {
+    if (!isCurrentContext(loadGeneration, context) || current.kind !== "ready") {
+      return;
+    }
+    commit({
+      ...current,
+      ...(storage ? { storage } : {}),
+      [key]: resource
+    });
+  }
+
+  async function clearUnavailableSession(
+    loadGeneration: number,
+    context: ExtensionGroupContext,
+    resyncGroups = false
+  ): Promise<void> {
+    if (generation !== loadGeneration) return;
+    await dependencies.clearGroupSession?.(context.groupId);
+    if (resyncGroups) {
+      const latest = await dependencies.loadStorage().catch(() => undefined);
+      if (latest?.identityToken && generation === loadGeneration) {
+        try {
+          const groups = await dependencies.listGroups(
+            latest.apiBaseUrl,
+            latest.identityToken
+          );
+          if (generation === loadGeneration) {
+            await dependencies.syncGroupSummaries(groups.groups);
+          }
+        } catch {
+          // Session cleanup remains authoritative when group resync is offline.
+        }
+      }
+    }
+    const storage = await dependencies.loadStorage().catch(() => undefined);
+    if (
+      storage
+      && generation === loadGeneration
+      && current.kind === "ready"
+      && current.storage.activeGroupId === context.groupId
+    ) {
+      commit({
+        ...current,
+        storage,
+        error: "身份连接已失效，请重新连接当前小组。"
+      });
+    }
+  }
+
+  async function refreshResourceContext(
+    loadGeneration: number,
+    failedContext: ExtensionGroupContext
+  ): Promise<ExtensionGroupContext> {
+    const latest = await dependencies.loadStorage();
+    if (generation !== loadGeneration) throw new Error("stale_generation");
+    const currentContext = getGroupContext(latest, failedContext.groupId);
+    if (!currentContext) throw new Error("missing_group_session");
+    if (currentContext.groupSessionToken !== failedContext.groupSessionToken) {
+      return currentContext;
+    }
+
+    if (
+      refreshFlight?.generation === loadGeneration
+      && refreshFlight.groupId === failedContext.groupId
+    ) {
+      return refreshFlight.promise;
+    }
+
+    const identityToken = latest.identityToken;
+    if (!identityToken) throw new Error("missing_identity_token");
+    const promise = (async () => {
+      try {
+        const response = await dependencies.refreshSession(
+          failedContext.apiBaseUrl,
+          identityToken,
+          failedContext.groupId
+        );
+        if (generation !== loadGeneration) throw new Error("stale_generation");
+        await dependencies.saveGroupConnection(response);
+        const refreshed = await dependencies.loadStorage();
+        const context = getGroupContext(refreshed, failedContext.groupId);
+        if (!context || generation !== loadGeneration) {
+          throw new Error("stale_generation");
+        }
+        return context;
+      } catch (error) {
+        if (error instanceof ExtensionApiError && error.status === 401) {
+          await clearUnavailableSession(loadGeneration, failedContext);
+        }
+        throw error;
+      }
+    })();
+    refreshFlight = {
+      generation: loadGeneration,
+      groupId: failedContext.groupId,
+      promise
+    };
+    try {
+      return await promise;
+    } finally {
+      if (refreshFlight?.promise === promise) refreshFlight = undefined;
+    }
+  }
+
+  async function requestResource<T>(
+    loadGeneration: number,
+    context: ExtensionGroupContext,
+    request: (context: ExtensionGroupContext) => Promise<T>
+  ): Promise<{ context: ExtensionGroupContext; data: T }> {
+    try {
+      return { context, data: await request(context) };
+    } catch (error) {
+      if (!(error instanceof ExtensionApiError) || error.status !== 401) throw error;
+      const refreshed = await refreshResourceContext(loadGeneration, context);
+      return { context: refreshed, data: await request(refreshed) };
+    }
+  }
+
+  async function handleResourceFailure(
+    loadGeneration: number,
+    context: ExtensionGroupContext,
+    error: unknown
+  ): Promise<void> {
+    if (
+      error instanceof ExtensionApiError
+      && error.status === 403
+      && ["removed_member", "active_membership_required"].includes(error.code ?? "")
+    ) {
+      await clearUnavailableSession(loadGeneration, context, true);
+    }
+  }
+
+  async function loadGroupSettingsResource(
+    loadGeneration: number,
+    context: ExtensionGroupContext
+  ): Promise<void> {
+    const request = dependencies.getGroupSettingsForContext;
+    if (!request) return;
+    try {
+      const result = await requestResource(loadGeneration, context, request);
+      if (!isCurrentContext(loadGeneration, result.context)) return;
+      await dependencies.saveGroupSettingsCache?.(
+        result.context.groupId,
+        result.data,
+        new Date().toISOString()
+      );
+      if (!isCurrentContext(loadGeneration, result.context)) return;
+      const storage = await dependencies.loadStorage();
+      updateResource(
+        loadGeneration,
+        result.context,
+        "groupSettings",
+        { status: "ready", data: result.data },
+        storage
+      );
+    } catch (error) {
+      await handleResourceFailure(loadGeneration, context, error);
+      updateResource(loadGeneration, context, "groupSettings", {
+        status: "error",
+        message: "加载小组提醒默认值失败，请重试。"
+      });
+    }
+  }
+
+  async function loadPersonalHistoryResource(
+    loadGeneration: number,
+    context: ExtensionGroupContext
+  ): Promise<void> {
+    const request = dependencies.getPersonalHistoryForContext;
+    if (!request) return;
+    try {
+      const result = await requestResource(loadGeneration, context, request);
+      updateResource(loadGeneration, result.context, "personalHistory", {
+        status: "ready",
+        data: result.data
+      });
+    } catch (error) {
+      await handleResourceFailure(loadGeneration, context, error);
+      updateResource(loadGeneration, context, "personalHistory", {
+        status: "error",
+        message: "加载个人午饭记录失败，请重试。"
+      });
+    }
+  }
+
+  async function loadStage5Resources(
+    loadGeneration: number,
+    storage: ExtensionStorageShape
+  ): Promise<void> {
+    const context = getGroupContext(storage);
+    if (!context || current.kind !== "ready" || generation !== loadGeneration) return;
+    const hasSettings = Boolean(dependencies.getGroupSettingsForContext);
+    const hasHistory = Boolean(dependencies.getPersonalHistoryForContext);
+    if (!hasSettings && !hasHistory) return;
+    commit({
+      ...current,
+      ...(hasSettings ? { groupSettings: { status: "loading" } as const } : {}),
+      ...(hasHistory ? { personalHistory: { status: "loading" } as const } : {})
+    });
+    await Promise.all([
+      loadGroupSettingsResource(loadGeneration, context),
+      loadPersonalHistoryResource(loadGeneration, context)
+    ]);
   }
 
   function renderStorageReadError(inviteCode?: string): void {
@@ -152,8 +432,9 @@ export function createOptionsController(
   }
 
   async function load(inviteCode?: string): Promise<void> {
+    const loadGeneration = ++generation;
     const storage = await readStorage(inviteCode);
-    if (!storage) return;
+    if (!storage || generation !== loadGeneration) return;
     commit({ kind: "loading", storage });
     if (!storage.identityToken) {
       commit({ kind: "identity-required", storage });
@@ -164,14 +445,18 @@ export function createOptionsController(
         storage.apiBaseUrl,
         storage.identityToken
       );
+      if (generation !== loadGeneration) return;
       await dependencies.syncGroupSummaries(response.groups);
       const synced = await dependencies.loadStorage();
+      if (generation !== loadGeneration) return;
       commit({
         kind: "ready",
         storage: synced,
         ...(inviteCode ? { inviteCode } : {})
       });
+      await loadStage5Resources(loadGeneration, synced);
     } catch (error) {
+      if (generation !== loadGeneration) return;
       commit({
         kind: "ready",
         storage,
@@ -182,6 +467,7 @@ export function createOptionsController(
   }
 
   async function createIdentity(displayName: string): Promise<void> {
+    generation += 1;
     const storage = await readStorage();
     if (!storage) return;
     commit({ kind: "loading", storage });
@@ -205,6 +491,7 @@ export function createOptionsController(
   }
 
   async function createGroup(input: CreateGroupRequest): Promise<void> {
+    generation += 1;
     const storage = await readStorage();
     if (!storage) return;
     if (!storage.identityToken) {
@@ -237,6 +524,7 @@ export function createOptionsController(
   }
 
   async function joinGroup(inviteCode: string): Promise<void> {
+    generation += 1;
     const storage = await readStorage();
     if (!storage) return;
     if (!storage.identityToken) {
@@ -262,6 +550,7 @@ export function createOptionsController(
   }
 
   async function switchGroup(groupId: string): Promise<void> {
+    generation += 1;
     const storage = await readStorage();
     if (!storage) return;
     if (!storage.identityToken) {
@@ -300,7 +589,74 @@ export function createOptionsController(
     }
   }
 
+  async function saveReminderOverride(input: ReminderDraft): Promise<boolean> {
+    const storage = await readStorage();
+    if (!storage) return false;
+    const context = getGroupContext(storage);
+    if (!context || !dependencies.saveGroupReminderOverride) return false;
+    try {
+      await dependencies.saveGroupReminderOverride(context.groupId, input);
+      const next = await dependencies.loadStorage();
+      if (
+        current.kind === "ready"
+        && current.storage.activeGroupId === context.groupId
+        && next.activeGroupId === context.groupId
+      ) {
+        commit({ ...current, storage: next });
+      }
+      return true;
+    } catch {
+      if (current.kind === "ready" && current.storage.activeGroupId === context.groupId) {
+        commit({ ...current, error: "保存本机提醒失败，请重试。" });
+      }
+      return false;
+    }
+  }
+
+  async function restoreGroupReminderDefault(): Promise<boolean> {
+    const storage = await readStorage();
+    if (!storage) return false;
+    const context = getGroupContext(storage);
+    if (!context || !dependencies.clearGroupReminderOverride) return false;
+    try {
+      await dependencies.clearGroupReminderOverride(context.groupId);
+      const next = await dependencies.loadStorage();
+      if (
+        current.kind === "ready"
+        && current.storage.activeGroupId === context.groupId
+        && next.activeGroupId === context.groupId
+      ) {
+        commit({ ...current, storage: next });
+      }
+      return true;
+    } catch {
+      if (current.kind === "ready" && current.storage.activeGroupId === context.groupId) {
+        commit({ ...current, error: "恢复小组默认失败，请重试。" });
+      }
+      return false;
+    }
+  }
+
+  async function retrySettings(): Promise<void> {
+    if (current.kind !== "ready") return;
+    const context = getGroupContext(current.storage);
+    if (!context || !dependencies.getGroupSettingsForContext) return;
+    const loadGeneration = generation;
+    updateResource(loadGeneration, context, "groupSettings", { status: "loading" });
+    await loadGroupSettingsResource(loadGeneration, context);
+  }
+
+  async function retryHistory(): Promise<void> {
+    if (current.kind !== "ready") return;
+    const context = getGroupContext(current.storage);
+    if (!context || !dependencies.getPersonalHistoryForContext) return;
+    const loadGeneration = generation;
+    updateResource(loadGeneration, context, "personalHistory", { status: "loading" });
+    await loadPersonalHistoryResource(loadGeneration, context);
+  }
+
   async function replaceHost(apiBaseUrl: string) {
+    generation += 1;
     const storage = await readStorage();
     if (!storage) return;
     try {
@@ -319,6 +675,7 @@ export function createOptionsController(
   }
 
   async function disconnect() {
+    generation += 1;
     const storage = await readStorage();
     if (!storage) return;
     try {
@@ -337,6 +694,10 @@ export function createOptionsController(
     joinGroup,
     switchGroup,
     saveReminder,
+    saveReminderOverride,
+    restoreGroupReminderDefault,
+    retrySettings,
+    retryHistory,
     replaceHost,
     disconnect,
     getState: () => current

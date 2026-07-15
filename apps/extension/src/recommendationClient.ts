@@ -159,8 +159,9 @@ export async function refreshGroupTodayRecommendationsForStorage(
   );
 }
 
-export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecommendationsResponse> {
-  const storage = await getStorageState();
+export async function ensureGroupTodayRecommendationsForStorage(
+  storage: ExtensionStorageShape
+): Promise<GroupTodayRecommendationsResponse> {
   const context = requireActiveGroupRequestContextForStorage(storage);
   try {
     return await fetchGroupTodayRecommendationsNetworkOnlyForContext(context);
@@ -177,6 +178,10 @@ export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecom
     if (cached) return cached;
     throw error;
   }
+}
+
+export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecommendationsResponse> {
+  return ensureGroupTodayRecommendationsForStorage(await getStorageState());
 }
 
 async function fetchLegacyTodayRecommendations(
@@ -215,6 +220,15 @@ export async function fetchTodayRecommendations(options: {
   }
 
   return fetchLegacyTodayRecommendations(settings, options);
+}
+
+export async function getPrimaryRecommendationsForStorage(
+  storage: ExtensionStorageShape
+): Promise<ExtensionRecommendationResponse> {
+  if (getActiveGroupRequestContext(storage)) {
+    return ensureGroupTodayRecommendationsForStorage(storage);
+  }
+  return fetchLegacyTodayRecommendations(storage);
 }
 
 export async function refreshTodayRecommendations(): Promise<ExtensionRecommendationResponse> {

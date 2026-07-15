@@ -111,7 +111,9 @@ describe("grouped extension storage", () => {
       sessionsByGroupId: {},
       groupSummariesById: {},
       lastRecommendationsByGroupId: {},
-      localReminderOverridesByGroupId: {}
+      localReminderOverridesByGroupId: {},
+      groupSettingsCacheByGroupId: {},
+      reminderRevision: 0
     });
   });
 
@@ -160,7 +162,7 @@ describe("grouped extension storage", () => {
   });
 
   it("stores an identity and clears group-scoped state for a changed identity", async () => {
-    const { locks, readStoredState } = stubMutableStorage({
+    const { locks, readStoredState, sendMessage } = stubMutableStorage({
       ...getDefaultStorageState(),
       activeGroupId: "old-group",
       sessionsByGroupId: { "old-group": { token: "old-session" } },
@@ -188,14 +190,17 @@ describe("grouped extension storage", () => {
       sessionsByGroupId: {},
       groupSummariesById: {},
       lastRecommendationsByGroupId: {},
-      localReminderOverridesByGroupId: {}
+      localReminderOverridesByGroupId: {},
+      groupSettingsCacheByGroupId: {},
+      reminderRevision: 1
     });
     expect(readStoredState().activeGroupId).toBeUndefined();
+    expect(sendMessage).toHaveBeenCalledWith({ type: "reminderContextChanged" });
     expectExclusiveStorageLock(locks);
   });
 
   it("commits a group session and active group in one locked mutation", async () => {
-    const { locks, readStoredState } = stubMutableStorage({
+    const { locks, readStoredState, sendMessage } = stubMutableStorage({
       ...getDefaultStorageState(),
       sessionsByGroupId: { "group-0": { token: "existing-session" } },
       groupSummariesById: {
@@ -231,11 +236,12 @@ describe("grouped extension storage", () => {
         "group-1": expect.objectContaining({ name: "设计组" })
       }
     });
+    expect(sendMessage).toHaveBeenCalledWith({ type: "reminderContextChanged" });
     expectExclusiveStorageLock(locks);
   });
 
   it("syncs group summaries and drops sessions and active group outside membership", async () => {
-    const { locks, readStoredState } = stubMutableStorage({
+    const { locks, readStoredState, sendMessage } = stubMutableStorage({
       ...getDefaultStorageState(),
       activeGroupId: "removed-group",
       sessionsByGroupId: {
@@ -275,11 +281,12 @@ describe("grouped extension storage", () => {
       "kept-group": { token: "kept-session" }
     });
     expect(readStoredState().activeGroupId).toBeUndefined();
+    expect(sendMessage).toHaveBeenCalledWith({ type: "reminderContextChanged" });
     expectExclusiveStorageLock(locks);
   });
 
   it("clears only the requested group session", async () => {
-    const { locks, readStoredState } = stubMutableStorage({
+    const { locks, readStoredState, sendMessage } = stubMutableStorage({
       ...getDefaultStorageState(),
       activeGroupId: "group-1",
       sessionsByGroupId: {
@@ -294,11 +301,12 @@ describe("grouped extension storage", () => {
       "group-2": { token: "session-2" }
     });
     expect(readStoredState().activeGroupId).toBe("group-1");
+    expect(sendMessage).toHaveBeenCalledWith({ type: "reminderContextChanged" });
     expectExclusiveStorageLock(locks);
   });
 
   it("disconnects identity without changing the API host or global reminders", async () => {
-    const { locks, readStoredState } = stubMutableStorage({
+    const { locks, readStoredState, sendMessage } = stubMutableStorage({
       ...getDefaultStorageState(),
       apiBaseUrl: "https://lunch.example",
       readToken: "old-read-token",
@@ -334,13 +342,16 @@ describe("grouped extension storage", () => {
       sessionsByGroupId: {},
       groupSummariesById: {},
       lastRecommendationsByGroupId: {},
-      localReminderOverridesByGroupId: {}
+      localReminderOverridesByGroupId: {},
+      groupSettingsCacheByGroupId: {},
+      reminderRevision: 1
     });
+    expect(sendMessage).toHaveBeenCalledWith({ type: "reminderContextChanged" });
     expectExclusiveStorageLock(locks);
   });
 
   it("replaces the API host without carrying credentials or group cache", async () => {
-    const { locks, readStoredState } = stubMutableStorage({
+    const { locks, readStoredState, sendMessage } = stubMutableStorage({
       ...getDefaultStorageState(),
       apiBaseUrl: "https://old.example",
       readToken: "old-read-token",
@@ -376,8 +387,11 @@ describe("grouped extension storage", () => {
       sessionsByGroupId: {},
       groupSummariesById: {},
       lastRecommendationsByGroupId: {},
-      localReminderOverridesByGroupId: {}
+      localReminderOverridesByGroupId: {},
+      groupSettingsCacheByGroupId: {},
+      reminderRevision: 1
     });
+    expect(sendMessage).toHaveBeenCalledWith({ type: "reminderContextChanged" });
     expectExclusiveStorageLock(locks);
   });
 

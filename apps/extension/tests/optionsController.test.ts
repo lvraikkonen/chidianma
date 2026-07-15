@@ -102,7 +102,9 @@ function clearedConnectionStorage(
     sessionsByGroupId: {},
     groupSummariesById: {},
     lastRecommendationsByGroupId: {},
-    localReminderOverridesByGroupId: {}
+    localReminderOverridesByGroupId: {},
+    groupSettingsCacheByGroupId: {},
+    reminderRevision: storage.reminderRevision + 1
   };
 }
 

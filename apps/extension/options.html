@@ -42,11 +42,26 @@
 
       <section id="reminder-card" class="settings-card" aria-labelledby="reminder-title" hidden>
         <div class="section-heading"><span>03</span><h2 id="reminder-title">本机提醒</h2></div>
+        <div id="reminder-resource-message" class="resource-message" aria-live="polite"></div>
+        <div id="group-reminder-defaults" class="reminder-defaults" hidden></div>
         <form id="reminder-form" class="setting-rows">
-          <label class="setting-row"><span><strong>提醒时间</strong><small>当前小组的本机覆盖值</small></span><input id="reminder-time" type="time" required /></label>
+          <label class="setting-row"><span><strong>本机自定义</strong><small>关闭时跟随小组默认；本机设置始终优先</small></span><input id="reminder-custom-mode" type="checkbox" /></label>
+          <label class="setting-row"><span><strong>提醒时间</strong><small>使用办公室所在时区</small></span><input id="reminder-time" type="time" required /></label>
           <label class="setting-row"><span><strong>工作日提醒</strong><small>周一到周五，周末不打扰</small></span><input id="reminder-enabled" type="checkbox" /></label>
-          <button class="button primary" type="submit">保存提醒</button>
+          <label class="setting-row"><span><strong>二次提醒</strong><small>主提醒成功 20 分钟后，仅在仍无人决定时提醒</small></span><input id="second-reminder-enabled" type="checkbox" /></label>
+          <div class="form-actions">
+            <button id="save-reminder-button" class="button primary" type="submit">保存本机设置</button>
+            <button id="restore-reminder-button" class="button secondary" type="button">恢复小组默认</button>
+            <button id="retry-settings-button" class="button ghost" type="button" hidden>重试加载默认值</button>
+          </div>
         </form>
+      </section>
+
+      <section id="history-card" class="settings-card" aria-labelledby="history-title" hidden>
+        <div class="section-heading"><span>04</span><h2 id="history-title">我的午饭记录</h2></div>
+        <div id="history-resource-message" class="resource-message" aria-live="polite"></div>
+        <button id="retry-history-button" class="button ghost" type="button" hidden>重试加载记录</button>
+        <div id="history-content"></div>
       </section>
 
       <details class="settings-card advanced-card">
