@@ -1,4 +1,10 @@
-import type { CreateGroupRequest, CreateGroupResponse, GroupSessionResponse } from "@lunch/shared";
+import type {
+  CreateGroupRequest,
+  CreateGroupResponse,
+  GroupSessionResponse,
+  MemberMutationResponse,
+  PatchMemberRequest
+} from "@lunch/shared";
 import type { FastifyInstance } from "fastify";
 import type { AppEnv } from "../env.js";
 import { prisma } from "../plugins/prisma.js";
@@ -6,6 +12,7 @@ import { AuthError } from "../services/auth/errors.js";
 import { addDays, signGroupSessionToken, signIdentityToken, verifyIdentityToken } from "../services/auth/tokens.js";
 import { generateInviteCode, hashInviteCode, verifyInviteCode } from "../services/groups/inviteCodes.js";
 import { assertNotLastActiveAdmin, requireActiveMembership } from "../services/groups/memberships.js";
+import { getGroupMembers } from "../services/groups/operations.js";
 
 function bearerToken(authorization?: string): string | undefined {
   if (!authorization) return undefined;
@@ -264,10 +271,27 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
 
   app.patch<{
     Params: { groupId: string; membershipId: string };
-    Body: { role?: "admin" | "member"; status?: "active" | "removed" };
+    Body: PatchMemberRequest;
   }>("/api/groups/:groupId/members/:membershipId", async (request, reply) => {
     try {
-      const body = request.body ?? {};
+      await requireActiveMembership({
+        prisma,
+        env,
+        groupId: request.params.groupId,
+        ...(request.headers.authorization ? { authorization: request.headers.authorization } : {}),
+        requiredRole: "admin"
+      });
+
+      if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
+        reply.code(400);
+        return { error: "invalid_member_update", message: "Member update must be an object" };
+      }
+      const body = request.body;
+      const fields = Object.keys(body);
+      if (fields.length === 0 || fields.some((field) => field !== "role" && field !== "status")) {
+        reply.code(400);
+        return { error: "invalid_member_update", message: "Member update must include only role or status" };
+      }
       if (body.role && body.role !== "admin" && body.role !== "member") {
         reply.code(400);
         return { error: "invalid_member_role", message: "Role must be admin or member" };
@@ -276,14 +300,6 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
         reply.code(400);
         return { error: "invalid_membership_status", message: "Status must be active or removed" };
       }
-
-      await requireActiveMembership({
-        prisma,
-        env,
-        groupId: request.params.groupId,
-        ...(request.headers.authorization ? { authorization: request.headers.authorization } : {}),
-        requiredRole: "admin"
-      });
 
       const updated = await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`
@@ -324,7 +340,13 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
         reply.code(404);
         return { error: "member_not_found", message: "Member not found" };
       }
-      return updated;
+      const members = await getGroupMembers({ prisma, groupId: request.params.groupId });
+      const member = members.members.find((candidate) => candidate.membershipId === updated.id);
+      if (!member) {
+        reply.code(404);
+        return { error: "member_not_found", message: "Member not found" };
+      }
+      return { groupId: request.params.groupId, member } satisfies MemberMutationResponse;
     } catch (error) {
       return authErrorResponse(reply, error);
     }

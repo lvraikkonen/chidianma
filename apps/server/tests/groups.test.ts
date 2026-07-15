@@ -48,7 +48,8 @@ const prisma = vi.hoisted(() => {
 
   const includeGroup = (membership: MockGroupMembership) => ({
     ...membership,
-    group: store.groups.find((group) => group.id === membership.groupId) ?? membership.group
+    group: store.groups.find((group) => group.id === membership.groupId) ?? membership.group,
+    identity: store.identities.find((identity) => identity.id === membership.identityId)
   });
 
   const client = {
@@ -91,7 +92,10 @@ const prisma = vi.hoisted(() => {
         store.groups.push(group);
         return group;
       }),
-      findMany: vi.fn(async () => store.groups)
+      findMany: vi.fn(async () => store.groups),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        return store.groups.find((group) => group.id === where.id) ?? null;
+      })
     },
     groupMembership: {
       create: vi.fn(async ({ data }: { data: Omit<MockGroupMembership, "id" | "joinedAt"> }) => {
@@ -163,6 +167,15 @@ const prisma = vi.hoisted(() => {
     },
     scoringWeights: {
       create: vi.fn(async ({ data }: { data: { groupId: string } }) => data)
+    },
+    restaurant: {
+      findMany: vi.fn(async () => [])
+    },
+    recommendation: {
+      findMany: vi.fn(async () => [])
+    },
+    feedback: {
+      findMany: vi.fn(async () => [])
     },
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(client))

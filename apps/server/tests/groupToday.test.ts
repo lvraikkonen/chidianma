@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { DEFAULT_GROUP_SCORING_WEIGHTS } from "@lunch/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "../src/env";
 import {
@@ -203,6 +204,31 @@ describe("group today recommendation service", () => {
     expect(prisma.$transaction).toHaveBeenCalled();
   });
 
+  it("uses updated weights for a new batch without mutating an old batch snapshot", async () => {
+    const oldBatchSnapshot = { ...DEFAULT_GROUP_SCORING_WEIGHTS };
+    const updatedWeights = { ...DEFAULT_GROUP_SCORING_WEIGHTS, weatherMatch: 40, distance: 15 };
+    const prisma = buildPrismaForRefreshTest({ scoringWeights: updatedWeights });
+
+    await refreshGroupTodayRecommendations({
+      prisma: prisma as unknown as PrismaClient,
+      env,
+      groupId: "group-1",
+      membership: {
+        identityId: "identity-1",
+        groupId: "group-1",
+        membershipId: "membership-1",
+        role: "admin"
+      }
+    });
+
+    expect(oldBatchSnapshot).toEqual(DEFAULT_GROUP_SCORING_WEIGHTS);
+    expect(prisma.dailyRecommendationBatch.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ scoringWeightsSnapshot: updatedWeights })
+      })
+    );
+  });
+
   it("retries refresh after a serializable transaction conflict", async () => {
     const prisma = buildPrismaForRefreshTest();
     const conflict = Object.assign(new Error("serialization failure"), {
@@ -317,6 +343,7 @@ function buildPrismaForExistingBatchTest(input: {
 
 function buildPrismaForRefreshTest(options: {
   weatherSnapshot?: Record<string, unknown> | null;
+  scoringWeights?: typeof DEFAULT_GROUP_SCORING_WEIGHTS | undefined;
 } = {}) {
   const group = {
     id: "group-1",
@@ -371,7 +398,7 @@ function buildPrismaForRefreshTest(options: {
       findUnique: vi.fn().mockResolvedValue(group)
     },
     scoringWeights: {
-      findUnique: vi.fn().mockResolvedValue(null)
+      findUnique: vi.fn().mockResolvedValue(options.scoringWeights ?? null)
     },
     weatherSnapshot: {
       findUnique: vi.fn().mockResolvedValue(snapshot),

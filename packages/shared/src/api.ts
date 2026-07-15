@@ -16,5 +16,12 @@ export const GROUP_ROUTES = {
   recommendation: (groupId: string, recommendationId: string) =>
     `/api/groups/${groupId}/recommendations/${recommendationId}`,
   feedback: (groupId: string) => `/api/groups/${groupId}/feedback`,
-  members: (groupId: string) => `/api/groups/${groupId}/members`
+  dashboard: (groupId: string) => `/api/groups/${groupId}/dashboard`,
+  history: (groupId: string) => `/api/groups/${groupId}/history`,
+  personalHistory: (groupId: string) => `/api/groups/${groupId}/history/me`,
+  settings: (groupId: string) => `/api/groups/${groupId}/settings`,
+  rotateInviteCode: (groupId: string) => `/api/groups/${groupId}/invite-code/rotate`,
+  members: (groupId: string) => `/api/groups/${groupId}/members`,
+  member: (groupId: string, membershipId: string) =>
+    `/api/groups/${groupId}/members/${membershipId}`
 } as const;

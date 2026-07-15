@@ -283,3 +283,245 @@ export interface CreateGroupFeedbackResponse {
   groupId: string;
   feedback: FeedbackSummary;
 }
+
+export type DataAvailabilityStatus = "ready" | "insufficient";
+
+export interface DashboardParticipationSummary extends ParticipationSummary {
+  activeMemberCount: number;
+}
+
+export type DashboardAveragePrice =
+  | { status: "insufficient" }
+  | {
+      status: "ready";
+      averagePriceCents: number;
+      pricedDecisionCount: number;
+    };
+
+export interface DashboardCurrentWeekSummary {
+  startDate: string;
+  endDate: string;
+  decidedCount: number;
+  distinctMemberCount: number;
+  averagePrice: DashboardAveragePrice;
+}
+
+export interface DashboardWeekSummary {
+  startDate: string;
+  endDate: string;
+  decidedCount: number;
+}
+
+export interface DashboardRestaurantCounts {
+  active: number;
+  paused: number;
+  blocked: number;
+}
+
+export interface DashboardRestaurantStat {
+  restaurantId: string;
+  restaurantName: string;
+  cuisine: string;
+  decisionCount: number;
+  averagePriceCents?: number | undefined;
+}
+
+export interface DashboardCategoryStat {
+  cuisine: string;
+  decisionCount: number;
+  percentage: number;
+}
+
+export type DashboardCategoryDistribution =
+  | { status: "insufficient"; decidedCount: number }
+  | {
+      status: "ready";
+      decidedCount: number;
+      items: DashboardCategoryStat[];
+    };
+
+export interface DashboardActivityItem {
+  kind: "restaurant_created" | "recommendation_created";
+  occurredAt: string;
+  membershipId?: string | undefined;
+  memberName?: string | undefined;
+  restaurantId: string;
+  restaurantName: string;
+  recommendationId?: string | undefined;
+  dish?: string | undefined;
+}
+
+export interface DashboardResponse {
+  groupId: string;
+  officeDate: string;
+  officeTimezone: string;
+  today: DashboardParticipationSummary;
+  currentWeek: DashboardCurrentWeekSummary;
+  previousWeek: DashboardWeekSummary;
+  restaurantCounts: DashboardRestaurantCounts;
+  topRestaurants: DashboardRestaurantStat[];
+  categoryDistribution: DashboardCategoryDistribution;
+  recentActivity: DashboardActivityItem[];
+}
+
+export interface HistoryDecisionMember {
+  membershipId: string;
+  displayName: string;
+  decidedAt?: string | undefined;
+}
+
+export interface HistoryDecisionGroup {
+  restaurantId: string;
+  restaurantName: string;
+  dish?: string | undefined;
+  memberCount: number;
+  members: HistoryDecisionMember[];
+}
+
+export interface RecommendationHistoryBatch {
+  batchId: string;
+  officeDate: string;
+  batchNo: number;
+  source: RecommendationBatchSource;
+  isCurrent: boolean;
+  generatedAt: string;
+  generatedByMembershipId?: string | undefined;
+  generatedByName?: string | undefined;
+  weather?: WeatherSummary | undefined;
+  weatherUnavailable?: boolean | undefined;
+  scoringWeightsSnapshot: ScoringWeightsSnapshot;
+  algorithmVersion: string;
+  participationSummary: ParticipationSummary;
+  recommendations: GroupTodayRecommendationItem[];
+  decisions: HistoryDecisionGroup[];
+}
+
+export interface RecommendationHistoryResponse {
+  groupId: string;
+  items: RecommendationHistoryBatch[];
+  nextCursor?: string | undefined;
+}
+
+export interface PersonalLunchHistoryItem {
+  officeDate: string;
+  restaurantId: string;
+  restaurantName: string;
+  recommendationId?: string | undefined;
+  dish?: string | undefined;
+  cuisine: string;
+  averagePriceCents?: number | undefined;
+  decidedAt?: string | undefined;
+  coDinerCount: number;
+}
+
+export interface PersonalPreferenceCategory {
+  cuisine: string;
+  decisionCount: number;
+  percentage: number;
+}
+
+export type PersonalLunchPreference =
+  | { status: "insufficient"; decidedCount: number }
+  | {
+      status: "ready";
+      decidedCount: number;
+      averagePriceCents?: number | undefined;
+      categories: PersonalPreferenceCategory[];
+    };
+
+export interface PersonalLunchHistoryResponse {
+  groupId: string;
+  membershipId: string;
+  window: { startDate: string; endDate: string };
+  items: PersonalLunchHistoryItem[];
+  preference: PersonalLunchPreference;
+}
+
+export interface GroupProfileSettings {
+  name: string;
+  subtitle?: string | undefined;
+  officeTimezone: string;
+  officeCity: string;
+  officeLatitude: number;
+  officeLongitude: number;
+}
+
+export interface GroupReminderSettings {
+  reminderTime: string;
+  weekdayReminderEnabled: boolean;
+  secondReminderEnabled: boolean;
+  notificationTitle: string;
+  notificationGroupLabel?: string | undefined;
+}
+
+export interface GroupInviteMetadata {
+  version: number;
+  rotatedAt: string;
+}
+
+export interface GroupSettingsResponse {
+  groupId: string;
+  group: GroupProfileSettings;
+  reminder: GroupReminderSettings;
+  scoringWeights: ScoringWeightsSnapshot;
+  invite: GroupInviteMetadata;
+}
+
+export interface PatchGroupSettingsRequest {
+  group?: {
+    name?: string | undefined;
+    subtitle?: string | null | undefined;
+    officeTimezone?: string | undefined;
+    officeCity?: string | undefined;
+    officeLatitude?: number | undefined;
+    officeLongitude?: number | undefined;
+  } | undefined;
+  reminder?: {
+    reminderTime?: string | undefined;
+    weekdayReminderEnabled?: boolean | undefined;
+    secondReminderEnabled?: boolean | undefined;
+    notificationTitle?: string | undefined;
+    notificationGroupLabel?: string | null | undefined;
+  } | undefined;
+  scoringWeights?: Partial<ScoringWeightsSnapshot> | undefined;
+}
+
+export interface MemberContributionSummary {
+  restaurantCount: number;
+  recommendationCount: number;
+  feedbackCount: number;
+  total: number;
+}
+
+export interface MemberSummary {
+  membershipId: string;
+  displayName: string;
+  role: GroupRole;
+  status: MembershipStatus;
+  joinedAt: string;
+  removedAt?: string | undefined;
+  contribution: MemberContributionSummary;
+}
+
+export interface MembersResponse {
+  groupId: string;
+  contributionWindow: { startAt: string; endAt: string };
+  members: MemberSummary[];
+}
+
+export interface PatchMemberRequest {
+  role?: GroupRole | undefined;
+  status?: MembershipStatus | undefined;
+}
+
+export interface MemberMutationResponse {
+  groupId: string;
+  member: MemberSummary;
+}
+
+export interface RotateInviteCodeResponse {
+  groupId: string;
+  inviteCode: string;
+  version: number;
+  rotatedAt: string;
+}
