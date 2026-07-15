@@ -1,7 +1,7 @@
 import type { GroupSessionResponse, GroupSummary } from "@lunch/shared";
 
 export const ADMIN_SESSION_KEY = "lunchAdminSessionState.v2";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const API_BASE_URL = import.meta.env.PROD ? "" : (import.meta.env.VITE_API_BASE_URL ?? "");
 
 export interface AdminSessionState {
   version: 2;

@@ -282,13 +282,14 @@ function BatchDisclosure(props: {
           </section>
           <section className="snapshot-card">
             <h3>推荐结果与分数拆解</h3>
+            {batch.source === "legacy" ? <p className="muted-note">旧版迁移记录，仅保留总分和理由</p> : null}
             {batch.recommendations.length === 0 ? <p className="muted-note">本批次没有推荐结果。</p> : (
               <div className="history-recommendations">
                 {batch.recommendations.map((item) => (
                   <article className="history-result" key={`${item.rank}-${item.restaurantId}`}>
                     <header><span className="result-rank">#{item.rank}</span><strong>{item.restaurantName}</strong><b>{item.score} 分</b></header>
                     <p>{item.reason}</p>
-                    <BreakdownGrid breakdown={item.scoreBreakdown} />
+                    {batch.source === "legacy" ? null : <BreakdownGrid breakdown={item.scoreBreakdown} />}
                   </article>
                 ))}
               </div>

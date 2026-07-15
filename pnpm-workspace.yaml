@@ -6,3 +6,5 @@ allowBuilds:
   '@prisma/engines': true
   esbuild: true
   prisma: true
+overrides:
+  '@fastify/static>glob': ^11.1.0

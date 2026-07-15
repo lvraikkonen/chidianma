@@ -120,4 +120,24 @@ describe("Dashboard page markup", () => {
     );
     expect(html).toContain("加载更多");
   });
+
+  it("labels legacy records without showing fabricated score components", () => {
+    const legacyBatch: RecommendationHistoryBatch = {
+      ...batch,
+      batchId: "legacy-batch",
+      source: "legacy",
+      algorithmVersion: "legacy-v1"
+    };
+    const state = readyState();
+    state.history = { kind: "ready", items: [legacyBatch], loadingMore: false };
+
+    const html = renderToStaticMarkup(
+      <DashboardView state={state} expandedBatchIds={new Set(["legacy-batch"])} onToggleBatch={vi.fn()} onRetry={vi.fn()} onLoadMore={vi.fn()} />
+    );
+
+    expect(html).toContain("旧版迁移记录，仅保留总分和理由");
+    expect(html).toContain("42 分");
+    expect(html).toContain("离办公室近");
+    expect(html).not.toContain("history-breakdown");
+  });
 });

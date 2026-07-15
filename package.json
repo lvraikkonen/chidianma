@@ -4,10 +4,17 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "pnpm -r build",
+    "build:railway": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/server prisma:generate && pnpm --filter @lunch/admin build && pnpm --filter @lunch/server build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
+    "predeploy:railway": "pnpm --filter @lunch/server env:check && pnpm --filter @lunch/server exec prisma migrate deploy && pnpm --filter @lunch/server db:verify",
+    "start:railway": "pnpm --filter @lunch/server start",
+    "check:stage6-artifacts": "node scripts/check-stage6-artifacts.mjs",
     "dev:server": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/server dev",
     "dev:extension": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/extension dev",
     "dev:admin": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/admin dev",
@@ -18,5 +25,10 @@
     "pngjs": "^7.0.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "overrides": {
+      "@fastify/static>glob": "^11.1.0"
+    }
   }
 }
