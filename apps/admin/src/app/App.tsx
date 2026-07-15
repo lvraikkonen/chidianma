@@ -47,7 +47,9 @@ import {
   type TodayViewState
 } from "../features/today/todayModel";
 import { LoginPage } from "../pages/LoginPage";
+import { DashboardPage } from "../pages/DashboardPage";
 import { RestaurantsPage } from "../pages/RestaurantsPage";
+import { SettingsPage } from "../pages/SettingsPage";
 import { TodayPage } from "../pages/TodayPage";
 import {
   clearGroupSession,
@@ -405,6 +407,13 @@ export function App() {
     ));
   }
 
+  async function handleStage5MembershipError(error: unknown) {
+    if (!groupContext) return;
+    requestGate.current.invalidate();
+    clearPageState();
+    await authController.handleGroupError(error, groupContext.groupId);
+  }
+
   const switchingHasUsableActiveGroup = authState.kind === "switching"
     && Boolean(
       authState.session.activeGroupId
@@ -488,6 +497,24 @@ export function App() {
         />
       ) : (
         <StatusPanel title="餐厅库" message="请选择一个可用小组后再管理餐厅。" />
+      ) : route === "dashboard" && groupContext ? (
+        <DashboardPage
+          context={groupContext}
+          onMembershipInvalid={handleStage5MembershipError}
+          onOpenToday={() => navigate("today")}
+          onOpenRestaurants={() => navigate("restaurants")}
+        />
+      ) : route === "settings" && groupContext && activeGroup ? (
+        <SettingsPage
+          context={groupContext}
+          group={activeGroup}
+          onMembershipInvalid={handleStage5MembershipError}
+          onAuthSync={async () => {
+            await authController.load();
+          }}
+        />
+      ) : route === "dashboard" || route === "settings" ? (
+        <StatusPanel title={route === "dashboard" ? "推荐记录" : "成员与设置"} message="请选择一个可用小组后继续。" />
       ) : (
         <TodayPage
           state={todayState}

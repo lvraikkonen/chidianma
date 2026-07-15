@@ -36,6 +36,12 @@ export function AppShell(props: {
           <a className={props.route === "restaurants" ? "nav-link active" : "nav-link"} href="#restaurants" aria-current={props.route === "restaurants" ? "page" : undefined}>
             餐厅库
           </a>
+          <a className={props.route === "dashboard" ? "nav-link active" : "nav-link"} href="#dashboard" aria-current={props.route === "dashboard" ? "page" : undefined}>
+            推荐记录
+          </a>
+          <a className={props.route === "settings" ? "nav-link active" : "nav-link"} href="#settings" aria-current={props.route === "settings" ? "page" : undefined}>
+            设置
+          </a>
         </nav>
 
         <div className="sidebar-footer">

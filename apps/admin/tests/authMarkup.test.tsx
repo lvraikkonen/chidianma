@@ -47,17 +47,17 @@ function shell(groupEntryPanel?: React.ReactNode) {
 }
 
 describe("authenticated auth markup", () => {
-  it("renders two navigation links plus a non-navigation create/join action", () => {
+  it("renders four production navigation links plus a non-navigation create/join action", () => {
     const html = renderToStaticMarkup(shell());
 
     expect(html).toContain("创建/加入小组");
-    expect(html.match(/<nav[\s\S]*?<\/nav>/)?.[0].match(/<a /g)).toHaveLength(2);
+    expect(html.match(/<nav[\s\S]*?<\/nav>/)?.[0].match(/<a /g)).toHaveLength(4);
     expect(html).toContain('href="#today"');
     expect(html).toContain('href="#restaurants"');
-    expect(html).not.toContain("#dashboard");
+    expect(html).toContain('href="#dashboard"');
+    expect(html).toContain('href="#settings"');
     expect(html).not.toContain("#history");
     expect(html).not.toContain("#members");
-    expect(html).not.toContain("#settings");
   });
 
   it("renders the reusable create/join panel with an empty invite default", () => {

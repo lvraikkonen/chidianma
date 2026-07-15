@@ -1,8 +1,10 @@
-export type AdminRoute = "login" | "today" | "restaurants";
+export type AdminRoute = "login" | "today" | "restaurants" | "dashboard" | "settings";
 
 export function parseAdminRoute(hash: string): AdminRoute {
   if (hash === "#login") return "login";
   if (hash === "#restaurants") return "restaurants";
+  if (hash === "#dashboard") return "dashboard";
+  if (hash === "#settings") return "settings";
   return "today";
 }
 

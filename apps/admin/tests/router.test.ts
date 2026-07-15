@@ -6,7 +6,10 @@ describe("admin router", () => {
     ["#login", "login"],
     ["#today", "today"],
     ["#restaurants", "restaurants"],
-    ["#dashboard", "today"],
+    ["#dashboard", "dashboard"],
+    ["#settings", "settings"],
+    ["#history", "today"],
+    ["#members", "today"],
     ["", "today"]
   ] as const)("maps %s to %s", (hash, route) => {
     expect(parseAdminRoute(hash)).toBe(route);

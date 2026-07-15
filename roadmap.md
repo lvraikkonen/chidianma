@@ -34,7 +34,7 @@ extension smoke testing.
 | Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
 | Stage 3 | Today Recommendation Batch + Participation | Done | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md) | Core lunch loop plus minimal extension auth/storage/API client |
 | Stage 4 | Prototype UI Wiring | Done | [Stage 4A Extension](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)<br>[Stage 4B Admin](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
-| Stage 5 | Dashboard / Settings / Weights | Ready for Planning | Write after Stage 4 | Historical review, dashboard metrics, member contribution, reminders, weights |
+| Stage 5 | Dashboard / Settings / Weights | In Progress | [Stage 5A Shared + Server](plans/2026-07-14-dashboard-settings-weights-stage5a.md)<br>[Stage 5B Admin](plans/2026-07-14-admin-dashboard-settings-stage5b.md) | Historical review, dashboard metrics, member contribution, reminders, weights |
 | Stage 6 | Deploy Hardening | Not Started | Write after Stage 5 | Production hosting, migration verification, extension smoke test, Railway checks |
 
 ## Planning Cadence
@@ -181,7 +181,18 @@ flows.
 
 ## Stage 5: Dashboard / Settings / Weights
 
-**Status:** Ready for Planning.
+**Status:** In Progress. Stage 5A shared/server APIs and Stage 5B Admin are
+complete. Stage 5C is ready for detailed planning against the verified APIs.
+
+**Design:** [`specs/2026-07-14-dashboard-settings-weights-stage5-design.md`](specs/2026-07-14-dashboard-settings-weights-stage5-design.md)
+
+**Completed 5A plan:** [`plans/2026-07-14-dashboard-settings-weights-stage5a.md`](plans/2026-07-14-dashboard-settings-weights-stage5a.md)
+
+**5A handoff:** [`qa/2026-07-14-dashboard-settings-weights-stage5a.md`](qa/2026-07-14-dashboard-settings-weights-stage5a.md)
+
+**Completed 5B plan:** [`plans/2026-07-14-admin-dashboard-settings-stage5b.md`](plans/2026-07-14-admin-dashboard-settings-stage5b.md)
+
+**5B handoff:** [`qa/2026-07-14-admin-dashboard-settings-stage5b.md`](qa/2026-07-14-admin-dashboard-settings-stage5b.md)
 
 **Goal:** Add the prototype's review, operations, and tuning surfaces.
 
@@ -232,7 +243,12 @@ extension handoff.
 - [x] Stage 4A implemented and verified.
 - [x] Stage 4B implemented and verified.
 - [x] Stage 4 implemented and verified.
-- [ ] Stage 5 detailed implementation plan written.
+- [x] Stage 5 design approved.
+- [x] Stage 5A detailed implementation plan written.
+- [x] Stage 5A implemented and verified.
+- [x] Stage 5B detailed implementation plan written.
+- [x] Stage 5B implemented and verified.
+- [ ] Stage 5C detailed implementation plan written.
 - [ ] Stage 5 implemented and verified.
 - [ ] Stage 6 detailed implementation plan written.
 - [ ] Stage 6 implemented and verified.
