@@ -151,6 +151,14 @@ Every alarm claim and notification side effect revalidates that revision and
 the current group/session, so clearing an alarm is not the only defense against
 an interleaved group or settings change.
 
+Chrome alarm creation is verified against both the persisted context and the
+actual scheduled time. Reminder runtime operations are serialized within one
+service-worker instance, and a stale scheduling attempt repairs or preserves a
+newer alarm instead of clearing it by shared name. Worker evaluation restores
+future alarms without consuming a context that has just become due. Chrome
+notification icons use a full `chrome.runtime.getURL(...)` URL so a service
+worker notification cannot fail on a relative asset path.
+
 Settings and personal history load independently after the Extension captures
 `apiBaseUrl`, `groupId`, `membershipId`, and the group session token. Switching
 groups or starting a newer load invalidates older results; an old response may

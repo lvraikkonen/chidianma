@@ -1,6 +1,6 @@
 # Stage 5C Extension Personal History And Reminder Runtime Implementation Plan
 
-Status: `In Progress`
+Status: `Done`
 
 Date: 2026-07-14
 
@@ -24,6 +24,11 @@ service-worker suspension.
 
 Planning baseline: 175 Extension tests and 478 monorepo tests pass; Extension
 typecheck and production build pass.
+
+Completion baseline: 259 Extension tests and 562 monorepo tests pass; all
+workspace typechecks and production builds pass. Chrome Developer Mode QA is
+recorded in
+[`qa/2026-07-15-extension-history-reminders-stage5c.md`](../qa/2026-07-15-extension-history-reminders-stage5c.md).
 
 ## Public Extension Interfaces And Persisted State
 
