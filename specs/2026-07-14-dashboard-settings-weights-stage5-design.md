@@ -103,6 +103,64 @@ members see both pages; only the current database Admin role sees enabled
 mutation controls. Invite rotation requires confirmation and the returned
 plaintext code exists only in the one-time in-memory result dialog.
 
+## Stage 5C Extension Experience And Reminder Runtime
+
+The Extension keeps the popup and recommendation detail focused on today's
+decision. Personal history is added as a fourth section in the existing
+full-page options surface; Stage 5C does not add another HTML entry point or a
+client-side router. The section shows the current membership's decided meals
+from the last 30 office dates, a truthful empty state, and either the server's
+insufficient-data result or average price and cuisine preferences. A
+`coDinerCount` is described as other teammates who also decided that day, not
+as proof that they chose the same restaurant.
+
+Reminder controls have two explicit modes:
+
+- Follow the group's defaults for reminder time, weekday enablement, and the
+  second reminder.
+- Use a device-local override for those three values until the member restores
+  the group defaults.
+
+The group-managed notification title and optional group label remain
+read-only in the Extension. Existing local reminder records remain valid;
+their legacy `enabled` value maps to weekday enablement, and an absent second
+reminder override continues to inherit the group default. Following a group
+default does not copy it into the local override bucket, so later server
+changes can take effect after the Extension next synchronizes settings.
+
+The Extension caches the last successfully validated group settings needed by
+the Manifest V3 service worker, but does not cache personal history. An active
+group merges an explicit local override with its cached group defaults. If an
+active group has no valid settings cache and the settings request is
+unavailable, the Extension schedules nothing because it cannot safely infer
+the office timezone. The existing Shanghai primary-reminder fallback applies
+only when there is no active group and never enables a second reminder.
+Reminder times use strict `HH:mm`; invalid timezones or times are unschedulable.
+
+Primary notifications may retain the existing recommendation cache fallback.
+A second reminder is stricter: it is scheduled only after a fresh group-scoped
+primary recommendation was successfully shown, it is fixed at 20 minutes, and
+it performs a network-only participation read before notifying. A stale group,
+office-date mismatch, any decided member, a removed or expired session, or a
+network failure consumes and suppresses the pending second reminder. Group
+switches, disconnects, API-host changes, and reminder-setting changes cancel
+pending second reminders. Pending context is persisted in `chrome.storage` so
+service-worker suspension cannot turn process memory into a source of truth.
+Both primary and second alarm contexts carry a persisted reminder revision.
+Every alarm claim and notification side effect revalidates that revision and
+the current group/session, so clearing an alarm is not the only defense against
+an interleaved group or settings change.
+
+Settings and personal history load independently after the Extension captures
+`apiBaseUrl`, `groupId`, `membershipId`, and the group session token. Switching
+groups or starting a newer load invalidates older results; an old response may
+not update the new group's UI, settings cache, local override, alarm, or pending
+second-reminder state.
+Concurrent settings/history 401 responses share one group-session refresh for
+the active generation and retry each failed resource at most once. Personal
+history preserves the server order and at most one current-membership decision
+per office date; co-diner counts do not imply a shared restaurant.
+
 ## Error And Compatibility Rules
 
 - Invalid cursors or limits return 400 without querying another page.
@@ -120,5 +178,6 @@ Each slice uses Red-Green-Refactor. Stage 5A covers contract literals,
 timezone windows including DST, aggregation insufficiency, group isolation,
 history pagination and distributions, settings atomicity, current-role
 authorization, invite rotation, and immutable stored weight snapshots. Stage
-5B adds Admin state and browser QA. Stage 5C adds extension storage, alarm, and
-manual Chrome QA.
+5B adds Admin state and browser QA. Stage 5C adds extension client, storage,
+timezone scheduling, second-reminder policy, cross-group race, options-page,
+and manual Chrome Developer Mode QA.

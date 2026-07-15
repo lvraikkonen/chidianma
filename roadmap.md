@@ -34,7 +34,7 @@ extension smoke testing.
 | Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
 | Stage 3 | Today Recommendation Batch + Participation | Done | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md) | Core lunch loop plus minimal extension auth/storage/API client |
 | Stage 4 | Prototype UI Wiring | Done | [Stage 4A Extension](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)<br>[Stage 4B Admin](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
-| Stage 5 | Dashboard / Settings / Weights | In Progress | [Stage 5A Shared + Server](plans/2026-07-14-dashboard-settings-weights-stage5a.md)<br>[Stage 5B Admin](plans/2026-07-14-admin-dashboard-settings-stage5b.md) | Historical review, dashboard metrics, member contribution, reminders, weights |
+| Stage 5 | Dashboard / Settings / Weights | In Progress | [Stage 5A Shared + Server](plans/2026-07-14-dashboard-settings-weights-stage5a.md)<br>[Stage 5B Admin](plans/2026-07-14-admin-dashboard-settings-stage5b.md)<br>[Stage 5C Extension](plans/2026-07-14-extension-history-reminders-stage5c.md) | Historical review, dashboard metrics, member contribution, reminders, weights |
 | Stage 6 | Deploy Hardening | Not Started | Write after Stage 5 | Production hosting, migration verification, extension smoke test, Railway checks |
 
 ## Planning Cadence
@@ -182,7 +182,7 @@ flows.
 ## Stage 5: Dashboard / Settings / Weights
 
 **Status:** In Progress. Stage 5A shared/server APIs and Stage 5B Admin are
-complete. Stage 5C is ready for detailed planning against the verified APIs.
+complete. Stage 5C Extension implementation is in progress.
 
 **Design:** [`specs/2026-07-14-dashboard-settings-weights-stage5-design.md`](specs/2026-07-14-dashboard-settings-weights-stage5-design.md)
 
@@ -194,6 +194,8 @@ complete. Stage 5C is ready for detailed planning against the verified APIs.
 
 **5B handoff:** [`qa/2026-07-14-admin-dashboard-settings-stage5b.md`](qa/2026-07-14-admin-dashboard-settings-stage5b.md)
 
+**Active 5C plan:** [`plans/2026-07-14-extension-history-reminders-stage5c.md`](plans/2026-07-14-extension-history-reminders-stage5c.md)
+
 **Goal:** Add the prototype's review, operations, and tuning surfaces.
 
 **Expected scope:**
@@ -202,6 +204,8 @@ complete. Stage 5C is ready for detailed planning against the verified APIs.
 - Recommendation history and review.
 - Member contribution and member management views.
 - Reminder settings.
+- Extension personal history, group-default/device-override reminder behavior,
+  and the conditional second reminder runtime.
 - Scoring weight settings.
 - Weekly and historical statistics.
 - Data-insufficient states and timezone-aware aggregation windows.
@@ -248,7 +252,8 @@ extension handoff.
 - [x] Stage 5A implemented and verified.
 - [x] Stage 5B detailed implementation plan written.
 - [x] Stage 5B implemented and verified.
-- [ ] Stage 5C detailed implementation plan written.
+- [x] Stage 5C detailed implementation plan written.
+- [ ] Stage 5C implemented and verified.
 - [ ] Stage 5 implemented and verified.
 - [ ] Stage 6 detailed implementation plan written.
 - [ ] Stage 6 implemented and verified.
