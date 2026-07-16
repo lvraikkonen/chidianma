@@ -90,9 +90,10 @@ decision before expanding Stage 7D beyond the first cohort.
   result was confirmed in the Admin restaurant library. The primary lunch-decision action reached
   the expected completed state. Feedback pending/disabled behavior, successful completion,
   duplicate protection and post-refresh stability passed. Reload preserved the stable identity,
-  group, reminder settings and recommendation state. Remaining exceptional Popup states, QuickAdd
-  recovery, desktop detail/notification, candidate-directory replacement and colleague distribution
-  approval remain open.
+  group, reminder settings and recommendation state. Replacing the loaded directory with the same
+  versioned ZIP and reloading also preserved those states. Remaining exceptional Popup states,
+  QuickAdd recovery, desktop detail/notification, second-directory ID loading and colleague
+  distribution approval remain open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)

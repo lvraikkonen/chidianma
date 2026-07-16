@@ -288,8 +288,16 @@ Extension Reload retention review passed by user confirmation:
 - the Popup recommendation state remained available after Reload.
 
 This verifies Reload persistence for the currently loaded candidate directory.
-Replacing the directory contents with another candidate extraction before
-Reload remains a separate manual check.
+
+Candidate-directory replacement review also passed by user confirmation:
+
+- the same versioned `0.2.0` ZIP was extracted over the currently loaded
+  candidate directory;
+- Reload completed with the expected name, version and stable Extension ID;
+- identity, active group, reminder settings and recommendation state remained
+  intact after file replacement;
+- this verifies the documented same-version controlled unpacked update flow,
+  but does not claim future cross-version storage migration compatibility.
 
 ## Manual QA still required
 
@@ -300,7 +308,6 @@ Reload remains a separate manual check.
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
   Extension ID.
-- Replace candidate-directory files and Reload; confirm storage retention.
 - Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
