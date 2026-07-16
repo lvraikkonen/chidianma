@@ -129,4 +129,4 @@ must not fall below the Stage 5 baseline.
 Completion date: 2026-07-15
 
 QA handoff:
-[`qa/2026-07-15-deploy-hardening-stage6.md`](../qa/2026-07-15-deploy-hardening-stage6.md)
+[`qa/2026-07-15-deploy-hardening-stage6.md`](2026-07-15-deploy-hardening-stage6-qa.md)

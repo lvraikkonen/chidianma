@@ -73,7 +73,7 @@ const batch: RecommendationHistoryBatch = {
   ]
 };
 
-function readyState(): DashboardWorkspaceState {
+function readyState(): Extract<DashboardWorkspaceState, { kind: "ready" }> {
   return {
     kind: "ready",
     dashboard: { kind: "ready", value: dashboard },

@@ -3228,8 +3228,8 @@ Expected: PASS.
 Modify `roadmap.md`:
 
 ```md
-| Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
-| Stage 3 | Today Recommendation Batch + Participation | Approved for Execution | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md) | Core lunch loop plus minimal extension auth/storage/API client |
+| Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](../stage-2/2026-07-09-group-scoped-restaurant-knowledge-stage2-plan.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
+| Stage 3 | Today Recommendation Batch + Participation | Approved for Execution | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](2026-07-09-today-recommendation-batch-participation-stage3-plan.md) | Core lunch loop plus minimal extension auth/storage/API client |
 ```
 
 Update the progress tracker:

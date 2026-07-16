@@ -1,170 +1,78 @@
 # chidianma AI Collaboration Protocol
 
-## Agent Split
+## Roles
 
-Claude Code + gstack:
-- Thinks, reviews, validates, and releases.
-- Owns product, UX, architecture, QA, release readiness, and documentation review.
-- Produces or updates specs and handoff documents before implementation work.
+Claude Code with gstack is primarily the product, UX, architecture, QA,
+release-readiness and documentation reviewer. Codex with Superpowers is the
+primary planning, implementation, testing and refactoring agent.
 
-Codex + Superpowers:
-- Plans, implements, tests, and refactors.
-- Owns execution of approved implementation plans.
-- Implements in small vertical slices.
-- Reports changed files, tests, and known issues before review.
+Only one agent drives implementation at a time. Either agent may identify a
+conflict or propose a change, but major behavior changes first update the active
+spec and plan.
 
-## Golden Rule
+## Source of truth
 
-Only one agent drives implementation at a time.
+Use current, non-archived material in this order:
 
-Claude Code may review implementation.
-Codex may propose product changes.
-But neither agent should silently change the other agent’s source-of-truth documents.
+1. current specifications in `specs/`;
+2. the active implementation plan in `plans/`;
+3. current product, architecture, identity/security, operations, testing/release
+   documentation and this protocol;
+4. tests;
+5. implementation;
+6. `docs/archive/stages/` only as historical audit evidence.
 
-If specs, plans, tests, and implementation conflict, document the conflict before changing behavior.
-
-## Model Policy for Codex Subagents
-
-Codex and Superpowers may create subagents through the model-selection controls provided by the active platform.
-
-- If the dispatch interface exposes a model selector, select a suitable model according to the active workflow and user instructions.
-- If the dispatch interface does not expose a model selector, the platform-selected, inherited, or default subagent model is allowed.
-- The absence of a per-dispatch model parameter must not by itself block Subagent-Driven Development.
-- No specific model vendor or version is mandatory unless the user explicitly requires one for the current task and the platform can enforce it.
-- Handoffs disclose whether subagents were used and only name a model when that model was explicitly selected or otherwise verifiable.
+The current productization boundary is
+[`../specs/2026-07-15-internal-beta-productization-stage7-design.md`](../specs/2026-07-15-internal-beta-productization-stage7-design.md).
+The completed Stage 1–6 artifacts are indexed in
+[`archive/stages/README.md`](archive/stages/README.md). A historical plan cannot
+override a later current spec, verified production QA, tests, or current docs.
 
 ## Workflow
 
-1. Claude Code + gstack reviews product direction.
-2. Claude Code + gstack produces or updates specs.
-3. Claude Code + gstack creates a clear handoff to Codex.
-4. Codex + Superpowers creates or updates an implementation plan.
-5. Codex + Superpowers implements one vertical slice.
-6. Codex summarizes implemented changes and test results.
-7. Claude Code + gstack reviews UX, architecture, QA, security, privacy, and release readiness.
-8. Codex fixes review findings.
-9. Docs are updated.
+1. Review product direction and risks.
+2. Create or update the current spec.
+3. Create and approve a scoped implementation plan.
+4. Implement one bounded slice with tests where practical.
+5. Run the relevant tests, typechecks, builds and release gates.
+6. Update current docs and write a QA handoff.
+7. Review findings, fix accepted items, and preserve rejected/corrected triage.
 
-## Required Handoff: Claude/gstack to Codex
+Do not silently guess when sources conflict. Record the conflict and resolve the
+higher-priority source before changing behavior.
 
-- Goal
-- Source documents
-- Acceptance criteria
-- Constraints
-- Do-not-do list
-- Test expectations
-- Review requested after implementation
-- Any task-specific subagent model requirement and whether the active platform can enforce it
+## Handoff requirements
 
-## Required Handoff: Codex to Claude/gstack
+Reviewer to implementer:
 
-- Implemented changes
-- Files changed
-- Tests added
-- Tests run
-- Manual checks run
-- Known issues
-- Source-of-truth updates made
-- Review requested
-- Subagent disclosure:
-  - Whether subagents were used
-  - Which model was used only when explicitly selected or otherwise verifiable
-  - Any platform limitation relevant to model selection
+- goal, source documents and acceptance criteria;
+- constraints, explicit non-goals and expected checks;
+- requested post-implementation review;
+- any enforceable subagent-model requirement.
 
-## Conflict Resolution
+Implementer to reviewer:
 
-If specs, plans, tests, and implementation conflict:
+- implemented changes and source-of-truth changes;
+- files and tests changed;
+- commands and manual checks run;
+- untested areas, known issues and requested review;
+- whether subagents were used, naming a model only when verifiable.
 
-1. Do not guess.
-2. Document the conflict.
-3. Prefer specs for product behavior.
-4. Prefer plans for current execution order.
-5. Prefer tests for current verified behavior.
-6. Prefer existing implementation only when specs and plans are silent.
-7. Update specs/plans/tests before major code changes.
+## Product and engineering guardrails
 
-## Source of Truth Order
+Keep the product focused on a small team's explainable 2–3-choice lunch loop.
+Do not expand it into delivery, maps, payments, social feeds, formal accounts or
+machine-learning ranking without a current spec. Preserve minimal Chrome
+permissions, PostgreSQL as source of truth, server-side weather, timezone-aware
+dates, group isolation, explicit refresh semantics and calm reminders.
 
-Use these documents as source of truth, in this order:
+Identity is currently lightweight. Group-scoped clients use bearer group
+sessions; the unscoped routes and `X-Lunch-Read-Token` are legacy compatibility
+only and must not receive new behavior.
 
-1. specs/
-2. plans/
-3. docs/ai-collaboration-protocol.md
-4. tests
-5. existing implementation
+## Done definition
 
-Current MVP documents:
-
-- specs/2026-07-07-lunch-chrome-extension-design.md
-- plans/2026-07-07-lunch-vertical-slice.md
-- docs/ai-collaboration-protocol.md
-
-Do not execute earlier or superseded revisions of the implementation plan.
-
-## chidianma Product North Star
-
-Help a small team decide lunch quickly and pleasantly by turning teammate knowledge into explainable daily recommendations.
-
-The product should make teammates feel:
-- I have a good lunch option quickly.
-- I understand why this option was recommended.
-- The reminder helps me, not interrupts me.
-- My team’s recommendations are remembered.
-
-The product should help the team see:
-- What restaurants are available.
-- Who recommended what.
-- Which options fit today’s weekday, weather, distance, and feedback.
-- What to improve next.
-
-## Current MVP Boundaries
-
-Build the first runnable vertical slice:
-
-- `packages/shared` shared API contract.
-- Fastify server on Railway.
-- PostgreSQL persistence through Prisma.
-- Chrome Manifest V3 extension.
-- Popup display, settings, fallback cache, alarm, and notification.
-- Minimal admin flow for teammate-maintained data.
-- Server-side weather integration and graceful fallback.
-
-The MVP should not include:
-
-- Formal accounts, OAuth, or complex permissions.
-- Delivery, payment, maps, or external restaurant platform integration.
-- Complex social feed, comments, ranking, or leaderboard.
-- Machine-learning recommendation model.
-- Multi-tenant, multi-city, or multi-office platform behavior.
-- Broad Chrome permissions such as `<all_urls>`.
-
-## Engineering Guardrails
-
-- Keep changes minimal and scoped.
-- Preserve the current plan’s vertical-slice order.
-- Use `apps/extension/`, `apps/server/`, `apps/admin/`, and `packages/shared/`.
-- Keep shared contracts in `packages/shared`.
-- Use Chrome MV3 service worker patterns.
-- Persist extension state in `chrome.storage`.
-- Use `chrome.alarms` for long-term scheduling.
-- Keep notifications calm and useful.
-- Use Fastify and Prisma/PostgreSQL.
-- Use `OFFICE_TIMEZONE` for recommendation date boundaries.
-- Keep `GET /api/today-recommendations` idempotent by default.
-- Keep `forceRefresh=true` explicit.
-- Keep weather server-side.
-- Keep team invite code out of frontend bundles.
-- Require signed session tokens for management writes.
-- Treat `EXTENSION_READ_TOKEN` as a lightweight public API guard only.
-
-## Done Definition
-
-A task is ready for Claude/gstack review when:
-
-- Implementation matches the active spec and plan.
-- Files changed are listed.
-- Relevant tests are added or updated.
-- Relevant commands have been run.
-- Untested areas are disclosed.
-- Documentation is updated where behavior changed.
-- Any use of Codex subagents is disclosed without unverifiable model claims.
+A task is ready for review only when it matches the active spec and plan,
+relevant automated/manual checks have been run, documentation reflects current
+behavior, omissions and known issues are explicit, and any subagent use is
+disclosed without unverifiable claims.

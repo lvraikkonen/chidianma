@@ -1,8 +1,10 @@
 # 中午吃点啥 Roadmap
 
-This roadmap tracks the staged path from the current MVP to the multi-group,
-prototype-aligned product described in
-[`specs/2026-07-08-multi-group-prototype-implementation-design.md`](specs/2026-07-08-multi-group-prototype-implementation-design.md).
+This roadmap tracks the staged path from the original MVP through the verified
+multi-group production baseline and into an operated internal beta. The product
+foundation is described by the earlier multi-group spec; the current next-stage
+boundary is defined in
+[`specs/2026-07-15-internal-beta-productization-stage7-design.md`](specs/2026-07-15-internal-beta-productization-stage7-design.md).
 
 ## Roadmap Principle
 
@@ -17,6 +19,11 @@ states.
 Stage 6 hardens the whole product for deployment, migration confidence, and
 extension smoke testing.
 
+Stage 7 changes the operating mode from project development to internal beta
+productization: freeze and document the baseline, harden the lightweight
+identity boundary, make the product and distribution coherent, then run a
+small controlled colleague beta. Stage 8 is intentionally not planned here.
+
 ## Status Legend
 
 - `Planned`: Detailed implementation plan exists.
@@ -30,39 +37,35 @@ extension smoke testing.
 
 | Stage | Name | Status | Detailed Plan | Primary Outcome |
 | --- | --- | --- | --- | --- |
-| Stage 1 | Multi-Group Foundation | Done | [`plans/2026-07-08-multi-group-foundation-stage1.md`](plans/2026-07-08-multi-group-foundation-stage1.md) | Identity, groups, memberships, sessions, invites, permissions, migration foundation |
-| Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
-| Stage 3 | Today Recommendation Batch + Participation | Done | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md) | Core lunch loop plus minimal extension auth/storage/API client |
-| Stage 4 | Prototype UI Wiring | Done | [Stage 4A Extension](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)<br>[Stage 4B Admin](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
-| Stage 5 | Dashboard / Settings / Weights | Done | [Stage 5A Shared + Server](plans/2026-07-14-dashboard-settings-weights-stage5a.md)<br>[Stage 5B Admin](plans/2026-07-14-admin-dashboard-settings-stage5b.md)<br>[Stage 5C Extension](plans/2026-07-14-extension-history-reminders-stage5c.md) | Historical review, dashboard metrics, member contribution, reminders, weights |
-| Stage 6 | Deploy Hardening | Done | [`plans/2026-07-15-deploy-hardening-stage6.md`](plans/2026-07-15-deploy-hardening-stage6.md) | Production hosting, migration verification, extension smoke test, Railway checks |
+| Stage 1 | Multi-Group Foundation | Done | [`plans/2026-07-08-multi-group-foundation-stage1.md`](docs/archive/stages/stage-1/2026-07-08-multi-group-foundation-stage1-plan.md) | Identity, groups, memberships, sessions, invites, permissions, migration foundation |
+| Stage 2 | Group-Scoped Restaurant Knowledge | Done | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](docs/archive/stages/stage-2/2026-07-09-group-scoped-restaurant-knowledge-stage2-plan.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
+| Stage 3 | Today Recommendation Batch + Participation | Done | [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](docs/archive/stages/stage-3/2026-07-09-today-recommendation-batch-participation-stage3-plan.md) | Core lunch loop plus minimal extension auth/storage/API client |
+| Stage 4 | Prototype UI Wiring | Done | [Stage 4A Extension](docs/archive/stages/stage-4/2026-07-10-extension-prototype-ui-wiring-stage4a-plan.md)<br>[Stage 4B Admin](docs/archive/stages/stage-4/2026-07-10-admin-prototype-ui-wiring-stage4b-plan.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
+| Stage 5 | Dashboard / Settings / Weights | Done | [Stage 5A Shared + Server](docs/archive/stages/stage-5/2026-07-14-dashboard-settings-weights-stage5a-plan.md)<br>[Stage 5B Admin](docs/archive/stages/stage-5/2026-07-14-admin-dashboard-settings-stage5b-plan.md)<br>[Stage 5C Extension](docs/archive/stages/stage-5/2026-07-14-extension-history-reminders-stage5c-plan.md) | Historical review, dashboard metrics, member contribution, reminders, weights |
+| Stage 6 | Deploy Hardening | Done | [`plans/2026-07-15-deploy-hardening-stage6.md`](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-plan.md) | Production hosting, migration verification, extension smoke test, Railway checks |
+| Stage 7 | Internal Beta Productization | In Progress | [Stage 7 design](specs/2026-07-15-internal-beta-productization-stage7-design.md)<br>[Stage 7A plan](plans/2026-07-15-internal-beta-productization-stage7a.md)<br>[Review triage](qa/2026-07-15-production-baseline-review-triage.md) | Frozen release baseline, explicit identity boundary, coherent distribution, and a controlled colleague beta |
 
 ## Planning Cadence
 
-The recommended flow is sequential:
+Stages 1–6 are complete and remain historical, verified prerequisites. The
+active cadence is sequential:
 
-1. Implement Stage 1 from its existing plan.
-2. Review Stage 1 results, tests, schema changes, and any product adjustments.
-3. Write the detailed Stage 2 plan.
-4. Implement Stage 2.
-5. Repeat the same plan-then-build cycle for Stage 3, Stage 4, Stage 5, and Stage 6.
+1. Stage 7A baseline freeze, documentation/archive closure, debt disposition and
+   release checks are complete.
+2. Plan and complete Stage 7B lightweight identity definition and hardening.
+3. Plan and complete Stage 7C brand, experience consistency, and distribution
+   readiness.
+4. Start the controlled Stage 7D colleague beta, operate it, collect evidence,
+   and make an account-system decision from observed friction.
 
-This keeps later plans honest. Stage 2 and Stage 3 depend on the actual schema,
-auth middleware, token contracts, migration choices, and safety checks produced
-by Stage 1. Stage 4 depends on the real API shapes produced by Stage 1-3.
-
-Stage 3 must include the minimum extension-side group session plumbing needed
-to prove the real lunch loop works: `identityToken`, `sessionsByGroupId`,
-`activeGroupId`, group-session API calls, and cache fallback by active group.
-Stage 4 is where the extension/admin screens are fully rebuilt in the Open
-Designer visual style with complete loading, empty, error, cache, and
-permission-state polish.
+Each substage receives its own detailed plan only after the previous blocking
+gate is understood. Do not pre-plan Stage 8 implementation as part of Stage 7.
 
 ## Stage 1: Multi-Group Foundation
 
 **Status:** Done per Stage 1 implementation handoff.
 
-**Detailed plan:** [`plans/2026-07-08-multi-group-foundation-stage1.md`](plans/2026-07-08-multi-group-foundation-stage1.md)
+**Detailed plan:** [`plans/2026-07-08-multi-group-foundation-stage1.md`](docs/archive/stages/stage-1/2026-07-08-multi-group-foundation-stage1-plan.md)
 
 **Goal:** Build the multi-group data and auth foundation while keeping the
 existing MVP legacy routes working.
@@ -99,7 +102,7 @@ existing MVP legacy routes working.
 
 **Status:** Done per Stage 2 implementation handoff.
 
-**Detailed plan:** [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md)
+**Detailed plan:** [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](docs/archive/stages/stage-2/2026-07-09-group-scoped-restaurant-knowledge-stage2-plan.md)
 
 **Goal:** Make each lunch group own an isolated restaurant and recommendation
 knowledge base.
@@ -121,7 +124,7 @@ without leaking or mutating another group's data.
 
 **Status:** Done per Stage 3 implementation handoff.
 
-**Detailed plan:** [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](plans/2026-07-09-today-recommendation-batch-participation-stage3.md)
+**Detailed plan:** [`plans/2026-07-09-today-recommendation-batch-participation-stage3.md`](docs/archive/stages/stage-3/2026-07-09-today-recommendation-batch-participation-stage3-plan.md)
 
 **Goal:** Restore and upgrade the core lunch decision loop on top of the
 multi-group foundation.
@@ -154,8 +157,8 @@ API. Stage 4B is QA verified locally against the real server and database.
 
 **Detailed plans:**
 
-- [`plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md`](plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md)
-- [`plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md`](plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md)
+- [`plans/2026-07-10-extension-prototype-ui-wiring-stage4a.md`](docs/archive/stages/stage-4/2026-07-10-extension-prototype-ui-wiring-stage4a-plan.md)
+- [`plans/2026-07-10-admin-prototype-ui-wiring-stage4b.md`](docs/archive/stages/stage-4/2026-07-10-admin-prototype-ui-wiring-stage4b-plan.md)
 
 **Goal:** Connect the Open Designer extension and admin prototype screens to the
 real APIs built in Stage 1-3.
@@ -184,19 +187,19 @@ flows.
 **Status:** Done. Stage 5A shared/server APIs, Stage 5B Admin, and Stage 5C
 Extension implementation and QA are complete.
 
-**Design:** [`specs/2026-07-14-dashboard-settings-weights-stage5-design.md`](specs/2026-07-14-dashboard-settings-weights-stage5-design.md)
+**Design:** [`specs/2026-07-14-dashboard-settings-weights-stage5-design.md`](docs/archive/stages/stage-5/2026-07-14-dashboard-settings-weights-stage5-design.md)
 
-**Completed 5A plan:** [`plans/2026-07-14-dashboard-settings-weights-stage5a.md`](plans/2026-07-14-dashboard-settings-weights-stage5a.md)
+**Completed 5A plan:** [`plans/2026-07-14-dashboard-settings-weights-stage5a.md`](docs/archive/stages/stage-5/2026-07-14-dashboard-settings-weights-stage5a-plan.md)
 
-**5A handoff:** [`qa/2026-07-14-dashboard-settings-weights-stage5a.md`](qa/2026-07-14-dashboard-settings-weights-stage5a.md)
+**5A handoff:** [`qa/2026-07-14-dashboard-settings-weights-stage5a.md`](docs/archive/stages/stage-5/2026-07-14-dashboard-settings-weights-stage5a-qa.md)
 
-**Completed 5B plan:** [`plans/2026-07-14-admin-dashboard-settings-stage5b.md`](plans/2026-07-14-admin-dashboard-settings-stage5b.md)
+**Completed 5B plan:** [`plans/2026-07-14-admin-dashboard-settings-stage5b.md`](docs/archive/stages/stage-5/2026-07-14-admin-dashboard-settings-stage5b-plan.md)
 
-**5B handoff:** [`qa/2026-07-14-admin-dashboard-settings-stage5b.md`](qa/2026-07-14-admin-dashboard-settings-stage5b.md)
+**5B handoff:** [`qa/2026-07-14-admin-dashboard-settings-stage5b.md`](docs/archive/stages/stage-5/2026-07-14-admin-dashboard-settings-stage5b-qa.md)
 
-**Completed 5C plan:** [`plans/2026-07-14-extension-history-reminders-stage5c.md`](plans/2026-07-14-extension-history-reminders-stage5c.md)
+**Completed 5C plan:** [`plans/2026-07-14-extension-history-reminders-stage5c.md`](docs/archive/stages/stage-5/2026-07-14-extension-history-reminders-stage5c-plan.md)
 
-**5C handoff:** [`qa/2026-07-15-extension-history-reminders-stage5c.md`](qa/2026-07-15-extension-history-reminders-stage5c.md)
+**5C handoff:** [`qa/2026-07-15-extension-history-reminders-stage5c.md`](docs/archive/stages/stage-5/2026-07-15-extension-history-reminders-stage5c-qa.md)
 
 **Goal:** Add the prototype's review, operations, and tuning surfaces.
 
@@ -220,11 +223,11 @@ and manage group operations from real data.
 **Status:** Done. Implementation, Railway fresh release, production Admin QA,
 and unpacked Extension QA completed on 2026-07-15.
 
-**Design:** [`specs/2026-07-15-deploy-hardening-stage6-design.md`](specs/2026-07-15-deploy-hardening-stage6-design.md)
+**Design:** [`specs/2026-07-15-deploy-hardening-stage6-design.md`](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-design.md)
 
-**Detailed plan:** [`plans/2026-07-15-deploy-hardening-stage6.md`](plans/2026-07-15-deploy-hardening-stage6.md)
+**Detailed plan:** [`plans/2026-07-15-deploy-hardening-stage6.md`](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-plan.md)
 
-**QA handoff:** [`qa/2026-07-15-deploy-hardening-stage6.md`](qa/2026-07-15-deploy-hardening-stage6.md)
+**QA handoff:** [`qa/2026-07-15-deploy-hardening-stage6.md`](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md)
 
 **Goal:** Prepare the multi-group, prototype-aligned product for reliable
 deployment and manual extension validation.
@@ -241,6 +244,54 @@ deployment and manual extension validation.
 
 **Exit target:** The product is ready for a confident internal deployment and
 extension handoff.
+
+## Stage 7: Internal Beta Productization
+
+**Status:** In Progress. Stage 7A is complete; Stage 7B is Ready for Planning.
+
+**Design:** [`specs/2026-07-15-internal-beta-productization-stage7-design.md`](specs/2026-07-15-internal-beta-productization-stage7-design.md)
+
+**Stage 7A plan:** [`plans/2026-07-15-internal-beta-productization-stage7a.md`](plans/2026-07-15-internal-beta-productization-stage7a.md)
+
+**Accepted review triage:** [`qa/2026-07-15-production-baseline-review-triage.md`](qa/2026-07-15-production-baseline-review-triage.md)
+
+**Stage 7A QA:** [`qa/2026-07-15-internal-beta-productization-stage7a.md`](qa/2026-07-15-internal-beta-productization-stage7a.md)
+
+**Production baseline:**
+`1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`, production-QA verified on
+2026-07-15. The local annotated tag `v0.1.0-internal` has been created and
+verified at that exact commit; it has not been pushed or published.
+
+**Goal:** Turn the verified production deployment into a coherent, supportable,
+and observable internal beta without broadening the lunch-product scope.
+
+**Ordered substages:**
+
+1. **Stage 7A — Trusted baseline (Done):** freeze the version, create changelog and
+   release records, replace stage-dependent current documentation, preserve
+   historical evidence in an indexed archive, and dispose of known debt. The
+   Claude Code / gstack review and corrected triage are complete; runtime
+   security changes do not bypass into this documentation stage.
+2. **Stage 7B — Lightweight identity (Ready for Planning):** document the real identity/security
+   semantics; remove Extension/Server legacy fallback surfaces; add proxy-aware
+   rate limits, a tested Origin policy and explicit group-creation policy; add
+   safe error context and a real-PostgreSQL concurrency test; preserve legacy
+   teammate attribution unless a separate migration spec changes it.
+3. **Stage 7C — Brand and distribution:** align brand, icons, detail-page and
+   cross-surface UX, accessibility and QuickAdd idempotency; decide the internal
+   Extension distribution model; and produce a new hardened version with
+   branch-appropriate install/upgrade/privacy/support materials.
+4. **Stage 7D — Controlled colleague beta:** operate a small cohort, monitor the
+   release using the existing structured logs plus alerting and privacy-bounded
+   reminder observation, collect feedback, and make an evidence-backed account
+   system decision. This is the beta process, not a pre-beta gate.
+
+Stages 7A–7C block the ordinary colleague beta. Stage 7D is the beta itself.
+
+**Exit target:** Colleagues can install and use a versioned internal product
+with clear identity/security limits and support paths; the team can monitor,
+roll back, and learn from real usage; the account-system direction is recorded
+without prematurely committing Stage 8 implementation.
 
 ## Progress Tracker
 
@@ -266,3 +317,11 @@ extension handoff.
 - [x] Stage 5 implemented and verified.
 - [x] Stage 6 detailed implementation plan written.
 - [x] Stage 6 implemented and verified.
+- [x] Stage 7 productization boundary defined.
+- [x] Stage 7A detailed implementation plan written.
+- [x] Stage 7A detailed implementation plan reviewed and approved.
+- [x] Production baseline multi-angle review completed and corrected triage accepted.
+- [x] Stage 7A trusted baseline completed.
+- [ ] Stage 7B identity model and lightweight hardening completed.
+- [ ] Stage 7C brand, experience, and distribution readiness completed.
+- [ ] Stage 7D controlled colleague beta completed and account decision recorded.

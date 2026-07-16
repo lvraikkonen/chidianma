@@ -24,6 +24,10 @@ describe("Stage 6 Railway release contract", () => {
     expect(build.indexOf("@lunch/admin build")).toBeLessThan(build.indexOf("@lunch/server build"));
     expect(build).not.toContain("@lunch/extension");
     expect(rootPackage.pnpm.overrides["@fastify/static>glob"]).toMatch(/11\.1/);
+    expect(rootPackage.scripts["check:release-artifacts"])
+      .toBe("node scripts/check-stage6-artifacts.mjs");
+    expect(rootPackage.scripts["check:production-vulnerabilities"])
+      .toBe("node scripts/classify-production-osv-report.mjs");
   });
 
   it("runs environment, migration, and invariant checks in order before deploy", () => {

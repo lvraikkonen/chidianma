@@ -77,4 +77,4 @@ Prisma, Extension, or shared public types.
   Admin/member roles, section saving, validation, invite rotation, same-day
   current/superseded batches, inline snapshots, and the 390px layout.
 - Detailed evidence and remaining manual-only cases are recorded in
-  [`qa/2026-07-14-admin-dashboard-settings-stage5b.md`](../qa/2026-07-14-admin-dashboard-settings-stage5b.md).
+  [`qa/2026-07-14-admin-dashboard-settings-stage5b.md`](2026-07-14-admin-dashboard-settings-stage5b-qa.md).

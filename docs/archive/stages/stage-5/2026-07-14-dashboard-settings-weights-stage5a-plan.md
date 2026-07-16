@@ -81,4 +81,4 @@ Completed on 2026-07-14 from starting commit
 `7f923dc5531eb9fe46967cd8657a1af581348922`. Shared/server package checks and
 the full monorepo test, typecheck, and build gates passed. Detailed evidence is
 recorded in
-[`qa/2026-07-14-dashboard-settings-weights-stage5a.md`](../qa/2026-07-14-dashboard-settings-weights-stage5a.md).
+[`qa/2026-07-14-dashboard-settings-weights-stage5a.md`](2026-07-14-dashboard-settings-weights-stage5a-qa.md).

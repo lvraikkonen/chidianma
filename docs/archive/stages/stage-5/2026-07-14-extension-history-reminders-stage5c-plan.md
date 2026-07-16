@@ -28,7 +28,7 @@ typecheck and production build pass.
 Completion baseline: 259 Extension tests and 562 monorepo tests pass; all
 workspace typechecks and production builds pass. Chrome Developer Mode QA is
 recorded in
-[`qa/2026-07-15-extension-history-reminders-stage5c.md`](../qa/2026-07-15-extension-history-reminders-stage5c.md).
+[`qa/2026-07-15-extension-history-reminders-stage5c.md`](2026-07-15-extension-history-reminders-stage5c-qa.md).
 
 ## Public Extension Interfaces And Persisted State
 

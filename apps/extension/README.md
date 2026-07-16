@@ -1,41 +1,49 @@
 # Chrome Extension
 
-Build:
+Manifest V3 extension for the daily recommendation, participation, decision,
+feedback, history, and reminder experience.
+
+## Build and load
 
 ```bash
+pnpm --filter @lunch/shared build
 pnpm --filter @lunch/extension build
 ```
 
-Load `apps/extension/dist` in Chrome Developer mode.
+Load `apps/extension/dist` through `chrome://extensions` in Developer mode.
+This unpacked route is for developers and reviewers only; the colleague-beta
+distribution choice and installation guide are Stage 7C decisions.
 
-Permissions:
+Permissions stay limited to:
 
 - `alarms`
 - `notifications`
 - `storage`
-- host permission for `http://localhost:3000/*`
-- host permission for `https://*.up.railway.app/*`
+- `http://localhost:3000/*`
+- `https://*.up.railway.app/*`
 
-Default local API:
+## Use
 
-- `http://localhost:3000`
+1. Open Extension options and set the Server URL.
+2. Enter a display name to create a lightweight local identity.
+3. Create a group or join one with its invite code.
+4. Switch groups without copying tokens, then configure the active group's
+   local reminder override if needed.
+5. Use the popup/detail pages for recommendations, participation, decisions and
+   feedback; use options for personal history and reminder settings.
 
-Usage:
+Raw identity and group-session tokens are intentionally hidden from the UI.
+Changing the Server URL clears host-specific identity, group sessions, caches
+and reminder context.
 
-1. Build the extension and load `apps/extension/dist` as an unpacked extension in Chrome Developer mode.
-2. Open the extension settings page.
-3. Confirm the default API host or change it to the server you want to use.
-4. Enter your display name, then create a group or join an existing group with an invite code.
-5. Switch among the groups returned by the server from the settings page; you do not need to copy or paste tokens.
-6. Configure the active group's local reminder override under "本机提醒".
-7. Open the popup and, if the active group has no current batch for today, generate the missing current batch.
+## Current beta boundary
 
-Connection and token behavior:
+The normal group flow uses the active group's bearer session. The built code
+still contains an unscoped API/read-token fallback for pre-group storage. That
+is a known Stage 7B blocker, not a supported colleague-beta path. The default
+localhost and development read-token values are development compatibility
+residue and must be removed or disabled before Stage 7C produces a distributable
+build.
 
-- Raw identity and group session tokens are intentionally hidden from the settings UI.
-- Changing the API host clears host-specific connection state and cache, including identity, group sessions, active group, group summaries, last recommendation cache, and group-local reminder overrides.
-
-Production config:
-
-- Set API base URL in the extension options page to the Railway public domain.
-- If using a custom API domain outside `*.up.railway.app`, update `apps/extension/public/manifest.json` host permissions before publishing.
+For a custom production API domain, update and review the exact host permission
+in `public/manifest.json`; do not add `<all_urls>`.

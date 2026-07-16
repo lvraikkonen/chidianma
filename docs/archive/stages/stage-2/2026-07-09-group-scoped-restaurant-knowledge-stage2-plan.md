@@ -2326,7 +2326,7 @@ Expected: PASS.
 After human review approves this plan, modify `roadmap.md`:
 
 ```md
-| Stage 2 | Group-Scoped Restaurant Knowledge | Approved for Execution | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
+| Stage 2 | Group-Scoped Restaurant Knowledge | Approved for Execution | [`plans/2026-07-09-group-scoped-restaurant-knowledge-stage2.md`](2026-07-09-group-scoped-restaurant-knowledge-stage2-plan.md) | Each group can maintain its own isolated restaurant and recommendation knowledge base |
 ```
 
 Update the tracker:

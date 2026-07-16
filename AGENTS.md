@@ -63,23 +63,30 @@ Claude Code / gstack may propose implementation changes, but major behavior chan
 
 ## Source of Truth
 
-Use these documents as source of truth, in this order:
+Use current, non-archived documents as source of truth, in this order:
 
-1. specs/
-2. plans/
-3. docs/ai-collaboration-protocol.md
+1. Current specs in `specs/`
+2. The active plan in `plans/`
+3. Current product/architecture/security/operations/release documentation and `docs/ai-collaboration-protocol.md`
 4. tests
 5. existing implementation
+6. Historical Stage artifacts, only as audit evidence
 
 If implementation conflicts with specs, do not silently change behavior. Report the conflict and update the relevant spec or plan first.
 
-## Current MVP Documents
+Historical or superseded Stage documents must not override a later current spec, verified production QA, current tests, or current product documentation. Preserve them for traceability and make any conflict explicit.
 
-- specs/2026-07-07-lunch-chrome-extension-design.md
-- plans/2026-07-07-lunch-vertical-slice.md
+## Current Stage Documents
+
+- specs/2026-07-15-internal-beta-productization-stage7-design.md
+- plans/2026-07-15-internal-beta-productization-stage7a.md
+- docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md
+- qa/2026-07-15-production-baseline-review-triage.md
+- qa/2026-07-15-internal-beta-productization-stage7a.md
+- roadmap.md
 - docs/ai-collaboration-protocol.md
 
-The current execution baseline is the approved lunch vertical slice. Do not execute earlier or superseded revisions of the plan.
+The production-verified implementation baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`. Stage 7A is complete and Stage 7B is Ready for Planning. Do not execute Stage 7B until a current detailed plan is written and approved; do not execute earlier, completed, or superseded plans.
 
 ## Product Principles
 
@@ -94,7 +101,7 @@ The current execution baseline is the approved lunch vertical slice. Do not exec
 - Cache the last successful recommendation so the extension remains useful when the backend is temporarily unavailable.
 - Treat weather as a useful signal, not a hard dependency.
 - Keep the team invite code out of frontend bundles.
-- Do not pretend `EXTENSION_READ_TOKEN` is a strong secret; it is only a lightweight public API guard.
+- Treat `EXTENSION_READ_TOKEN` as legacy compatibility, not a strong secret or a current group-auth mechanism.
 
 ## Engineering Rules
 
@@ -120,17 +127,17 @@ The current execution baseline is the approved lunch vertical slice. Do not exec
 - Database is PostgreSQL through Prisma.
 - Database migrations must include tests or verification steps.
 - Recommendation API date boundaries use `OFFICE_TIMEZONE`, not server or user machine timezone.
-- `GET /api/today-recommendations` is idempotent by default for the same office date.
-- `GET /api/today-recommendations?forceRefresh=true` creates a new current batch and keeps old batches for review.
+- Group-scoped `GET /api/groups/:groupId/today-recommendations` reads the current batch and does not create one.
+- Group-scoped `POST /api/groups/:groupId/today-recommendations/refresh` creates a new current batch and keeps old batches for review.
 - Recommendation batch creation must use a transaction to avoid duplicate current batches around the lunch reminder time.
-- Plugin recommendation requests include `X-Lunch-Read-Token`.
+- Group-scoped Extension requests use the active group's bearer session token. `X-Lunch-Read-Token` and the unscoped routes are legacy compatibility only; do not add new behavior to them, and remove or disable them through Stage 7B before colleague beta.
 - Weather is called only by the server, never by the extension.
 - After real weather is integrated, use `weather_snapshots` plus Open-Meteo-style fetching.
 - If neither cached nor fetched weather is available, do not use rainy mock weather for scoring; return `weatherUnavailable=true` and score with `weatherMatch=0`.
-- Management auth uses a short-lived signed session token created from teammate name + team invite code.
-- Management write APIs must require `Authorization: Bearer <session-token>`.
+- Current management auth uses an identity token plus a group-scoped session token whose active membership is revalidated by the Server.
+- Group management write APIs must require `Authorization: Bearer <group-session-token>` and enforce the current membership role.
 - Admin frontend must never hardcode `TEAM_INVITE_CODE`; the invite input default is an empty string.
-- Fastify static hosting of the production admin build is deploy-hardening work unless a current spec or plan explicitly includes it.
+- Production Fastify serves the built Admin at the same origin as the API. Preserve API route precedence, Admin cache behavior, and production missing-build failure unless a current spec changes them.
 
 ## Testing Rules
 
