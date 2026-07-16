@@ -230,12 +230,35 @@ Identity connection and recommendation-entry review passed by user confirmation:
 - returning to the Popup displayed the active group name and entered the
   recommendation experience successfully.
 
+Connected Popup recommendation-flow review passed by user confirmation:
+
+- the Popup displayed 2–3 recommendation cards without clipping or unexpected
+  scrolling;
+- recommendation reasons were readable;
+- `换一批` refreshed the recommendation batch successfully;
+- selecting a recommendation opened its detail state;
+- decision, feedback, retry and settings controls rendered normally.
+
+The archived detail-state screenshot directly confirms:
+
+- restaurant and dish hierarchy;
+- distance, price, dining mode and attribute tags;
+- recommendation reason and explainable score breakdown;
+- four feedback choices and the primary decision action;
+- consistent typography, spacing, warm color tokens and visible footer actions,
+  without overlap or clipping at the candidate Popup width.
+
+![Chrome 150 Popup recommendation detail](screenshots/stage7c/chrome-150-popup-detail-ready.png)
+
+Screenshot archive:
+`qa/screenshots/stage7c/chrome-150-popup-detail-ready.png`, 798×1226 PNG,
+SHA-256 `5ec1fc24eb4f278dd49c987681ba8bf0ca48fc0a87f8af23667449c7caadff93`.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, empty, cached, error and QuickAdd recovery states.
-- Connected recommendation cards, refresh and detail navigation.
-- Options and Detail desktop/narrow layouts and system notification icon.
+- Detail desktop layout and system notification icon.
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
   Extension ID.
