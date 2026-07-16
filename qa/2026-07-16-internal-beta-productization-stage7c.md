@@ -279,6 +279,18 @@ Feedback interaction review passed by user confirmation:
 - refreshing the Popup after completion preserved a normal working state;
 - the selected feedback value is not retained in this QA evidence.
 
+Extension Reload retention review passed by user confirmation:
+
+- Reload from `chrome://extensions` preserved the expected Extension name,
+  version `0.2.0` and stable ID `bbkeaogleldgfnkgebdhdbiohlmonbkk`;
+- the linked identity and active group remained connected;
+- reminder settings remained intact;
+- the Popup recommendation state remained available after Reload.
+
+This verifies Reload persistence for the currently loaded candidate directory.
+Replacing the directory contents with another candidate extraction before
+Reload remains a separate manual check.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
@@ -288,8 +300,7 @@ Feedback interaction review passed by user confirmation:
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
   Extension ID.
-- Replace candidate files and Reload; confirm identity, group, reminder and
-  cache storage retention.
+- Replace candidate-directory files and Reload; confirm storage retention.
 - Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
