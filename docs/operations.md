@@ -34,6 +34,10 @@ only in Railway variables.
 4. `pnpm start:railway` starts Fastify on `host: "::"` and Railway's port.
 5. Railway promotes only after `/api/ready` succeeds.
 
+Because the Server image includes the built Admin and Shared package, `railway.json` watch patterns
+cover `apps/admin`, `apps/server`, `packages/shared` and the root pnpm/build configuration. Do not
+reduce the watch scope to only `apps/server`; that would skip Admin-only or Shared-only releases.
+
 Never run `prisma:seed` in production.
 
 ## Database verification

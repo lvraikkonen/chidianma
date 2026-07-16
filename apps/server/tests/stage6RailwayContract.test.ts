@@ -36,10 +36,20 @@ describe("Stage 6 Railway release contract", () => {
     expect(command.indexOf("prisma migrate deploy")).toBeLessThan(command.indexOf("db:verify"));
   });
 
-  it("uses Railpack readiness, failure restart, overlap, and draining settings", () => {
+  it("uses complete monorepo watch paths, readiness, failure restart, overlap, and draining settings", () => {
     expect(railway.build).toEqual({
       builder: "RAILPACK",
-      buildCommand: "pnpm build:railway"
+      buildCommand: "pnpm build:railway",
+      watchPatterns: [
+        "/apps/admin/**",
+        "/apps/server/**",
+        "/packages/shared/**",
+        "/package.json",
+        "/pnpm-lock.yaml",
+        "/pnpm-workspace.yaml",
+        "/railway.json",
+        "/tsconfig.base.json"
+      ]
     });
     expect(railway.deploy).toMatchObject({
       preDeployCommand: "pnpm predeploy:railway",

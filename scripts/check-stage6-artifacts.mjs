@@ -155,6 +155,20 @@ for (const forbidden of [
 const railway = JSON.parse(readFileSync(join(workspaceRoot, "railway.json"), "utf8"));
 assert(railway.$schema === "https://railway.com/railway.schema.json", "railway_schema_missing");
 assert(railway.build?.builder === "RAILPACK", "railway_builder_invalid");
+assert(
+  JSON.stringify([...(railway.build?.watchPatterns ?? [])].sort()) ===
+    JSON.stringify([
+      "/apps/admin/**",
+      "/apps/server/**",
+      "/package.json",
+      "/packages/shared/**",
+      "/pnpm-lock.yaml",
+      "/pnpm-workspace.yaml",
+      "/railway.json",
+      "/tsconfig.base.json"
+    ].sort()),
+  "railway_watch_patterns_invalid"
+);
 assert(railway.deploy?.healthcheckPath === "/api/ready", "railway_healthcheck_invalid");
 assert(statSync(join(serverDist, "routes", "adminStatic.js")).isFile(), "server_admin_static_build_missing");
 assert(statSync(join(serverDist, "checkEnvironment.js")).isFile(), "server_environment_check_build_missing");
