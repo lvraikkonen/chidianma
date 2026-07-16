@@ -269,11 +269,14 @@ Lunch-decision review passed by user confirmation:
 - the Extension entered the expected `你已经选好今天的午饭` state;
 - no selected restaurant or member detail is retained in this QA evidence.
 
-Feedback interaction review partially passed by user confirmation:
+Feedback interaction review passed by user confirmation:
 
 - one of the four feedback actions was submitted;
 - the feedback controls displayed the expected pending/disabled behavior while
   the request was in progress;
+- the request completed without an error message;
+- no duplicate feedback was created;
+- refreshing the Popup after completion preserved a normal working state;
 - the selected feedback value is not retained in this QA evidence.
 
 ## Manual QA still required
@@ -281,7 +284,6 @@ Feedback interaction review partially passed by user confirmation:
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, empty, cached and error states.
 - QuickAdd lost-response recovery and uncertain-state behavior.
-- Feedback completion without error and duplicate-submit protection.
 - Detail desktop layout and system notification icon.
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
