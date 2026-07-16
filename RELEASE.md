@@ -87,8 +87,9 @@ decision before expanding Stage 7D beyond the first cohort.
   Extension, restoring the expected identity/group and entering the recommendation experience.
   Recommendation cards, readable reasons, batch refresh, detail navigation and detail-state controls
   also passed. QuickAdd successfully created a non-duplicate restaurant/recommendation and the
-  result was confirmed in the Admin restaurant library. Remaining exceptional Popup states,
-  QuickAdd recovery, desktop detail/notification, upgrade retention and colleague distribution
+  result was confirmed in the Admin restaurant library. The primary lunch-decision action reached
+  the expected completed state. Remaining exceptional Popup states, QuickAdd recovery, feedback
+  pending behavior, desktop detail/notification, upgrade retention and colleague distribution
   approval remain open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256

@@ -263,11 +263,18 @@ QuickAdd normal-path review passed by user confirmation:
 - no restaurant, recommendation, member or Token value is retained in this QA
   evidence.
 
+Lunch-decision review passed by user confirmation:
+
+- the primary `就决定是你了` action completed successfully;
+- the Extension entered the expected `你已经选好今天的午饭` state;
+- no selected restaurant or member detail is retained in this QA evidence.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, empty, cached and error states.
 - QuickAdd lost-response recovery and uncertain-state behavior.
+- Feedback pending/disabled behavior and duplicate-submit protection.
 - Detail desktop layout and system notification icon.
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
