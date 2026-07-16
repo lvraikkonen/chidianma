@@ -316,13 +316,23 @@ System-notification review passed by user confirmation:
 - the temporary reminder-time change used for testing was restored to its
   original value afterward.
 
+Admin Modal live keyboard review passed by user confirmation:
+
+- opening an add/edit Modal moved focus into the dialog;
+- `Tab` and `Shift+Tab` cycled focus within the dialog;
+- `Escape` closed the Modal while it was not pending;
+- closing the Modal restored focus to its original trigger.
+
+Pending-state Escape blocking remains covered by the automated Modal suite; it
+was not separately claimed as a live-browser result.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, empty, cached and error states.
 - QuickAdd lost-response recovery and uncertain-state behavior.
 - Detail desktop layout.
-- Admin desktop/390px layout and live Modal keyboard behavior.
+- Admin desktop/390px visual layout.
 - Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
