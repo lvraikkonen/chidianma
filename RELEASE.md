@@ -92,8 +92,10 @@ decision before expanding Stage 7D beyond the first cohort.
   duplicate protection and post-refresh stability passed. Reload preserved the stable identity,
   group, reminder settings and recommendation state. Replacing the loaded directory with the same
   versioned ZIP and reloading also preserved those states. Loading the same ZIP from a second
-  directory produced the same stable Extension ID. Remaining exceptional Popup states, QuickAdd
-  recovery, desktop detail/notification and colleague distribution approval remain open.
+  directory produced the same stable Extension ID. The Chrome reminder notification used the formal
+  icon, rendered its title/body correctly and opened the Popup when clicked. Remaining exceptional
+  Popup states, QuickAdd recovery, desktop detail/Admin keyboard QA and colleague distribution
+  approval remain open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)

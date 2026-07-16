@@ -307,13 +307,21 @@ Stable-ID cross-directory review passed by user confirmation:
 - this confirms the committed public manifest key stabilizes the Chrome
   development-install ID independently of extraction directory.
 
+System-notification review passed by user confirmation:
+
+- the configured Chrome reminder produced a system notification;
+- the notification used the formal warm-bowl icon;
+- the notification title and body rendered correctly;
+- clicking the notification opened the Extension Popup successfully.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, empty, cached and error states.
 - QuickAdd lost-response recovery and uncertain-state behavior.
-- Detail desktop layout and system notification icon.
+- Detail desktop layout.
 - Admin desktop/390px layout and live Modal keyboard behavior.
+- Confirm any temporary reminder-time change was restored.
 - Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
