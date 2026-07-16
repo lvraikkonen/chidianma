@@ -51,10 +51,10 @@ An Admin role is a group permission, not a formal global account.
 ## Current beta boundary
 
 Stage 7A froze the verified production baseline and Stage 7B completed the lightweight identity and
-pre-beta security boundary in production. Public group creation is disabled. The approved Stage 7C
-implementation now provides the `0.2.0` branded, fixed-origin, stable-ID unpacked candidate path and
-the focused accessibility/reliability fixes. Final package generation, real Chrome QA and approval
-remain before Stage 7D colleague beta starts.
+pre-beta security boundary in production. Public group creation is disabled. Stage 7C completed the
+`0.2.0` branded, fixed-origin, stable-ID unpacked candidate path, focused
+accessibility/reliability fixes, package verification and real Chrome QA. Stage 7D is Ready for
+Planning; no colleague cohort starts until its detailed plan and rollout approval are complete.
 
 ## Non-goals
 

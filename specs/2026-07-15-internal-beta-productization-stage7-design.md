@@ -1,6 +1,6 @@
 # Stage 7：内部发布产品化（Internal Beta Productization）
 
-Status: `In Progress; Stage 7A and Stage 7B Complete, Stage 7C Approved and In Progress`
+Status: `In Progress; Stage 7A–7C Complete, Stage 7D Ready for Planning`
 
 Date: 2026-07-15
 
@@ -13,9 +13,11 @@ Stage 1–6 已经形成可信的生产基线：Admin 与 Server 已部署到 Ra
 
 Stage 6 审计基线固定为提交
 `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`，并由本地
-`v0.1.0-internal` 标签保留。Stage 7B 当前生产运行时为 Railway 部署
-`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`；它是 CLI 上传制品，使用部署 ID 与镜像
-digest 追踪，不冒充为该 Stage 6 标签或可分发版本。
+`v0.1.0-internal` 标签保留。当前生产运行时为 Stage 7C Railway 部署
+`a1e581ad-cb05-48b3-b7f9-6db9858b4fb2`，来源提交为
+`2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`；Stage 7B 部署
+`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` 是直接应用回滚点。运行时使用部署 ID、
+来源提交和镜像 digest 追踪，不冒充为 Stage 6 标签。
 
 Stage 7 的完成目标是：同事可以在理解当前身份和安全边界的前提下，获得
 一致、可安装、可支持、可回滚的内部版本；团队可以观察真实使用、收集反馈，
@@ -27,12 +29,15 @@ Stage 7 的完成目标是：同事可以在理解当前身份和安全边界的
 | --- | --- | --- | --- |
 | Stage 7A | 冻结当前基线、文档收口、Claude Code 多角度审查 | 是 | Done：退出门与 QA 已通过 |
 | Stage 7B | 明确身份模型，并完成轻量身份加固 | 是 | Done：本地、Chrome 与两步生产退出门均通过 |
-| Stage 7C | 品牌、图标、体验一致性与受控 unpacked 分发 | 是 | Candidate packaged; Railway QA passed; real Chrome QA pending |
-| Stage 7D | 小范围同事内测、监控、反馈和账号体系决策 | 否，属于内测过程 | Defined：7A–7C 通过后启动 |
+| Stage 7C | 品牌、图标、体验一致性与受控 unpacked 分发 | 是 | Done：自动化、Railway、真实 Chrome 与打包退出门均通过 |
+| Stage 7D | 小范围同事内测、监控、反馈和账号体系决策 | 否，属于内测过程 | Ready for Planning：cohort 尚未启动 |
 
 执行必须保持 7A → 7B → 7C → 7D 的顺序。7A、7B、7C 的退出门未通过前，
 不把版本交给普通同事作为正式内测入口。必要的开发者或审查者验证不算进入
 Stage 7D。
+
+Stage 7C 完成只批准以 `0.2.0` 候选作为 Stage 7D 规划输入；实际同事分发仍需
+Stage 7D 详细计划和明确 cohort 批准。
 
 ## Stage 7A：当前状态收尾与可信基线
 

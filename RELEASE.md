@@ -1,6 +1,6 @@
 # Internal Release Record
 
-Status: `Stage 7C Railway candidate verified; not approved for colleague distribution`
+Status: `Stage 7C complete; Stage 7D ready for planning, cohort not started`
 
 Date: 2026-07-16
 
@@ -77,7 +77,7 @@ decision before expanding Stage 7D beyond the first cohort.
   logging, operator tools and real PostgreSQL concurrency are deployed. Both production deployments,
   migration/verifier gates, external smoke, same-identity Admin/Extension checks and Demo dry-run
   pass. Production group creation is disabled and both legacy variables are removed.
-- **Stage 7C candidate in real Chrome QA:** brand assets, Extension/Admin visual alignment,
+- **Stage 7C complete:** brand assets, Extension/Admin visual alignment,
   Modal focus containment, QuickAdd lost-response recovery, stable-ID build profiles and controlled
   unpacked packaging are implemented. The versioned ZIP passed the strict release gate, and Railway
   deployment `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` passed build, pre-deploy verification, readiness,
@@ -99,8 +99,13 @@ decision before expanding Stage 7D beyond the first cohort.
   responsive layouts also remained usable without overflow or obstruction. The standalone Detail
   page passed desktop/narrow layout, wrapping, pending/disabled and keyboard-focus checks.
   The 16px toolbar icon remained recognizable on both light and dark Chrome toolbar themes.
-  Remaining exceptional Popup states, QuickAdd recovery and colleague distribution approval remain
-  open.
+  The final exit-gate rerun passed all tests, typechecks, internal/dev/Railway builds, documentation,
+  artifact, secret and strict Stage 7C release checks; production health/readiness remained green
+  with no observed HTTP 5xx in the verification window. Popup loading/empty/cached/error and
+  QuickAdd lost-response/uncertain paths are accepted through deterministic source/state mapping and
+  automated coverage rather than risky production fault injection. Stage 7C is approved as the
+  input to Stage 7D planning; actual colleague distribution still requires the Stage 7D detailed
+  plan and explicit cohort approval.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)
@@ -118,6 +123,7 @@ decision before expanding Stage 7D beyond the first cohort.
   single-device remote revoke or account merge. Link codes require one still-connected device.
 
 Evidence: [Stage 6 production QA](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md),
-[Stage 7 review triage](qa/2026-07-15-production-baseline-review-triage.md) and
-[Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md). The current execution source
-is the approved [Stage 7C detailed plan](plans/2026-07-16-internal-beta-productization-stage7c.md).
+[Stage 7 review triage](qa/2026-07-15-production-baseline-review-triage.md),
+[Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md) and
+[Stage 7C QA](qa/2026-07-16-internal-beta-productization-stage7c.md). The completed execution source
+is the [Stage 7C detailed plan](plans/2026-07-16-internal-beta-productization-stage7c.md).

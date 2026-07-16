@@ -178,6 +178,27 @@ describe("popup controller", () => {
     expect(loadParticipation).not.toHaveBeenCalled();
   });
 
+  it("maps a current batch without recommendations to the empty state", async () => {
+    const loadParticipation = vi.fn();
+    const state = await loadPopupState(popupDependencies({
+      loadRecommendations: vi.fn().mockResolvedValue({
+        ...todayResponse("group-1"),
+        items: []
+      }),
+      loadParticipation
+    }));
+
+    expect(state).toMatchObject({
+      kind: "empty",
+      group: { groupId: "group-1" },
+      response: {
+        groupId: "group-1",
+        items: []
+      }
+    });
+    expect(loadParticipation).not.toHaveBeenCalled();
+  });
+
   it("matches the active membership", async () => {
     const participation = participationResponse();
     expect(currentMemberParticipation(participation, "membership-1")).toEqual(

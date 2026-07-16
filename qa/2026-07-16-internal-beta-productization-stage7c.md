@@ -1,6 +1,6 @@
 # Stage 7C Internal Beta Brand And Experience QA
 
-Status: `Candidate packaged and Railway verified; real Chrome QA in progress`
+Status: `PASS — Stage 7C complete; Stage 7D ready for planning`
 
 Date: 2026-07-16
 
@@ -32,8 +32,9 @@ No REST API, Prisma schema, identity model or Chrome permission category
 changed. Production changed only the built Admin assets and the Railway
 monorepo watch-path contract.
 
-Stage 7D has not started. The candidate is not approved for colleague
-distribution until real Chrome QA completes.
+All Stage 7C exit gates have passed. The candidate is approved as the controlled
+input to Stage 7D planning; Stage 7D has not started and no colleague cohort is
+authorized by this QA result alone.
 
 ## Automated verification
 
@@ -42,12 +43,12 @@ Commands used Node `22.23.1` and pnpm `9.15.0`.
 | Command | Result |
 | --- | --- |
 | `pnpm --filter @lunch/server prisma:generate` | PASS after allowing Prisma to update its user cache |
-| `pnpm test` | PASS: 646 tests — Shared 31, Server 265, Admin 85, Extension 265 |
+| `pnpm test` | PASS: 647 tests — Shared 31, Server 265, Admin 85, Extension 266 |
 | `pnpm typecheck` | PASS |
 | `pnpm build` | PASS; default Extension build is internal |
 | `pnpm --filter @lunch/extension build:dev` | PASS |
 | `pnpm build:railway` | PASS |
-| `pnpm check:docs` | PASS: 59 Markdown files / 133 local links |
+| `pnpm check:docs` | PASS: 59 Markdown files / 138 local links |
 | `pnpm check:release-artifacts` | PASS: Admin, Extension, Server and Railway contract |
 | `pnpm check:release-secrets` | PASS: no supplied secrets or tracked private-key file |
 | `pnpm package:extension:internal` | PASS from a clean committed worktree |
@@ -152,8 +153,7 @@ The ZIP:
   `bbkeaogleldgfnkgebdhdbiohlmonbkk` from both extracted manifests.
 
 This confirms the fixed-key package contract statically. Actual Chrome loading
-has passed for one candidate directory; loading from a second directory remains
-a manual exit gate.
+also passed from two separate candidate directories with the same Extension ID.
 
 ## Railway candidate evidence
 
@@ -350,11 +350,54 @@ Toolbar-icon review passed by user confirmation:
   light and dark Chrome toolbar themes;
 - no contrast or legibility problem was observed.
 
-## Manual QA still required
+## Final exit-gate rerun
 
-- Popup loading, empty, cached and error states.
-- QuickAdd lost-response recovery and uncertain-state behavior.
-- Record screenshots for the remaining states.
+The final closure rerun passed:
+
+- `pnpm test`: 647 tests;
+- `pnpm typecheck`;
+- default internal build and explicit dev build;
+- Railway production build;
+- documentation, release-artifact and secret gates;
+- strict Stage 7C release validation;
+- `git diff --check`.
+
+The strict release gate revalidated Extension version `0.2.0`, stable ID
+`bbkeaogleldgfnkgebdhdbiohlmonbkk`, exact production host, three minimal
+permissions, 23 ZIP files and SHA-256
+`4a1db2cf62c998b6759f88dff1e775f91e7c6455dc037558effd8f2e4e9d948c`.
+
+Production remained on Railway deployment
+`a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` in `SUCCESS`; `/api/health` and
+`/api/ready` returned healthy/ready responses, and no production HTTP 5xx was
+observed in the final verification window.
+
+## Accepted exceptional-state coverage
+
+Production fault injection was intentionally not used for write-loss or
+service-failure states:
+
+- Popup disconnected, no-current-batch, cached, session-expired, forbidden,
+  generic error, ready and explicit empty-batch state mapping are covered by
+  controller tests; loading and state renderers are compiled into the built
+  runtime, whose brand and legacy-residue markup is checked by the Stage 7C
+  gate.
+- QuickAdd restaurant/recommendation lost response, confirmed saved,
+  confirmed missing, read failure, multiple candidates, other-member content,
+  uncertain no-retry and identity/group context changes are covered by shared
+  reconciliation tests plus Admin and Extension integration/view-state tests.
+
+These deterministic cases are accepted without live production fault
+injection or additional screenshots. No remaining exceptional-state item blocks
+Stage 7C completion.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
 Prisma schema or migration.
+
+## Exit decision
+
+Stage 7C: **PASS / Complete**.
+
+Stage 7D: **Ready for Planning**. Actual colleague distribution requires a
+current detailed plan, explicit cohort approval and the Stage 7D operating
+controls; it has not started as part of this closure.

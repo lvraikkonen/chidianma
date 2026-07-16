@@ -1,6 +1,6 @@
 # Stage 7C：内部测试版品牌、视觉与体验质量收口
 
-Status: `Implementation Complete — Railway Candidate Verified, Chrome QA Pending`
+Status: `Complete — All Exit Gates Passed`
 
 Date: 2026-07-16
 
@@ -100,6 +100,24 @@ git diff --check
 
 没有 Server/Prisma 行为变化，因此不要求重新执行 migration rehearsal。
 
-真实 Chrome QA 覆盖浅色/深色工具栏图标、Popup 全状态、Options、Detail、通知、
+真实 Chrome QA 覆盖浅色/深色工具栏图标、Popup、Options、Detail、通知、
 390px Admin、Modal 键盘操作、两个目录的稳定 Extension ID、覆盖升级和 storage
-保留。通过 QA 和明确批准后才启动 Stage 7D 同事 cohort。
+保留。异常 Popup 与 QuickAdd 恢复状态通过自动化覆盖收口，不在生产中注入写入故障。
+
+## Completion evidence
+
+- Candidate source:
+  `2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`.
+- Extension `0.2.0` ID:
+  `bbkeaogleldgfnkgebdhdbiohlmonbkk`.
+- ZIP SHA-256:
+  `4a1db2cf62c998b6759f88dff1e775f91e7c6455dc037558effd8f2e4e9d948c`.
+- Railway deployment:
+  `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2`.
+- Chrome QA:
+  Google Chrome `150.0.7871.125` Official Build, `x86_64`.
+- Full evidence:
+  [`qa/2026-07-16-internal-beta-productization-stage7c.md`](../qa/2026-07-16-internal-beta-productization-stage7c.md).
+
+Stage 7C 完成后，Stage 7D 进入 Ready for Planning；本计划不自动批准或启动同事
+cohort。

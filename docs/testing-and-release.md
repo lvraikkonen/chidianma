@@ -1,6 +1,6 @@
 # Testing and Release
 
-Status: current as of 2026-07-15.
+Status: current as of 2026-07-16.
 
 ## Automated gates
 
@@ -82,8 +82,10 @@ For the controlled install/upgrade/rollback flow, use
 - `v0.1.0-internal` freezes the exact Stage 6 production-QA baseline.
 - The tag is local until separately approved for push; it is not the Stage 7B/7C distributable
   beta version.
-- Stage 7B is production-verified, but the hardened client/server pair receives a new distributable
-  version only after Stage 7C passes. Extension `0.2.0` is the Stage 7C candidate boundary.
+- Stage 7B is production-verified. Extension `0.2.0` is the Stage 7C candidate boundary and has
+  passed automated, Railway and real Chrome exit gates.
+- Stage 7C completion approves the candidate for Stage 7D planning; it does not itself start or
+  authorize the colleague cohort.
 - `CHANGELOG.md` records user-facing capability; `RELEASE.md` records deployment/database/rollback
   state and known issues.
 
