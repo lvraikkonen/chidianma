@@ -344,9 +344,14 @@ Standalone Detail-page review passed by user confirmation:
 - controls wrapped correctly at narrow width;
 - disabled/pending states and keyboard focus remained visibly distinguishable.
 
+Toolbar-icon review passed by user confirmation:
+
+- the optically adjusted 16px warm-bowl icon remained recognizable on both
+  light and dark Chrome toolbar themes;
+- no contrast or legibility problem was observed.
+
 ## Manual QA still required
 
-- Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, empty, cached and error states.
 - QuickAdd lost-response recovery and uncertain-state behavior.
 - Record screenshots for the remaining states.

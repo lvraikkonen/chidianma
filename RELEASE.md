@@ -98,6 +98,7 @@ decision before expanding Stage 7D beyond the first cohort.
   Escape close and trigger-focus restoration passed. Admin desktop and approximately 390px
   responsive layouts also remained usable without overflow or obstruction. The standalone Detail
   page passed desktop/narrow layout, wrapping, pending/disabled and keyboard-focus checks.
+  The 16px toolbar icon remained recognizable on both light and dark Chrome toolbar themes.
   Remaining exceptional Popup states, QuickAdd recovery and colleague distribution approval remain
   open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
