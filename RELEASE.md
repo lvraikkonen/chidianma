@@ -96,8 +96,9 @@ decision before expanding Stage 7D beyond the first cohort.
   icon, rendered its title/body correctly and opened the Popup when clicked; its temporary test
   schedule was restored afterward. Admin Modal live keyboard focus entry, forward/reverse cycling,
   Escape close and trigger-focus restoration passed. Admin desktop and approximately 390px
-  responsive layouts also remained usable without overflow or obstruction. Remaining exceptional
-  Popup states, QuickAdd recovery, desktop detail QA and colleague distribution approval remain
+  responsive layouts also remained usable without overflow or obstruction. The standalone Detail
+  page passed desktop/narrow layout, wrapping, pending/disabled and keyboard-focus checks.
+  Remaining exceptional Popup states, QuickAdd recovery and colleague distribution approval remain
   open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256

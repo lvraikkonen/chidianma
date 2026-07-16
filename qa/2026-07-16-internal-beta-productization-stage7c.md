@@ -336,12 +336,19 @@ Admin responsive-layout review passed by user confirmation:
 - no horizontal overflow, obstructed content or unreachable control was
   observed.
 
+Standalone Detail-page review passed by user confirmation:
+
+- the page rendered normally at desktop and narrow widths;
+- the shared brand header and settings button remained correctly aligned;
+- decision, feedback and retry controls were not clipped;
+- controls wrapped correctly at narrow width;
+- disabled/pending states and keyboard focus remained visibly distinguishable.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, empty, cached and error states.
 - QuickAdd lost-response recovery and uncertain-state behavior.
-- Detail desktop layout.
 - Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
