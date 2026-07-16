@@ -77,11 +77,13 @@ decision before expanding Stage 7D beyond the first cohort.
   logging, operator tools and real PostgreSQL concurrency are deployed. Both production deployments,
   migration/verifier gates, external smoke, same-identity Admin/Extension checks and Demo dry-run
   pass. Production group creation is disabled and both legacy variables are removed.
-- **Stage 7C candidate ready for real Chrome QA:** brand assets, Extension/Admin visual alignment,
+- **Stage 7C candidate in real Chrome QA:** brand assets, Extension/Admin visual alignment,
   Modal focus containment, QuickAdd lost-response recovery, stable-ID build profiles and controlled
   unpacked packaging are implemented. The versioned ZIP passed the strict release gate, and Railway
   deployment `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` passed build, pre-deploy verification, readiness,
-  Admin static-resource and core API smoke. Real Chrome install/upgrade/visual QA and colleague
+  Admin static-resource and core API smoke. Chrome `150.0.7871.125` loaded the expected internal
+  name, `0.2.0` version and stable ID; the Popup disconnected-state visual check passed. Remaining
+  Chrome connected states, settings/detail/notification, upgrade retention and colleague
   distribution approval remain open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256

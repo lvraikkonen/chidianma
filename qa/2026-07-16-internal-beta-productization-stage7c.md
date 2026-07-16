@@ -1,6 +1,6 @@
 # Stage 7C Internal Beta Brand And Experience QA
 
-Status: `Candidate packaged and Railway verified; real Chrome QA pending`
+Status: `Candidate packaged and Railway verified; real Chrome QA in progress`
 
 Date: 2026-07-16
 
@@ -152,7 +152,8 @@ The ZIP:
   `bbkeaogleldgfnkgebdhdbiohlmonbkk` from both extracted manifests.
 
 This confirms the fixed-key package contract statically. Actual Chrome loading
-from both directories remains a manual exit gate.
+has passed for one candidate directory; loading from a second directory remains
+a manual exit gate.
 
 ## Railway candidate evidence
 
@@ -184,18 +185,46 @@ Deployment `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` then reached `SUCCESS`:
 Stage 7B deployment `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` remains the
 immediate application rollback point. Both PostgreSQL services remain intact.
 
+## Real Chrome candidate evidence
+
+Chrome:
+
+- Google Chrome `150.0.7871.125` Official Build, `x86_64`.
+- The internal build loaded successfully through `chrome://extensions` →
+  **Load unpacked**.
+- Chrome reported the expected name `中午吃点啥（内部测试）`, version `0.2.0`
+  and Extension ID `bbkeaogleldgfnkgebdhdbiohlmonbkk`.
+- The loaded `apps/extension/dist` content was byte-for-byte matched to the
+  versioned candidate ZIP by the strict release gate.
+
+Popup disconnected-state visual review passed by user confirmation and
+screenshot inspection:
+
+- the warm-bowl Logo is recognizable and correctly aligned;
+- product name and inline SVG settings gear render clearly;
+- the connection guidance card, primary action and footer actions preserve the
+  intended hierarchy;
+- no clipping, overlap or unexpected internal scrolling is visible;
+- button labels and disconnected wording use the approved user-facing language.
+
+![Chrome 150 Popup disconnected state](screenshots/stage7c/chrome-150-popup-disconnected.png)
+
+Screenshot archive:
+`qa/screenshots/stage7c/chrome-150-popup-disconnected.png`, 798×1064 PNG,
+SHA-256 `13fd91e07416f8be885fc591ba073429038e86cae18997fbc5c76d79d660ab21`.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
-- Popup loading, ready, empty, cached, disconnected, error and QuickAdd
-  recovery states.
+- Popup loading, ready, empty, cached, error and QuickAdd recovery states.
+- Settings gear navigation and Options support information.
 - Options and Detail desktop/narrow layouts and system notification icon.
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
   Extension ID.
 - Replace candidate files and Reload; confirm identity, group, reminder and
   cache storage retention.
-- Record Chrome version, committed revision and screenshots.
+- Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
 Prisma schema or migration.
