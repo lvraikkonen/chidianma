@@ -313,6 +313,8 @@ System-notification review passed by user confirmation:
 - the notification used the formal warm-bowl icon;
 - the notification title and body rendered correctly;
 - clicking the notification opened the Extension Popup successfully.
+- the temporary reminder-time change used for testing was restored to its
+  original value afterward.
 
 ## Manual QA still required
 
@@ -321,7 +323,6 @@ System-notification review passed by user confirmation:
 - QuickAdd lost-response recovery and uncertain-state behavior.
 - Detail desktop layout.
 - Admin desktop/390px layout and live Modal keyboard behavior.
-- Confirm any temporary reminder-time change was restored.
 - Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
