@@ -299,6 +299,14 @@ Candidate-directory replacement review also passed by user confirmation:
 - this verifies the documented same-version controlled unpacked update flow,
   but does not claim future cross-version storage migration compatibility.
 
+Stable-ID cross-directory review passed by user confirmation:
+
+- the same candidate ZIP was extracted into a second new directory;
+- loading that directory through **Load unpacked** produced the same Extension
+  ID `bbkeaogleldgfnkgebdhdbiohlmonbkk`;
+- this confirms the committed public manifest key stabilizes the Chrome
+  development-install ID independently of extraction directory.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
@@ -306,8 +314,6 @@ Candidate-directory replacement review also passed by user confirmation:
 - QuickAdd lost-response recovery and uncertain-state behavior.
 - Detail desktop layout and system notification icon.
 - Admin desktop/390px layout and live Modal keyboard behavior.
-- Load the same fixed-key candidate from two directories and confirm identical
-  Extension ID.
 - Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
