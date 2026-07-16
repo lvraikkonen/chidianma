@@ -15,10 +15,12 @@ or documentation workflow. Preserve the role split and record review output in
 
 The product has completed Stage 1–6 production QA. The frozen Stage 6 audit
 baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`. Stage 7A and Stage 7B
-are complete; the approved Stage 7C detailed plan is in progress.
-The current Stage 7B production runtime is Railway deployment
-`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`, tracked by deployment ID and image
-digest because it was uploaded from the approved uncommitted workspace.
+are complete. Stage 7C implementation, packaging and Railway QA are complete;
+real Chrome install/upgrade/visual QA and approval remain open.
+The current production runtime is Railway deployment
+`a1e581ad-cb05-48b3-b7f9-6db9858b4fb2`, sourced from commit
+`2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`. Stage 7B deployment
+`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` is the immediate application rollback point.
 
 Current sources:
 
@@ -51,7 +53,7 @@ names are not verified accounts. Stage 7B removed the Extension's legacy
 unscoped/read-token fallback and corresponding Server routes, added public-entry
 controls, and disabled production group creation. Do not reintroduce legacy
 paths or silently expand Stage 7C into formal accounts/OAuth. Stage 7C remains
-blocked on an approved detailed plan and must not start ordinary colleague beta.
+blocked on real Chrome candidate QA and approval and must not start ordinary colleague beta.
 
 ## Handoff to Codex
 

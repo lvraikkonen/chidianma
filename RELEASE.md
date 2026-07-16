@@ -1,6 +1,6 @@
 # Internal Release Record
 
-Status: `Baseline frozen; not approved for colleague distribution`
+Status: `Stage 7C Railway candidate verified; not approved for colleague distribution`
 
 Date: 2026-07-16
 
@@ -9,11 +9,18 @@ Date: 2026-07-16
 - Local annotated tag: `v0.1.0-internal`.
 - Peeled commit: `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
 - Tag push / remote release: not performed.
+- Stage 7C candidate source commit:
+  `2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`.
+- Extension `0.2.0` candidate ID: `bbkeaogleldgfnkgebdhdbiohlmonbkk`.
+- Extension ZIP SHA-256:
+  `4a1db2cf62c998b6759f88dff1e775f91e7c6455dc037558effd8f2e4e9d948c`.
 - Railway project/service: `remarkable-reverence / @lunch/server`.
-- Current Railway deployment: `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` (`SUCCESS`).
+- Current Railway deployment: `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` (`SUCCESS`).
 - Current Railway image digest:
-  `sha256:dba6964449d3f8627c4188855fae15935e3c065313bccb074b664ce5a52133c7`.
-- Immediate pre-variable-change rollback deployment:
+  `sha256:c31bbb92379f0a2c1594b96c475bf64666f57bee762f9be49ef7cfe4e9a0695c`.
+- Immediate application rollback deployment:
+  `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`.
+- Pre-Stage 7B variable-change rollback deployment:
   `2d3db6db-e1ab-41c2-86c0-edd2138dcc1a`.
 - Pre-7B rollback deployment: `371242e7-9783-4866-aaa5-f4f26218ddcf`
   (`ad0260b4abf12b48bbc64e73020858ff316227f3`).
@@ -22,10 +29,11 @@ Date: 2026-07-16
 - Production URL: `https://lunchserver-production.up.railway.app`.
 - Runtime: Node `22.23.1`, pnpm `9.15.0`.
 
-The current deployment is a Railway CLI upload of the approved Stage 7B workspace, so `/api/ready`
-reports revision `local`. It is identified by the deployment ID and image digest above and is not
-represented by a Git commit. The `v0.1.0-internal` tag remains only the Stage 6 audit baseline; it
-does not represent the current production runtime or a distributable Stage 7 release.
+The current deployment is a Railway CLI upload from committed Stage 7C source
+`2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`, but `/api/ready` still reports revision `local`.
+Use the source commit, deployment ID and image digest above as the artifact identity. The
+`v0.1.0-internal` tag remains only the Stage 6 audit baseline; it does not represent the current
+production runtime or a distributable Stage 7 release.
 
 ## Database and migrations
 
@@ -68,13 +76,13 @@ decision before expanding Stage 7D beyond the first cohort.
 - **Stage 7B complete:** legacy closure, identity linking/reset, rate limits, Origin policy, safe
   logging, operator tools and real PostgreSQL concurrency are deployed. Both production deployments,
   migration/verifier gates, external smoke, same-identity Admin/Extension checks and Demo dry-run
-  pass. Production group creation is disabled and both legacy variables are removed. Stage 7C
-  implementation is complete and awaiting final candidate QA; no approved colleague distribution
-  artifact exists yet.
-- **Stage 7C implementation ready for final candidate QA:** brand assets, Extension/Admin visual
-  alignment, Modal focus containment, QuickAdd lost-response recovery, stable-ID build profiles and
-  controlled unpacked packaging are implemented. A final ZIP is intentionally generated only from
-  a clean committed worktree; real Chrome install/upgrade/visual QA and approval remain open.
+  pass. Production group creation is disabled and both legacy variables are removed.
+- **Stage 7C candidate ready for real Chrome QA:** brand assets, Extension/Admin visual alignment,
+  Modal focus containment, QuickAdd lost-response recovery, stable-ID build profiles and controlled
+  unpacked packaging are implemented. The versioned ZIP passed the strict release gate, and Railway
+  deployment `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` passed build, pre-deploy verification, readiness,
+  Admin static-resource and core API smoke. Real Chrome install/upgrade/visual QA and colleague
+  distribution approval remain open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)

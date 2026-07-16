@@ -92,11 +92,13 @@ Historical or superseded Stage documents must not override a later current spec,
 - docs/ai-collaboration-protocol.md
 
 The frozen Stage 6 audit baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
-The current Stage 7B production runtime is Railway deployment
-`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`, tracked by deployment ID and image digest because it was
-uploaded from the approved uncommitted workspace. Stage 7A and Stage 7B are complete; the approved
-Stage 7C plan is in progress. Do not execute earlier, completed, superseded, Web Store, or Stage 7D
-work while Stage 7C exit gates remain open.
+The current production runtime is the Stage 7C Railway candidate deployment
+`a1e581ad-cb05-48b3-b7f9-6db9858b4fb2`, sourced from commit
+`2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`; Stage 7B deployment
+`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` is the immediate application rollback point. Stage 7A and
+Stage 7B are complete. Stage 7C implementation, packaging and Railway QA are complete, but real
+Chrome install/upgrade/visual QA and approval remain open. Do not execute earlier, completed,
+superseded, Web Store, or Stage 7D work while those Stage 7C exit gates remain open.
 
 ## Product Principles
 

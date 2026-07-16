@@ -53,7 +53,8 @@ active cadence is sequential:
 1. Stage 7A baseline freeze, documentation/archive closure, debt disposition and
    release checks are complete.
 2. Stage 7B lightweight identity definition and hardening are complete.
-3. Complete the approved Stage 7C brand, focused quality and versioned unpacked-distribution plan.
+3. Finish real Chrome candidate QA and approval for the implemented Stage 7C brand, focused quality
+   and versioned unpacked-distribution work.
 4. Start the controlled Stage 7D colleague beta, operate it, collect evidence,
    and make an account-system decision from observed friction.
 

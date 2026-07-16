@@ -1,12 +1,12 @@
 # Stage 7C Internal Beta Brand And Experience QA
 
-Status: `Implementation complete; final candidate QA pending`
+Status: `Candidate packaged and Railway verified; real Chrome QA pending`
 
 Date: 2026-07-16
 
 ## Outcome
 
-The Stage 7C implementation is complete in the current workspace:
+The Stage 7C implementation and committed candidate are complete:
 
 - deterministic warm-bowl brand assets and shared visual tokens;
 - branded Extension popup/options/detail and lightweight Admin brand alignment;
@@ -18,11 +18,22 @@ The Stage 7C implementation is complete in the current workspace:
 - clean-worktree-only package command, checksum/release metadata contract and
   controlled unpacked install/upgrade/rollback documentation.
 
-No REST API, Prisma schema, identity model, Chrome permission category or
-production deployment changed.
+Candidate identity:
 
-Stage 7D has not started. A colleague-distribution artifact has not been
-generated from this uncommitted workspace.
+- source commit `2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`;
+- Extension ID `bbkeaogleldgfnkgebdhdbiohlmonbkk`;
+- ZIP SHA-256
+  `4a1db2cf62c998b6759f88dff1e775f91e7c6455dc037558effd8f2e4e9d948c`;
+- Railway deployment `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2`;
+- Railway image digest
+  `sha256:c31bbb92379f0a2c1594b96c475bf64666f57bee762f9be49ef7cfe4e9a0695c`.
+
+No REST API, Prisma schema, identity model or Chrome permission category
+changed. Production changed only the built Admin assets and the Railway
+monorepo watch-path contract.
+
+Stage 7D has not started. The candidate is not approved for colleague
+distribution until real Chrome QA completes.
 
 ## Automated verification
 
@@ -39,7 +50,9 @@ Commands used Node `22.23.1` and pnpm `9.15.0`.
 | `pnpm check:docs` | PASS: 59 Markdown files / 133 local links |
 | `pnpm check:release-artifacts` | PASS: Admin, Extension, Server and Railway contract |
 | `pnpm check:release-secrets` | PASS: no supplied secrets or tracked private-key file |
-| `STAGE7C_REQUIRE_ARTIFACTS=0 pnpm check:stage7c-release` | PASS: both profiles, icons, markup, exact host, stable ID, permissions and legacy-residue checks |
+| `pnpm package:extension:internal` | PASS from a clean committed worktree |
+| `pnpm check:stage7c-release` | PASS: both profiles, ZIP byte-for-byte match, icons, markup, exact host, stable ID, permissions, metadata and legacy-residue checks |
+| `pnpm --filter @lunch/server exec vitest run tests/stage6RailwayContract.test.ts` | PASS: 3 tests, including complete monorepo watch paths |
 | `git diff --check` | PASS |
 
 The first full test/typecheck attempt after dependency installation failed
@@ -117,10 +130,10 @@ Dev profile:
 - advanced API editing enabled;
 - separate Extension ID so it can coexist with the internal build.
 
-`pnpm package:extension:internal` was run as a negative gate and correctly
-stopped with `extension_package_requires_clean_worktree`. The strict
-`pnpm check:stage7c-release` likewise correctly reports
-`stage7c_release_artifacts_missing` until a clean committed worktree produces:
+Before the implementation commit, `pnpm package:extension:internal` was run as
+a negative gate and correctly stopped with
+`extension_package_requires_clean_worktree`. From the committed candidate it
+produced and strictly validated:
 
 ```text
 artifacts/extension/
@@ -129,7 +142,49 @@ artifacts/extension/
   chidianma-extension-0.2.0-internal.release.json
 ```
 
-## Manual QA still required at the committed candidate
+The ZIP:
+
+- contains `manifest.json` at the archive root;
+- passes `unzip -t`;
+- contains 23 files;
+- extracts identically into two separate directories;
+- derives version `0.2.0` and Extension ID
+  `bbkeaogleldgfnkgebdhdbiohlmonbkk` from both extracted manifests.
+
+This confirms the fixed-key package contract statically. Actual Chrome loading
+from both directories remains a manual exit gate.
+
+## Railway candidate evidence
+
+Pre-deploy production baseline passed:
+
+- `/api/health` HTTP 200;
+- `/api/ready` HTTP 200 with database `ready`;
+- Admin HTML HTTP 200;
+- unauthenticated `GET /api/groups` HTTP 401;
+- unknown `/api/*` HTTP 404 JSON.
+
+The first upload, deployment `90bc0a54-dfab-42d6-a519-32025fb8c561`, was
+`SKIPPED` without changing production because the service inherited a stale
+`/apps/server/**`-only watch pattern. The repository now defines and tests the
+complete Railway build inputs: Admin, Server, Shared and root pnpm/build
+configuration.
+
+Deployment `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` then reached `SUCCESS`:
+
+- Shared, Prisma Client, Admin and Server builds passed;
+- no migration was pending;
+- all six read-only database verifier checks passed with count zero;
+- `/api/ready` passed before promotion;
+- the new Admin title `中午吃点啥 · 管理端` and `/brand-mark.svg` are live;
+- deployed Admin JavaScript and CSS hashes exactly match the local candidate;
+- health/readiness, protected 401 and unknown API 404 passed after promotion;
+- no production HTTP 5xx was recorded in the deployment window.
+
+Stage 7B deployment `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` remains the
+immediate application rollback point. Both PostgreSQL services remain intact.
+
+## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, ready, empty, cached, disconnected, error and QuickAdd
@@ -141,8 +196,6 @@ artifacts/extension/
 - Replace candidate files and Reload; confirm identity, group, reminder and
   cache storage retention.
 - Record Chrome version, committed revision and screenshots.
-- Deploy the approved Admin-only Railway candidate and run production health,
-  static Admin and core API regression smoke before any Stage 7D cohort starts.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
 Prisma schema or migration.

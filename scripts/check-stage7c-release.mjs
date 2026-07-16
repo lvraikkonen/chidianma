@@ -54,6 +54,19 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function readZipEntry(entry) {
+  const result = spawnSync("unzip", ["-p", zipPath, entry], {
+    cwd: workspaceRoot,
+    encoding: null,
+    stdio: "pipe"
+  });
+  assertRelease(
+    result.status === 0,
+    `zip_entry_read_failed:${entry}:${result.status ?? "unknown"}`
+  );
+  return result.stdout;
+}
+
 function readDistText() {
   return relativeFiles(extensionDist)
     .filter((path) => /\.(?:css|html|js|json|map|svg)$/.test(path))
@@ -263,15 +276,32 @@ function validateArtifacts(manifest) {
     "zip_nested_manifest_detected"
   );
   assertRelease(!zipEntries.some((entry) => entry.startsWith("/")), "zip_absolute_path_detected");
-  const commit = run("git", ["rev-parse", "HEAD"], { capture: true });
+  const zipFiles = zipEntries.filter((entry) => !entry.endsWith("/")).sort();
+  const distFiles = relativeFiles(extensionDist);
+  assertRelease(
+    JSON.stringify(zipFiles) === JSON.stringify(distFiles),
+    "release_zip_file_set_mismatch"
+  );
+  for (const entry of zipFiles) {
+    assertRelease(
+      readZipEntry(entry).equals(readFileSync(join(extensionDist, entry))),
+      `release_zip_content_mismatch:${entry}`
+    );
+  }
   const metadata = readJson(metadataPath);
+  assertRelease(
+    typeof metadata.commit === "string" && /^[0-9a-f]{40}$/.test(metadata.commit),
+    "release_commit_invalid"
+  );
+  run("git", ["cat-file", "-e", `${metadata.commit}^{commit}`], { capture: true });
+  run("git", ["merge-base", "--is-ancestor", metadata.commit, "HEAD"], { capture: true });
   validateReleaseMetadata(metadata, manifest, {
-    commit,
-    fileCount: zipEntries.filter((entry) => !entry.endsWith("/")).length,
+    commit: metadata.commit,
+    fileCount: zipFiles.length,
     artifactFile: basename(zipPath),
     sha256
   });
-  return { status: "validated", sha256 };
+  return { status: "validated", commit: metadata.commit, sha256 };
 }
 
 if (!skipBuilds) {

@@ -27,7 +27,7 @@ Stage 7 的完成目标是：同事可以在理解当前身份和安全边界的
 | --- | --- | --- | --- |
 | Stage 7A | 冻结当前基线、文档收口、Claude Code 多角度审查 | 是 | Done：退出门与 QA 已通过 |
 | Stage 7B | 明确身份模型，并完成轻量身份加固 | 是 | Done：本地、Chrome 与两步生产退出门均通过 |
-| Stage 7C | 品牌、图标、体验一致性与受控 unpacked 分发 | 是 | Implementation complete; final candidate QA pending |
+| Stage 7C | 品牌、图标、体验一致性与受控 unpacked 分发 | 是 | Candidate packaged; Railway QA passed; real Chrome QA pending |
 | Stage 7D | 小范围同事内测、监控、反馈和账号体系决策 | 否，属于内测过程 | Defined：7A–7C 通过后启动 |
 
 执行必须保持 7A → 7B → 7C → 7D 的顺序。7A、7B、7C 的退出门未通过前，

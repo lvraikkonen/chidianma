@@ -5,13 +5,13 @@
 
 ## 当前状态
 
-- 阶段：Stage 7 Internal Beta Productization；7A、7B 已完成，7C 实现完成并等待最终候选 QA。
+- 阶段：Stage 7 Internal Beta Productization；7A、7B 已完成，7C 候选已生成并通过 Railway QA，等待真实 Chrome QA。
 - Admin 与 API 已部署在
   [Railway production](https://lunchserver-production.up.railway.app)，同源提供页面和 API。
 - Stage 6 审计基线：`v0.1.0-internal` →
   `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`。
-- Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build；7C 已实现带稳定 ID、
-  固定生产服务、校验值和升级/回滚说明的 `0.2.0` 内部候选流程，尚未生成获批候选或启动同事分发。
+- Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build；`0.2.0` 内部候选已生成，
+  带稳定 ID、固定生产服务、校验值和升级/回滚说明，尚未批准或启动同事分发。
 - 当前是轻量身份：显示名不是可验证账号。已有有效设备可生成 10 分钟单次身份连接码
   连接另一端；所有 Token 都丢失后仍需创建新身份并重新加入。
 
@@ -143,11 +143,10 @@ Railway 使用 `railway.json`：
 - 唯一管理员丢失全部 Token 时只能走 operator 核验与管理员替换。
 - Stage 7B 已完成生产 rollout；线上制品、变量和回滚点以 `RELEASE.md` 为准。
 - Chrome 扩展采用受控 unpacked 分发，没有自动升级机制。
-- Stage 7C 的实现门禁已建立；最终候选 ZIP、真实 Chrome 视觉/升级 QA 和批准仍需在
-  干净已提交的版本边界完成。
+- Stage 7C 候选 ZIP 和 Railway smoke 已完成；真实 Chrome 视觉、安装/升级 QA 和批准仍未完成。
 - 生产保留明确命名的 Stage 6 Demo/QA fixture 和旧 rollback database；都禁止无审批删除。
 
 ## Roadmap
 
-Stage 1–6、7A 与 7B 已完成。7C 实现完成并等待最终候选 QA；7D 尚未启动同事内测。详见
+Stage 1–6、7A 与 7B 已完成。7C 等待真实 Chrome 候选 QA；7D 尚未启动同事内测。详见
 [roadmap.md](roadmap.md)。
