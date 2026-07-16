@@ -326,13 +326,22 @@ Admin Modal live keyboard review passed by user confirmation:
 Pending-state Escape blocking remains covered by the automated Modal suite; it
 was not separately claimed as a live-browser result.
 
+Admin responsive-layout review passed by user confirmation:
+
+- the Admin rendered normally at desktop width and approximately 390px;
+- the shared Logo, `中午吃点啥` product name and `管理端` subtitle remained
+  clear;
+- navigation and existing business layouts were not disrupted by the brand
+  synchronization;
+- no horizontal overflow, obstructed content or unreachable control was
+  observed.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, empty, cached and error states.
 - QuickAdd lost-response recovery and uncertain-state behavior.
 - Detail desktop layout.
-- Admin desktop/390px visual layout.
 - Record screenshots for the remaining states.
 
 Migration rehearsal was not rerun because Stage 7C changes no Server behavior,
