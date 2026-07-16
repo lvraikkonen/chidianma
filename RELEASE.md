@@ -2,7 +2,7 @@
 
 Status: `Baseline frozen; not approved for colleague distribution`
 
-Date: 2026-07-15
+Date: 2026-07-16
 
 ## Version and deployment
 
@@ -10,17 +10,22 @@ Date: 2026-07-15
 - Peeled commit: `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
 - Tag push / remote release: not performed.
 - Railway project/service: `remarkable-reverence / @lunch/server`.
-- Current Railway deployment: `c85ac2ab-b43a-42d6-9b55-cf75322ff993` (`SUCCESS`).
+- Current Railway deployment: `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` (`SUCCESS`).
+- Current Railway image digest:
+  `sha256:dba6964449d3f8627c4188855fae15935e3c065313bccb074b664ce5a52133c7`.
+- Immediate pre-variable-change rollback deployment:
+  `2d3db6db-e1ab-41c2-86c0-edd2138dcc1a`.
+- Pre-7B rollback deployment: `371242e7-9783-4866-aaa5-f4f26218ddcf`
+  (`ad0260b4abf12b48bbc64e73020858ff316227f3`).
 - Stage 6 production-QA deployment: `10f427de-858e-42f1-8c0c-23194180d4d8`
   (historical record; now `REMOVED` after the later deployment).
 - Production URL: `https://lunchserver-production.up.railway.app`.
 - Runtime: Node `22.23.1`, pnpm `9.15.0`.
 
-The current deployment and `/api/ready` report revision
-`32d414a289c57d6ce0488448e612e8943b446a31`. Its diff from the tagged
-`1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9` baseline contains only Stage 6 QA,
-plan and roadmap records, so the tagged commit remains the production-tested
-runtime implementation boundary.
+The current deployment is a Railway CLI upload of the approved Stage 7B workspace, so `/api/ready`
+reports revision `local`. It is identified by the deployment ID and image digest above and is not
+represented by a Git commit. The `v0.1.0-internal` tag remains only the Stage 6 audit baseline; it
+does not represent the current production runtime or a distributable Stage 7 release.
 
 ## Database and migrations
 
@@ -28,7 +33,8 @@ runtime implementation boundary.
 - Retained rollback service: `Postgres`.
 - Production seed: never run.
 - Pre-deploy: environment check → `prisma migrate deploy` → read-only database verifier.
-- Applied baseline migrations: fresh schema plus Stage 6 legacy-history migration.
+- Applied migrations: fresh schema, Stage 6 legacy-history migration and
+  `20260715180000_stage7b_identity_links`.
 - Migration rollback is database-level: application rollback alone does not reverse forward SQL.
 
 The rollback database is retained until Stage 7D completes plus a 14-day observation window,
@@ -53,29 +59,25 @@ Detailed procedure: [rollback runbook](docs/runbooks/rollback.md).
 
 The clearly named Stage 6 QA identities, groups, restaurants and behavior records are retained
 as Demo/smoke fixtures. They are group-isolated, preserve active-admin invariants and contain no
-repository-recorded invite/token values. No cleanup script will run during Stage 7A. Revisit the
+repository-recorded invite/token values. The clearly named Stage 7B production-smoke identity and
+group are retained as Demo evidence; no cleanup script will run during Stage 7B. Revisit the
 decision before expanding Stage 7D beyond the first cohort.
 
 ## Known issues and accepted dispositions
 
-- **Blocks colleague distribution (7B):** legacy unscoped routes/shared auth and Extension
-  fallback; no rate limit; final Origin policy and group-creation policy not yet verified.
+- **Stage 7B complete:** legacy closure, identity linking/reset, rate limits, Origin policy, safe
+  logging, operator tools and real PostgreSQL concurrency are deployed. Both production deployments,
+  migration/verifier gates, external smoke, same-identity Admin/Extension checks and Demo dry-run
+  pass. Production group creation is disabled and both legacy variables are removed. Stage 7C is
+  Ready for Planning, but no colleague distribution artifact exists yet.
 - **Blocks colleague distribution (7C):** final Extension distribution/upgrade contract,
   detail-page/brand consistency, Modal focus behavior and QuickAdd retry idempotency.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)
-  found no high/critical vulnerabilities in the 121-version Server production
-  tree. `@fastify/static@8.0.0` has two moderate findings:
-  `GHSA-pr96-94w5-mx2h` (CVSS 5.3) and `GHSA-x428-ghpx-8j92` (CVSS 5.9), fixed
-  in `9.1.1`. The current plugin does not enable directory listing and its root
-  contains only public Admin build files, not protected data; this reduces the
-  present exposure but does not remove the findings. Version `9.1.1` supports
-  Fastify 5 but is a plugin-major/runtime change, so the repository maintainer
-  accepts both only until the Stage 7B exit gate or 2026-07-22, whichever comes
-  first. Re-review immediately if protected files are added below the static
-  root, route guards begin protecting static files, or the Admin hosting model
-  changes.
+  found no critical/high/medium/low findings across the 122-package current production tree.
+  The deployed candidate resolves `@fastify/static` to `9.3.0`, above the `9.1.1` fix floor for both
+  registered advisories.
 - **Development dependencies:** the full lockfile scan also reports one critical
   Vitest, one high plus two medium Vite, and one medium esbuild finding; none are
   present in `pnpm --filter @lunch/server list --prod`. Upgrade them in a
@@ -83,7 +85,9 @@ decision before expanding Stage 7D beyond the first cohort.
 - **Git repository:** approximately 14,507 loose objects / 159 MiB with unreachable-object and
   `.git/gc.log` warnings. A verified bundle recovery point exists at
   `/private/tmp/chidianma-stage7a-pre-maintenance-2026-07-15.bundle`; destructive prune is deferred.
-- **Identity:** no formal account, cross-device recovery or account merge.
+- **Identity:** no formal account, verified personal identity, long-term recovery credential,
+  single-device remote revoke or account merge. Link codes require one still-connected device.
 
-Evidence: [Stage 6 production QA](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md)
-and [Stage 7 review triage](qa/2026-07-15-production-baseline-review-triage.md).
+Evidence: [Stage 6 production QA](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md),
+[Stage 7 review triage](qa/2026-07-15-production-baseline-review-triage.md) and
+[Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md).

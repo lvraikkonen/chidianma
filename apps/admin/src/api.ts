@@ -4,6 +4,7 @@ export interface AdminRequestContext {
   apiBaseUrl: string;
   token?: string | undefined;
   signal?: AbortSignal | undefined;
+  renewGroupSession?: (() => Promise<string>) | undefined;
 }
 
 export class AdminApiError extends Error {
@@ -50,17 +51,22 @@ export async function requestJson<T>(
   init: RequestInit = {}
 ): Promise<T> {
   let response: Response;
+  const send = (token: string | undefined) => fetch(`${context.apiBaseUrl}${path}`, {
+    ...init,
+    ...(context.signal ? { signal: context.signal } : {}),
+    headers: requestHeaders(
+      init.headers,
+      token,
+      init.body !== undefined && init.body !== null
+    )
+  });
   try {
-    response = await fetch(`${context.apiBaseUrl}${path}`, {
-      ...init,
-      ...(context.signal ? { signal: context.signal } : {}),
-      headers: requestHeaders(
-        init.headers,
-        context.token,
-        init.body !== undefined && init.body !== null
-      )
-    });
+    response = await send(context.token);
+    if (response.status === 401 && context.renewGroupSession) {
+      response = await send(await context.renewGroupSession());
+    }
   } catch (error) {
+    if (error instanceof AdminApiError) throw error;
     throw new AdminApiError({
       kind: "network",
       message: safeMessage(

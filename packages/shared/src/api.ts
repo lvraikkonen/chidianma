@@ -1,9 +1,12 @@
 export const LUNCH_HEADLINE = "吃饭才是正事，中午吃点啥呢？";
-export const READ_TOKEN_HEADER = "x-lunch-read-token";
 export const AUTHORIZATION_HEADER = "authorization";
 
 export const GROUP_ROUTES = {
   identities: "/api/identities",
+  identitySession: "/api/identities/session",
+  identityLinkCodes: "/api/identities/link-codes",
+  redeemIdentityLinkCode: "/api/identities/link-codes/redeem",
+  resetIdentitySessions: "/api/identities/sessions/reset",
   groups: "/api/groups",
   joinGroup: "/api/groups/join",
   groupSession: (groupId: string) => `/api/groups/${groupId}/session`,

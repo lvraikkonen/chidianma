@@ -1,14 +1,12 @@
 import {
   AUTHORIZATION_HEADER,
   GROUP_ROUTES,
-  READ_TOKEN_HEADER,
   type FeedbackType,
   type GroupTodayRecommendationItem,
   type GroupTodayRecommendationsResponse,
   type ParticipationTodayResponse,
   type PutParticipationTodayRequest,
-  type PutParticipationTodayResponse,
-  type TodayRecommendationResponse
+  type PutParticipationTodayResponse
 } from "@lunch/shared";
 import {
   ExtensionApiError,
@@ -16,12 +14,11 @@ import {
   requestJson
 } from "./apiClient";
 import {
-  getRecommendationCache,
   getStorageState,
   saveGroupRecommendationCache,
-  saveRecommendationCache,
   type ExtensionStorageShape
 } from "./storage";
+import { withGroupSessionRetry } from "./groupSessionRetry";
 
 interface ActiveGroupRequestContext {
   apiBaseUrl: string;
@@ -29,9 +26,7 @@ interface ActiveGroupRequestContext {
   token: string;
 }
 
-export type ExtensionRecommendationResponse =
-  | TodayRecommendationResponse
-  | GroupTodayRecommendationsResponse;
+export type ExtensionRecommendationResponse = GroupTodayRecommendationsResponse;
 
 export function isGroupResponse(
   response: ExtensionRecommendationResponse
@@ -66,13 +61,15 @@ async function activeGroupJson<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  return requestJson<T>(new URL(path, context.apiBaseUrl), {
-    ...init,
-    headers: {
-      ...(init.headers ?? {}),
-      [AUTHORIZATION_HEADER]: `Bearer ${context.token}`
-    }
-  });
+  return withGroupSessionRetry(context.groupId, context.token, (token) => (
+    requestJson<T>(new URL(path, context.apiBaseUrl), {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        [AUTHORIZATION_HEADER]: `Bearer ${token}`
+      }
+    })
+  ));
 }
 
 async function fetchGroupTodayRecommendationsNetworkOnlyForContext(
@@ -184,60 +181,30 @@ export async function ensureGroupTodayRecommendations(): Promise<GroupTodayRecom
   return ensureGroupTodayRecommendationsForStorage(await getStorageState());
 }
 
-async function fetchLegacyTodayRecommendations(
-  settings: ExtensionStorageShape,
-  options: { forceRefresh?: boolean } = {}
-): Promise<TodayRecommendationResponse> {
-  const url = new URL("/api/today-recommendations", settings.apiBaseUrl);
-  if (options.forceRefresh) url.searchParams.set("forceRefresh", "true");
-
-  try {
-    const data = await requestJson<TodayRecommendationResponse>(url, {
-      headers: {
-        [READ_TOKEN_HEADER]: settings.readToken
-      }
-    });
-    await saveRecommendationCache(data);
-    return data;
-  } catch (error) {
-    if (!isCacheFallbackEligible(error)) throw error;
-    const cached = await getRecommendationCache();
-    if (cached) return { ...cached, fromCache: true };
-    throw error;
-  }
-}
-
 export async function fetchTodayRecommendations(options: {
   forceRefresh?: boolean;
 } = {}): Promise<ExtensionRecommendationResponse> {
   const settings = await getStorageState();
-  const context = getActiveGroupRequestContext(settings);
-  if (context) {
-    return fetchGroupTodayRecommendationsWithCacheFallbackForContext(
-      context,
-      getGroupCacheFallback(settings, context.groupId)
-    );
-  }
-
-  return fetchLegacyTodayRecommendations(settings, options);
+  const context = requireActiveGroupRequestContextForStorage(settings);
+  return options.forceRefresh
+    ? refreshGroupTodayRecommendationsForContext(context)
+    : fetchGroupTodayRecommendationsWithCacheFallbackForContext(
+        context,
+        getGroupCacheFallback(settings, context.groupId)
+      );
 }
 
 export async function getPrimaryRecommendationsForStorage(
   storage: ExtensionStorageShape
 ): Promise<ExtensionRecommendationResponse> {
-  if (getActiveGroupRequestContext(storage)) {
-    return ensureGroupTodayRecommendationsForStorage(storage);
-  }
-  return fetchLegacyTodayRecommendations(storage);
+  return ensureGroupTodayRecommendationsForStorage(storage);
 }
 
 export async function refreshTodayRecommendations(): Promise<ExtensionRecommendationResponse> {
   const settings = await getStorageState();
-  const context = getActiveGroupRequestContext(settings);
-  if (context) {
-    return refreshGroupTodayRecommendationsForContext(context);
-  }
-  return fetchLegacyTodayRecommendations(settings, { forceRefresh: true });
+  return refreshGroupTodayRecommendationsForContext(
+    requireActiveGroupRequestContextForStorage(settings)
+  );
 }
 
 export async function fetchTodayParticipation(): Promise<ParticipationTodayResponse> {
@@ -303,31 +270,19 @@ export async function postFeedbackForStorage(
   settings: ExtensionStorageShape,
   input: PostFeedbackInput
 ): Promise<void> {
-  const context = getActiveGroupRequestContext(settings);
-  if (context) {
-    await activeGroupJson(context, GROUP_ROUTES.feedback(context.groupId), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        officeDate: input.date,
-        restaurantId: input.restaurantId,
-        ...(input.recommendationId
-          ? { recommendationId: input.recommendationId }
-          : {}),
-        type: input.type
-      })
-    });
-    return;
-  }
-
-  const url = new URL("/api/feedback", settings.apiBaseUrl);
-  const response = await fetch(url, {
+  const context = requireActiveGroupRequestContextForStorage(settings);
+  await activeGroupJson(context, GROUP_ROUTES.feedback(context.groupId), {
     method: "POST",
     headers: {
-      "content-type": "application/json",
-      [READ_TOKEN_HEADER]: settings.readToken
+      "content-type": "application/json"
     },
-    body: JSON.stringify(input)
+    body: JSON.stringify({
+      officeDate: input.date,
+      restaurantId: input.restaurantId,
+      ...(input.recommendationId
+        ? { recommendationId: input.recommendationId }
+        : {}),
+      type: input.type
+    })
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }

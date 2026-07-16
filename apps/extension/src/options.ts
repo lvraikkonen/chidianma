@@ -1,9 +1,13 @@
 import {
   createGroup,
   createIdentity,
+  createIdentityLinkCode,
   joinGroup,
   listGroups,
-  refreshGroupSession
+  redeemIdentityLinkCode,
+  refreshIdentitySession,
+  refreshGroupSession,
+  resetIdentitySessions
 } from "./groupClient";
 import {
   createOptionsController,
@@ -30,6 +34,8 @@ import {
   saveGroupReminderOverride,
   saveGroupSettingsCache,
   saveIdentityConnection,
+  saveRenewedIdentityConnection,
+  saveResetIdentityConnection,
   syncGroupSummaries,
   type ExtensionStorageShape
 } from "./storage";
@@ -115,17 +121,47 @@ function renderIdentity(container: HTMLElement, state: OptionsViewState): void {
     const displayName = document.createElement("strong");
     displayName.textContent = state.storage.identityDisplayName ?? "已连接用户";
 
+    const identityReference = document.createElement("small");
+    identityReference.textContent = state.storage.identityId
+      ? `身份参考号：${state.storage.identityId}`
+      : "身份参考号将在下次续期后显示";
+
+    const linkButton = document.createElement("button");
+    linkButton.className = "button secondary";
+    linkButton.type = "button";
+    linkButton.textContent = "生成身份连接码";
+    linkButton.disabled = state.kind === "loading" || actionGate.isPending();
+    linkButton.addEventListener("click", () => {
+      void actionGate.run(() => controller.generateIdentityLinkCode());
+    });
+
+    const resetButton = document.createElement("button");
+    resetButton.className = "button secondary";
+    resetButton.type = "button";
+    resetButton.textContent = "重置所有连接";
+    resetButton.disabled = state.kind === "loading" || actionGate.isPending();
+    resetButton.addEventListener("click", () => {
+      if (!window.confirm("这会让其他设备上的现有连接立即失效，继续吗？")) return;
+      void actionGate.run(() => controller.resetAllConnections());
+    });
+
     const disconnectButton = document.createElement("button");
     disconnectButton.id = "disconnect-button";
     disconnectButton.className = "button secondary";
     disconnectButton.type = "button";
-    disconnectButton.textContent = "断开连接";
+    disconnectButton.textContent = "断开此设备";
     disconnectButton.disabled = state.kind === "loading" || actionGate.isPending();
     disconnectButton.addEventListener("click", () => {
       void actionGate.run(() => controller.disconnect());
     });
 
-    connection.append(displayName, disconnectButton);
+    connection.append(displayName, identityReference, linkButton, resetButton, disconnectButton);
+    if (state.kind === "ready" && state.identityLinkCode) {
+      const result = document.createElement("code");
+      result.textContent = state.identityLinkCode.linkCode;
+      result.setAttribute("aria-label", "身份连接码");
+      connection.append(result);
+    }
     container.replaceChildren(connection);
     return;
   }
@@ -153,7 +189,27 @@ function renderIdentity(container: HTMLElement, state: OptionsViewState): void {
     if (!name) return;
     void actionGate.run(() => controller.createIdentity(name));
   });
-  container.replaceChildren(form);
+
+  const linkForm = document.createElement("form");
+  linkForm.id = "identity-link-form";
+  linkForm.className = "stack";
+  const linkCode = document.createElement("input");
+  linkCode.id = "identity-link-code";
+  linkCode.required = true;
+  linkCode.autocomplete = "one-time-code";
+  linkCode.placeholder = "LINK-XXXX-XXXX-XXXX";
+  const linkSubmit = document.createElement("button");
+  linkSubmit.className = "button secondary";
+  linkSubmit.type = "submit";
+  linkSubmit.textContent = "连接已有身份";
+  linkForm.append(createLabel("身份连接码", linkCode), linkSubmit);
+  linkForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const code = linkCode.value.trim();
+    if (!code) return;
+    void actionGate.run(() => controller.redeemIdentity(code));
+  });
+  container.replaceChildren(form, linkForm);
 }
 
 function renderGroups(container: HTMLElement, state: OptionsViewState): void {
@@ -418,11 +474,17 @@ function renderOptions(state: OptionsViewState): void {
 const controller = createOptionsController({
   loadStorage: getStorageState,
   createIdentity,
+  redeemIdentityLinkCode,
+  createIdentityLinkCode,
+  resetIdentitySessions,
+  refreshIdentitySession,
   createGroup,
   joinGroup,
   listGroups,
   refreshSession: refreshGroupSession,
   saveIdentityConnection,
+  saveRenewedIdentityConnection,
+  saveResetIdentityConnection,
   saveGroupConnection,
   syncGroupSummaries,
   saveReminder: saveActiveGroupReminderOverride,

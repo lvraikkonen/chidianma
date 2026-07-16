@@ -5,15 +5,15 @@
 
 ## 当前状态
 
-- 阶段：Stage 7 Internal Beta Productization；7A 已完成，7B Ready for Planning。
+- 阶段：Stage 7 Internal Beta Productization；7A、7B 已完成，7C 已 Ready for Planning。
 - Admin 与 API 已部署在
   [Railway production](https://lunchserver-production.up.railway.app)，同源提供页面和 API。
-- 生产 QA 基线：`v0.1.0-internal` →
+- Stage 6 审计基线：`v0.1.0-internal` →
   `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`。
-- Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build，普通同事分发被 Stage 7B/7C
-  的安全和分发门阻塞。
-- 当前是轻量身份：显示名不是可验证账号，身份 Token 保存在本机，没有跨设备恢复或
-  账号合并。
+- Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build；7C 尚未形成详细计划或
+  分发版本，因此不向普通同事分发。
+- 当前是轻量身份：显示名不是可验证账号。已有有效设备可生成 10 分钟单次身份连接码
+  连接另一端；所有 Token 都丢失后仍需创建新身份并重新加入。
 
 ## 核心体验
 
@@ -29,8 +29,8 @@
 ### 使用已部署 Admin
 
 1. 打开 [生产 Admin](https://lunchserver-production.up.railway.app)。
-2. 输入显示名创建本机轻量身份。
-3. 创建小组，或使用小组管理员提供的一次性邀请码加入。
+2. 输入显示名创建轻量身份，或输入另一台已连接设备生成的身份连接码。
+3. 生产环境默认关闭公共建组；使用小组管理员提供的一次性邀请码加入现有小组。
 4. 选择当前小组后维护餐厅并生成今日推荐。
 
 不要把邀请码、身份 Token 或小组会话 Token 写入文档、聊天或工单。
@@ -43,9 +43,8 @@ pnpm --filter @lunch/extension build
 
 在 `chrome://extensions` 开启 Developer mode，选择 **Load unpacked** 并加载
 `apps/extension/dist`。进入扩展设置，把 API 地址设为生产 Railway origin 或本地
-Server，再创建身份并加入小组。
-
-当前 build 仍保留待 Stage 7B 移除的 legacy fallback，因此尚不是普通同事内测分发包。
+Server，再创建身份/连接已有身份并加入小组。没有 active group 时扩展不会请求推荐 API
+或发送提醒。
 
 ## 本地开发
 
@@ -75,7 +74,6 @@ VITE_API_BASE_URL=http://localhost:3000 pnpm dev:admin
 - `WEATHER_API_BASE_URL`：Server 使用的天气 API。
 - `OFFICE_CITY`、`OFFICE_LATITUDE`、`OFFICE_LONGITUDE`、`OFFICE_TIMEZONE`：办公室信号。
 - `PUBLIC_API_BASE_URL`：公开 API origin；生产必须 HTTPS。
-- `TEAM_INVITE_CODE`、`EXTENSION_READ_TOKEN`：仅 legacy compatibility，Stage 7B 待移除/停用。
 - `NODE_ENV`、`PORT`、`RAILWAY_GIT_COMMIT_SHA`：运行环境与发布标识。
 
 真实值不得提交。生产禁止运行 `prisma:seed`。
@@ -93,11 +91,13 @@ VITE_API_BASE_URL=http://localhost:3000 pnpm dev:admin
 ## 身份与安全边界
 
 - 显示名不是登录凭证，也不保证唯一。
-- 身份 Token 代表一台浏览器中的轻量身份；清除存储或换设备可能生成新身份。
-- 小组会话在每次受保护请求时重新检查 active membership 和当前角色。
+- 身份 Token 代表对同一轻量身份的设备连接；连接码只显示一次、10 分钟有效且服务端仅
+  保存 HMAC。身份级“重置所有连接”会使旧 Identity/Group Token 全部失效。
+- 小组会话在每次受保护请求时重新检查 identity、授权版本、active membership 和当前角色。
 - 邀请码允许加入特定小组，但不能证明现实世界身份。
 - 移除成员只撤销对应 membership；不能阻止同一个人换设备/显示名创建新身份。
-- legacy unscoped routes、共享 read token 和无 rate limit 是已确认的 Stage 7B 内测阻塞项。
+- Stage 7B 已在生产关闭 legacy unscoped routes/read token，启用 rate limit 与严格
+  Origin 策略，并删除两个 legacy 环境变量。
 
 完整说明见 [身份与安全](docs/identity-and-security.md)。
 
@@ -136,13 +136,14 @@ Railway 使用 `railway.json`：
 
 ## 已知限制
 
-- 没有正式账号、跨设备恢复或账号合并。
-- Stage 7B 前仍存在 legacy API/fallback 和公开 API 保护缺口。
+- 没有正式账号、个人身份验证、长期恢复码、账号合并或单设备远程撤销。
+- 唯一管理员丢失全部 Token 时只能走 operator 核验与管理员替换。
+- Stage 7B 已完成生产 rollout；线上制品、变量和回滚点以 `RELEASE.md` 为准。
 - Chrome 扩展没有最终分发/自动升级机制。
 - 独立详情页、品牌一致性、Modal 键盘体验和 QuickAdd 重试仍待 Stage 7C。
 - 生产保留明确命名的 Stage 6 Demo/QA fixture 和旧 rollback database；都禁止无审批删除。
 
 ## Roadmap
 
-Stage 1–6 已完成。Stage 7A 正在收口可信基线；7B 完成轻量身份加固，7C 完成品牌和
-分发，7D 进行受控同事内测。详见 [roadmap.md](roadmap.md)。
+Stage 1–6、7A 与 7B 已完成。7C 已 Ready for Planning，但尚未创建详细计划；7D 也未
+启动同事内测。详见 [roadmap.md](roadmap.md)。

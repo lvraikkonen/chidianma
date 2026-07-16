@@ -80,13 +80,20 @@ Historical or superseded Stage documents must not override a later current spec,
 
 - specs/2026-07-15-internal-beta-productization-stage7-design.md
 - plans/2026-07-15-internal-beta-productization-stage7a.md
+- plans/2026-07-15-internal-beta-productization-stage7b.md
 - docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md
 - qa/2026-07-15-production-baseline-review-triage.md
 - qa/2026-07-15-internal-beta-productization-stage7a.md
+- qa/2026-07-15-internal-beta-productization-stage7b.md
 - roadmap.md
 - docs/ai-collaboration-protocol.md
 
-The production-verified implementation baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`. Stage 7A is complete and Stage 7B is Ready for Planning. Do not execute Stage 7B until a current detailed plan is written and approved; do not execute earlier, completed, or superseded plans.
+The frozen Stage 6 audit baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
+The current Stage 7B production runtime is Railway deployment
+`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`, tracked by deployment ID and image digest because it was
+uploaded from the approved uncommitted workspace. Stage 7A and Stage 7B are complete; Stage 7C is
+Ready for Planning. Do not execute Stage 7C until a current detailed plan is written and approved;
+do not execute earlier, completed, or superseded plans.
 
 ## Product Principles
 
@@ -101,7 +108,8 @@ The production-verified implementation baseline is `1eb7dbb1b26341b5f50d830d5d16
 - Cache the last successful recommendation so the extension remains useful when the backend is temporarily unavailable.
 - Treat weather as a useful signal, not a hard dependency.
 - Keep the team invite code out of frontend bundles.
-- Treat `EXTENSION_READ_TOKEN` as legacy compatibility, not a strong secret or a current group-auth mechanism.
+- Keep the removed `EXTENSION_READ_TOKEN` and legacy read-token paths out of current runtime and
+  release artifacts.
 
 ## Engineering Rules
 
@@ -130,7 +138,9 @@ The production-verified implementation baseline is `1eb7dbb1b26341b5f50d830d5d16
 - Group-scoped `GET /api/groups/:groupId/today-recommendations` reads the current batch and does not create one.
 - Group-scoped `POST /api/groups/:groupId/today-recommendations/refresh` creates a new current batch and keeps old batches for review.
 - Recommendation batch creation must use a transaction to avoid duplicate current batches around the lunch reminder time.
-- Group-scoped Extension requests use the active group's bearer session token. `X-Lunch-Read-Token` and the unscoped routes are legacy compatibility only; do not add new behavior to them, and remove or disable them through Stage 7B before colleague beta.
+- Group-scoped Extension requests use the active group's bearer session token.
+  `X-Lunch-Read-Token` and the former unscoped routes were removed in Stage 7B; do not reintroduce
+  them.
 - Weather is called only by the server, never by the extension.
 - After real weather is integrated, use `weather_snapshots` plus Open-Meteo-style fetching.
 - If neither cached nor fetched weather is available, do not use rainy mock weather for scoring; return `weatherUnavailable=true` and score with `weatherMatch=0`.
@@ -197,5 +207,5 @@ If a Superpowers skill suggests a default path such as `docs/superpowers/specs/`
 - Do not use broad Chrome host permissions such as `<all_urls>` unless explicitly approved.
 - Do not call weather APIs from the extension.
 - Do not embed `TEAM_INVITE_CODE` in frontend bundles.
-- Do not treat `EXTENSION_READ_TOKEN` as strong security.
+- Do not reintroduce `EXTENSION_READ_TOKEN` or legacy unscoped recommendation authentication.
 - Do not make product direction changes during implementation without updating specs and plans.

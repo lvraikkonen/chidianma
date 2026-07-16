@@ -74,6 +74,20 @@ function verifier(port, database) {
   return jsonLine.trim();
 }
 
+function concurrentRefreshRehearsal(port, database) {
+  const output = run(
+    "pnpm",
+    ["--filter", "@lunch/server", "exec", "tsx", "src/rehearsal/concurrentRefresh.ts"],
+    {
+      env: { ...process.env, DATABASE_URL: databaseUrl(port, database) },
+      errorCode: "stage7b_postgres_concurrency_failed"
+    }
+  ).stdout.trim();
+  const jsonLine = output.split("\n").reverse().find((line) => line.trim().startsWith("{"));
+  if (!jsonLine) throw new Error("stage7b_postgres_concurrency_output_invalid");
+  return jsonLine;
+}
+
 function assertJson(actual, expected, errorCode) {
   const parsed = JSON.parse(actual);
   for (const [key, value] of Object.entries(expected)) {
@@ -174,6 +188,11 @@ try {
     )::TEXT;`),
     { groups: 0, identities: 0 },
     "stage6_fresh_scaffold_cleanup_failed"
+  );
+  assertJson(
+    concurrentRefreshRehearsal(port, "fresh"),
+    { ok: true, calls: 2, batches: 2, currentBatches: 1 },
+    "stage7b_postgres_concurrency_invariant_failed"
   );
 
   prepareLegacyBase(port, "legacy");
@@ -276,7 +295,8 @@ try {
     freshMigration: "passed",
     legacyFixtureMigration: "passed",
     verifierRepeatability: "passed",
-    overlapAbort: "passed"
+    overlapAbort: "passed",
+    postgresConcurrentRefresh: "passed"
   };
 } finally {
   run("docker", ["rm", "-f", containerName], { allowFailure: true, stdio: "ignore" });

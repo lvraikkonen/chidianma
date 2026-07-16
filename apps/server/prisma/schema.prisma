@@ -46,12 +46,28 @@ enum ParticipationStatus {
 model Identity {
   id            String            @id @default(cuid())
   displayName   String            @map("display_name")
+  authVersion   Int               @default(0) @map("auth_version")
+  anonymizedAt  DateTime?         @map("anonymized_at")
   createdAt     DateTime          @default(now()) @map("created_at")
   lastSeenAt    DateTime?         @map("last_seen_at")
   memberships   GroupMembership[]
   createdGroups LunchGroup[]      @relation("CreatedGroups")
+  linkCodes     IdentityLinkCode[]
 
   @@map("identities")
+}
+
+model IdentityLinkCode {
+  id         String    @id @default(cuid())
+  identityId String    @map("identity_id")
+  codeHash   String    @unique @map("code_hash")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  identity   Identity  @relation(fields: [identityId], references: [id])
+
+  @@index([identityId, consumedAt, expiresAt])
+  @@map("identity_link_codes")
 }
 
 model LunchGroup {
@@ -80,6 +96,7 @@ model LunchGroup {
   feedback             Feedback[]
   weatherSnapshots     WeatherSnapshot[]
 
+  @@index([inviteCodeHash])
   @@map("lunch_groups")
 }
 

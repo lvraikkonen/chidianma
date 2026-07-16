@@ -105,18 +105,12 @@ function contextForEffectiveSettings(
   effective: EffectiveReminderSettings,
   scheduledFor: number
 ): ScheduledPrimaryReminder {
-  return effective.mode === "group"
-    ? {
-      revision: state.reminderRevision,
-      mode: "group",
-      groupId: effective.groupId!,
-      scheduledFor
-    }
-    : {
-      revision: state.reminderRevision,
-      mode: "legacy",
-      scheduledFor
-    };
+  return {
+    revision: state.reminderRevision,
+    mode: "group",
+    groupId: effective.groupId,
+    scheduledFor
+  };
 }
 
 function notificationOptions(
@@ -127,9 +121,7 @@ function notificationOptions(
   const names = recommendation.items
     .map((item) => item.restaurantName)
     .join("、");
-  const weatherSummary = isGroupResponse(recommendation)
-    ? recommendation.weather?.summary
-    : recommendation.weatherSummary;
+  const weatherSummary = recommendation.weather?.summary;
   const contextMessage = [
     effective.notificationGroupLabel,
     weatherSummary

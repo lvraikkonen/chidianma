@@ -15,9 +15,7 @@ const IanaTimeZoneSchema = z.string().min(1).refine((value) => {
 
 const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
-  TEAM_INVITE_CODE: z.string().min(1),
   SESSION_SECRET: z.string().min(8),
-  EXTENSION_READ_TOKEN: z.string().min(1),
   ALLOW_PUBLIC_GROUP_CREATION: StrictBooleanSchema.default("true"),
   IDENTITY_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
   GROUP_SESSION_TTL_DAYS: z.coerce.number().int().positive().default(14),

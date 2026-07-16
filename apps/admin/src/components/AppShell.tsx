@@ -1,4 +1,4 @@
-import type { GroupSummary } from "@lunch/shared";
+import type { CreateIdentityLinkCodeResponse, GroupSummary } from "@lunch/shared";
 import type { ReactNode } from "react";
 import type { AdminRoute } from "../app/router";
 import type { AdminSessionState } from "../sessionStore";
@@ -9,8 +9,11 @@ export function AppShell(props: {
   groups: GroupSummary[];
   pendingGroupId?: string | undefined;
   groupEntryPanel?: ReactNode;
+  identityLinkCode?: CreateIdentityLinkCodeResponse | undefined;
   onSwitchGroup: (groupId: string) => void | Promise<void>;
   onOpenGroupEntry: () => void;
+  onGenerateIdentityLinkCode?: (() => void | Promise<void>) | undefined;
+  onResetAllConnections?: (() => void | Promise<void>) | undefined;
   onDisconnect: () => void;
   children: ReactNode;
 }) {
@@ -51,6 +54,7 @@ export function AppShell(props: {
           <span>
             <strong>{props.session.displayName ?? "当前同事"}</strong>
             <small>{activeGroup?.role === "admin" ? "小组管理员" : "小组成员"}</small>
+            <small>身份参考号：{props.session.identityId ?? "未知"}</small>
           </span>
         </div>
       </aside>
@@ -77,12 +81,32 @@ export function AppShell(props: {
             <button className="button secondary" type="button" onClick={props.onOpenGroupEntry}>
               创建/加入小组
             </button>
+            {props.onGenerateIdentityLinkCode ? (
+              <button className="button ghost" type="button" onClick={() => { void props.onGenerateIdentityLinkCode?.(); }}>
+                生成身份连接码
+              </button>
+            ) : null}
+            {props.onResetAllConnections ? (
+              <button className="button ghost" type="button" onClick={() => {
+                if (window.confirm("这会让其他设备上的现有连接立即失效，继续吗？")) {
+                  void props.onResetAllConnections?.();
+                }
+              }}>
+                重置所有连接
+              </button>
+            ) : null}
             <button className="button ghost" type="button" onClick={props.onDisconnect}>
-              更换身份
+              断开此设备
             </button>
           </div>
         </header>
 
+        {props.identityLinkCode ? (
+          <div className="shell-invite-banner" aria-live="polite">
+            <span>身份连接码（10 分钟内单次有效）</span>
+            <code>{props.identityLinkCode.linkCode}</code>
+          </div>
+        ) : null}
         {props.groupEntryPanel}
         <main className="content">{props.children}</main>
       </div>

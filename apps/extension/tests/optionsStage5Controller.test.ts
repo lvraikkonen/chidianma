@@ -94,6 +94,9 @@ function fixture(initial = connectedStorage()) {
   const dependencies: OptionsControllerDependencies = {
     loadStorage: vi.fn(async () => structuredClone(storage)),
     createIdentity: vi.fn(),
+    redeemIdentityLinkCode: vi.fn(),
+    createIdentityLinkCode: vi.fn(),
+    resetIdentitySessions: vi.fn(),
     createGroup: vi.fn(),
     joinGroup: vi.fn(),
     listGroups: vi.fn(async () => ({
@@ -101,10 +104,20 @@ function fixture(initial = connectedStorage()) {
     })),
     refreshSession: vi.fn(async (_api, _identity, groupId) => ({
       identityToken: "identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z",
       groupSessionToken: `refreshed-${groupId}`,
+      groupSessionTokenExpiresAt: "2026-10-13T00:00:00.000Z",
       group: storage.groupSummariesById[groupId]!
     })),
     saveIdentityConnection: vi.fn(),
+    saveRenewedIdentityConnection: vi.fn(),
+    saveResetIdentityConnection: vi.fn(),
+    refreshIdentitySession: vi.fn(async () => ({
+      identityId: "identity-1",
+      displayName: "小林",
+      identityToken: storage.identityToken ?? "identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
+    })),
     saveGroupConnection: vi.fn(async (response) => {
       storage.activeGroupId = response.group.groupId;
       storage.identityToken = response.identityToken;
@@ -164,39 +177,31 @@ describe("Stage 5 options resources", () => {
     expect(test.dependencies.getPersonalHistoryForContext).toHaveBeenCalledOnce();
   });
 
-  it("coalesces parallel 401 responses into one session refresh", async () => {
+  it("clears the identity when a resource still returns 401 after client retry", async () => {
     const test = fixture();
     const settingsClient = vi.mocked(test.dependencies.getGroupSettingsForContext!);
     const historyClient = vi.mocked(test.dependencies.getPersonalHistoryForContext!);
-    settingsClient
-      .mockRejectedValueOnce(new ExtensionApiError({ kind: "http", status: 401 }))
-      .mockImplementation(async (context) => settings(context.groupId));
-    historyClient
-      .mockRejectedValueOnce(new ExtensionApiError({ kind: "http", status: 401 }))
-      .mockImplementation(async (context) => history(context.groupId, context.membershipId));
+    settingsClient.mockRejectedValue(
+      new ExtensionApiError({ kind: "http", status: 401 })
+    );
+    historyClient.mockRejectedValue(
+      new ExtensionApiError({ kind: "http", status: 401 })
+    );
     const controller = createOptionsController(test.dependencies);
 
     await controller.load();
 
     expect(test.dependencies.refreshSession).toHaveBeenCalledTimes(1);
-    expect(settingsClient.mock.calls.at(-1)![0].groupSessionToken)
-      .toBe("refreshed-group-1");
-    expect(historyClient.mock.calls.at(-1)![0].groupSessionToken)
-      .toBe("refreshed-group-1");
+    expect(test.dependencies.disconnectIdentity).toHaveBeenCalledTimes(1);
+    expect(test.dependencies.clearGroupSession).not.toHaveBeenCalled();
     expect(lastState(test.render)).toMatchObject({
-      groupSettings: { status: "ready" },
-      personalHistory: { status: "ready" }
+      kind: "identity-required",
+      error: "连接已失效，请重新建立身份。"
     });
   });
 
-  it("clears one unavailable session when the shared refresh is unauthorized", async () => {
+  it("clears the identity when startup group-session renewal is unauthorized", async () => {
     const test = fixture();
-    vi.mocked(test.dependencies.getGroupSettingsForContext!).mockRejectedValue(
-      new ExtensionApiError({ kind: "http", status: 401 })
-    );
-    vi.mocked(test.dependencies.getPersonalHistoryForContext!).mockRejectedValue(
-      new ExtensionApiError({ kind: "http", status: 401 })
-    );
     vi.mocked(test.dependencies.refreshSession).mockRejectedValue(
       new ExtensionApiError({ kind: "http", status: 401 })
     );
@@ -205,10 +210,13 @@ describe("Stage 5 options resources", () => {
     await controller.load();
 
     expect(test.dependencies.refreshSession).toHaveBeenCalledTimes(1);
-    expect(test.dependencies.clearGroupSession).toHaveBeenCalledTimes(1);
+    expect(test.dependencies.disconnectIdentity).toHaveBeenCalledTimes(1);
+    expect(test.dependencies.clearGroupSession).not.toHaveBeenCalled();
+    expect(test.dependencies.getGroupSettingsForContext).not.toHaveBeenCalled();
+    expect(test.dependencies.getPersonalHistoryForContext).not.toHaveBeenCalled();
     expect(lastState(test.render)).toMatchObject({
-      kind: "ready",
-      error: "身份连接已失效，请重新连接当前小组。"
+      kind: "identity-required",
+      error: "连接已失效，请重新建立身份。"
     });
   });
 
@@ -272,7 +280,15 @@ describe("Stage 5 options resources", () => {
     >>>();
     vi.mocked(test.dependencies.getGroupSettingsForContext!)
       .mockReturnValue(lateSettings.promise);
-    vi.mocked(test.dependencies.refreshSession).mockReturnValue(lateSwitch.promise);
+    vi.mocked(test.dependencies.refreshSession)
+      .mockResolvedValueOnce({
+        identityToken: "identity-token",
+        identityTokenExpiresAt: "2026-10-13T00:00:00.000Z",
+        groupSessionToken: "refreshed-group-1",
+        groupSessionTokenExpiresAt: "2026-10-13T00:00:00.000Z",
+        group: groupSummary("group-1", "membership-1")
+      })
+      .mockReturnValueOnce(lateSwitch.promise);
     const controller = createOptionsController(test.dependencies);
     const firstLoad = controller.load();
     await vi.waitFor(() => {
@@ -296,7 +312,9 @@ describe("Stage 5 options resources", () => {
 
     lateSwitch.resolve({
       identityToken: "identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z",
       groupSessionToken: "token-2",
+      groupSessionTokenExpiresAt: "2026-10-13T00:00:00.000Z",
       group: groupSummary("group-2", "membership-2")
     });
     await switching;

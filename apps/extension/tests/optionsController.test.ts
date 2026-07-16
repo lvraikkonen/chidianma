@@ -31,8 +31,19 @@ function groupSummary(groupId: string): GroupSummary {
 function groupSessionResponse(groupId: string): RefreshGroupSessionResponse {
   return {
     identityToken: "fresh-identity-token",
+    identityTokenExpiresAt: "2026-10-13T00:00:00.000Z",
     groupSessionToken: `session-${groupId}`,
+    groupSessionTokenExpiresAt: "2026-10-13T00:00:00.000Z",
     group: groupSummary(groupId)
+  };
+}
+
+function identityResponse() {
+  return {
+    identityId: "identity-1",
+    displayName: "小林",
+    identityToken: "identity-token",
+    identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
   };
 }
 
@@ -78,7 +89,6 @@ function cachedRecommendations(groupId: string): GroupTodayRecommendationsRespon
 function storageWithSensitiveGroupState() {
   return {
     ...connectedStorage(),
-    readToken: "legacy-read-token",
     reminderTime: "12:20",
     enabled: false,
     lastRecommendationsByGroupId: {
@@ -96,7 +106,6 @@ function clearedConnectionStorage(
 ) {
   return {
     apiBaseUrl,
-    readToken: "",
     reminderTime: storage.reminderTime,
     enabled: storage.enabled,
     sessionsByGroupId: {},
@@ -113,10 +122,13 @@ function optionsDependencies(
 ): OptionsControllerDependencies {
   const dependencies: OptionsControllerDependencies = {
     loadStorage: vi.fn().mockResolvedValue(connectedStorage()),
-    createIdentity: vi.fn().mockResolvedValue({
-      identityId: "identity-1",
-      identityToken: "identity-token"
+    createIdentity: vi.fn().mockResolvedValue(identityResponse()),
+    redeemIdentityLinkCode: vi.fn().mockResolvedValue(identityResponse()),
+    createIdentityLinkCode: vi.fn().mockResolvedValue({
+      linkCode: "LINK-ABCD-EFGH-JKLM",
+      expiresAt: "2026-07-15T00:10:00.000Z"
     }),
+    resetIdentitySessions: vi.fn().mockResolvedValue(identityResponse()),
     createGroup: vi.fn().mockResolvedValue(groupCreationResponse("group-2")),
     joinGroup: vi.fn().mockResolvedValue(groupSessionResponse("group-2")),
     listGroups: vi.fn().mockResolvedValue({
@@ -124,6 +136,9 @@ function optionsDependencies(
     }),
     refreshSession: vi.fn().mockResolvedValue(groupSessionResponse("group-2")),
     saveIdentityConnection: vi.fn().mockResolvedValue(undefined),
+    saveRenewedIdentityConnection: vi.fn().mockResolvedValue(undefined),
+    saveResetIdentityConnection: vi.fn().mockResolvedValue(undefined),
+    refreshIdentitySession: vi.fn().mockResolvedValue(identityResponse()),
     saveGroupConnection: vi.fn().mockResolvedValue(undefined),
     syncGroupSummaries: vi.fn().mockResolvedValue(undefined),
     saveReminder: vi.fn().mockResolvedValue(undefined),
@@ -203,6 +218,7 @@ describe("options controller", () => {
       const loadStorage = vi.fn()
         .mockResolvedValueOnce(storage)
         .mockResolvedValueOnce(storage)
+        .mockResolvedValueOnce(storage)
         .mockRejectedValueOnce(new Error("storage read failed"));
       const render = vi.fn();
       const controller = createOptionsController(optionsDependencies({
@@ -252,6 +268,7 @@ describe("options controller", () => {
     };
     const loadStorage = vi.fn()
       .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(synced)
       .mockResolvedValueOnce(synced);
     const listGroups = vi.fn().mockResolvedValue({
       groups: [synced.groupSummariesById["group-1"]]
@@ -290,7 +307,9 @@ describe("options controller", () => {
       .mockResolvedValueOnce(connected);
     const createIdentity = vi.fn().mockResolvedValue({
       identityId: "identity-1",
-      identityToken: "new-identity-token"
+      displayName: "小林",
+      identityToken: "new-identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
     });
     const saveIdentityConnection = vi.fn().mockResolvedValue(undefined);
     const controller = createOptionsController(optionsDependencies({
@@ -302,10 +321,12 @@ describe("options controller", () => {
     await controller.createIdentity("小林");
 
     expect(createIdentity).toHaveBeenCalledWith(storage.apiBaseUrl, "小林");
-    expect(saveIdentityConnection).toHaveBeenCalledWith(
-      "小林",
-      "new-identity-token"
-    );
+    expect(saveIdentityConnection).toHaveBeenCalledWith({
+      identityId: "identity-1",
+      displayName: "小林",
+      identityToken: "new-identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
+    });
     expect(loadStorage.mock.invocationCallOrder[1]).toBeGreaterThan(
       saveIdentityConnection.mock.invocationCallOrder[0] ?? 0
     );
@@ -495,7 +516,9 @@ describe("options controller", () => {
     const controller = createOptionsController(optionsDependencies({
       createIdentity: vi.fn().mockResolvedValue({
         identityId: "identity-1",
-        identityToken: "identity-token"
+        displayName: "小林",
+        identityToken: "identity-token",
+        identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
       }),
       saveIdentityConnection: saveIdentity,
       createGroup: vi.fn().mockRejectedValue(new Error("group create failed")),
@@ -507,7 +530,12 @@ describe("options controller", () => {
       controller.createGroup({ groupName: "设计组" })
     ).resolves.toBeUndefined();
 
-    expect(saveIdentity).toHaveBeenCalledWith("小林", "identity-token");
+    expect(saveIdentity).toHaveBeenCalledWith({
+      identityId: "identity-1",
+      displayName: "小林",
+      identityToken: "identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
+    });
     expect(disconnectIdentity).not.toHaveBeenCalled();
   });
 
@@ -586,7 +614,13 @@ describe("options controller", () => {
       saveGroupConnection: saveGroup,
       render,
       saveIdentityConnection: vi.fn(),
+      saveRenewedIdentityConnection: vi.fn(),
+      saveResetIdentityConnection: vi.fn(),
+      refreshIdentitySession: vi.fn().mockResolvedValue(identityResponse()),
       createIdentity: vi.fn(),
+      redeemIdentityLinkCode: vi.fn(),
+      createIdentityLinkCode: vi.fn(),
+      resetIdentitySessions: vi.fn(),
       createGroup: vi.fn(),
       joinGroup: vi.fn(),
       syncGroupSummaries: vi.fn(),
@@ -699,7 +733,7 @@ describe("options controller", () => {
     finishSave();
     await saving;
 
-    expect(loadStorage).toHaveBeenCalledTimes(3);
+    expect(loadStorage).toHaveBeenCalledTimes(4);
     expect(lastRenderedState(render)).toMatchObject({ kind: "ready" });
   });
 
@@ -714,7 +748,7 @@ describe("options controller", () => {
     await controller.replaceHost("https://lunch.example");
 
     expect(replaceApiBaseUrl).toHaveBeenCalledWith("https://lunch.example");
-    expect(loadStorage).toHaveBeenCalledTimes(3);
+    expect(loadStorage).toHaveBeenCalledTimes(4);
   });
 
   it("reports an API host persistence failure", async () => {
@@ -735,6 +769,7 @@ describe("options controller", () => {
   it("uses a normalized connection-cleared host fallback when reload fails after replacement", async () => {
     const storage = storageWithSensitiveGroupState();
     const loadStorage = vi.fn()
+      .mockResolvedValueOnce(storage)
       .mockResolvedValueOnce(storage)
       .mockResolvedValueOnce(storage)
       .mockResolvedValueOnce(storage)
@@ -801,6 +836,7 @@ describe("options controller", () => {
   it("uses a connection-cleared fallback when reload fails after disconnect", async () => {
     const storage = storageWithSensitiveGroupState();
     const loadStorage = vi.fn()
+      .mockResolvedValueOnce(storage)
       .mockResolvedValueOnce(storage)
       .mockResolvedValueOnce(storage)
       .mockResolvedValueOnce(storage)

@@ -6,18 +6,13 @@ import {
   type PersonalLunchHistoryResponse
 } from "@lunch/shared";
 import { ExtensionApiError, requestJson } from "./apiClient";
+import { withGroupSessionRetry } from "./groupSessionRetry";
 
 export interface ExtensionGroupContext {
   readonly apiBaseUrl: string;
   readonly groupId: string;
   readonly membershipId: string;
   readonly groupSessionToken: string;
-}
-
-function groupHeaders(context: ExtensionGroupContext): Record<string, string> {
-  return {
-    [AUTHORIZATION_HEADER]: `Bearer ${context.groupSessionToken}`
-  };
 }
 
 function invalidResponse(code: string): never {
@@ -32,9 +27,13 @@ async function getGroupJson<T extends { groupId: string }>(
   context: ExtensionGroupContext,
   path: string
 ): Promise<T> {
-  const response = await requestJson<T>(new URL(path, context.apiBaseUrl), {
-    headers: groupHeaders(context)
-  });
+  const response = await withGroupSessionRetry(
+    context.groupId,
+    context.groupSessionToken,
+    (token) => requestJson<T>(new URL(path, context.apiBaseUrl), {
+      headers: { [AUTHORIZATION_HEADER]: `Bearer ${token}` }
+    })
+  );
   if (response.groupId !== context.groupId) {
     invalidResponse("group_response_mismatch");
   }

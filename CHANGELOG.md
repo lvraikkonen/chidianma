@@ -2,6 +2,32 @@
 
 All notable user-facing changes to the internal product are recorded here.
 
+## Stage 7B — 2026-07-16
+
+### Identity and safety
+
+- Added one-time cross-device identity link codes, sliding Identity Token renewal, Token expiries,
+  disconnect-this-device and identity-wide reset-all-connections.
+- Admin and Extension now preserve the same identity/membership/role across linking and renew an
+  expired group session through one shared flight before retrying once.
+- Closed legacy unscoped Server/Extension runtime paths; no-active-group Extension state performs
+  no recommendation request or reminder.
+- Added per-risk rate limits, strict CORS, validated Railway client IP handling, fixed 500 responses
+  and allowlisted safe error context.
+- Added operator export/anonymization/Admin recovery/session revoke support while preserving history
+  and the last-active-Admin invariant.
+
+### Reliability
+
+- Added identity authorization versions and HMAC-only link-code storage through a Prisma migration.
+- Upgraded `@fastify/static` to the fixed 9.x line and added Fastify 5 rate limiting.
+- Extended the PostgreSQL 16 rehearsal with two real concurrent refreshes producing two batches and
+  exactly one current batch.
+
+Stage 7B is deployed and production-verified. Public group creation is disabled and the two legacy
+compatibility variables are removed. This is still not a colleague distribution release;
+`v0.1.0-internal` remains the Stage 6 audit baseline and Stage 7C owns the next version boundary.
+
 ## v0.1.0-internal — 2026-07-15
 
 Production-QA baseline:

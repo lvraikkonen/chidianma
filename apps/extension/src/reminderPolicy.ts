@@ -1,15 +1,12 @@
-import {
-  LUNCH_HEADLINE,
-  type GroupSettingsResponse
-} from "@lunch/shared";
+import type { GroupSettingsResponse } from "@lunch/shared";
 import type { ExtensionStorageShape } from "./storage";
 
 export const STRICT_REMINDER_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 export interface EffectiveReminderSettings {
-  source: "group-default" | "local-override" | "legacy";
-  mode: "group" | "legacy";
-  groupId?: string | undefined;
+  source: "group-default" | "local-override";
+  mode: "group";
+  groupId: string;
   officeTimezone: string;
   reminderTime: string;
   weekdayReminderEnabled: boolean;
@@ -57,18 +54,7 @@ export function resolveEffectiveReminderSettings(
   state: ExtensionStorageShape
 ): EffectiveReminderSettings | null {
   const groupId = state.activeGroupId;
-  if (!groupId) {
-    if (!isStrictReminderTime(state.reminderTime)) return null;
-    return {
-      source: "legacy",
-      mode: "legacy",
-      officeTimezone: "Asia/Shanghai",
-      reminderTime: state.reminderTime,
-      weekdayReminderEnabled: state.enabled,
-      secondReminderEnabled: false,
-      notificationTitle: LUNCH_HEADLINE
-    };
-  }
+  if (!groupId) return null;
 
   const cached = state.groupSettingsCacheByGroupId[groupId];
   if (!cached) return null;

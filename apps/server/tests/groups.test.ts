@@ -10,6 +10,8 @@ import { assertNotLastActiveAdmin, requireActiveMembership } from "../src/servic
 type MockIdentity = {
   id: string;
   displayName: string;
+  authVersion: number;
+  anonymizedAt: Date | null;
   lastSeenAt: Date | null;
 };
 
@@ -70,7 +72,12 @@ const prisma = vi.hoisted(() => {
     },
     identity: {
       create: vi.fn(async ({ data }: { data: { displayName: string; lastSeenAt: Date } }) => {
-        const identity = { id: `identity-${store.nextIdentityId++}`, ...data };
+        const identity = {
+          id: `identity-${store.nextIdentityId++}`,
+          authVersion: 0,
+          anonymizedAt: null,
+          ...data
+        };
         store.identities.push(identity);
         return identity;
       }),
@@ -93,6 +100,9 @@ const prisma = vi.hoisted(() => {
         return group;
       }),
       findMany: vi.fn(async () => store.groups),
+      findFirst: vi.fn(async ({ where }: { where: { inviteCodeHash: string } }) => {
+        return store.groups.find((group) => group.inviteCodeHash === where.inviteCodeHash) ?? null;
+      }),
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
         return store.groups.find((group) => group.id === where.id) ?? null;
       })
@@ -228,6 +238,7 @@ function signMembershipToken(input: {
   groupId?: string;
   membershipId?: string;
   role?: GroupRole;
+  authVersion?: number;
 }): string {
   return signGroupSessionToken(
     {
@@ -235,6 +246,7 @@ function signMembershipToken(input: {
       groupId: input.groupId ?? "group-1",
       membershipId: input.membershipId ?? "membership-1",
       role: input.role ?? "member",
+      ...(input.authVersion === undefined ? {} : { authVersion: input.authVersion }),
       exp: Date.now() + 60_000
     },
     env.SESSION_SECRET
@@ -245,7 +257,10 @@ function prismaWithMemberships(memberships: MembershipRecord[]) {
   return {
     groupMembership: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
-        return memberships.find((membership) => membership.id === where.id) ?? null;
+        const membership = memberships.find((candidate) => candidate.id === where.id);
+        return membership
+          ? { ...membership, identity: { authVersion: 0, anonymizedAt: null } }
+          : null;
       }),
       count: vi.fn(async ({ where }: { where: Partial<MembershipRecord> }) => {
         return memberships.filter((membership) => {
@@ -343,6 +358,52 @@ describe("group membership authorization", () => {
     );
   });
 
+  it("rejects a token whose identity claim does not own the membership", async () => {
+    const prisma = prismaWithMemberships([
+      { id: "membership-1", groupId: "group-1", identityId: "identity-2", role: "member", status: "active" }
+    ]);
+    await expectAuthError(
+      () => requireActiveMembership({
+        prisma: prisma as never,
+        env,
+        groupId: "group-1",
+        authorization: `Bearer ${signMembershipToken({ identityId: "identity-1" })}`
+      }),
+      "forbidden",
+      "active_membership_required"
+    );
+  });
+
+  it("rejects version-mismatched and anonymized identity sessions", async () => {
+    const membership = {
+      id: "membership-1",
+      groupId: "group-1",
+      identityId: "identity-1",
+      role: "member" as const,
+      status: "active" as const
+    };
+    for (const identity of [
+      { authVersion: 1, anonymizedAt: null },
+      { authVersion: 0, anonymizedAt: new Date() }
+    ]) {
+      const prisma = {
+        groupMembership: {
+          findUnique: vi.fn(async () => ({ ...membership, identity }))
+        }
+      };
+      await expectAuthError(
+        () => requireActiveMembership({
+          prisma: prisma as never,
+          env,
+          groupId: "group-1",
+          authorization: `Bearer ${signMembershipToken({ authVersion: 0 })}`
+        }),
+        "unauthorized",
+        "invalid_token"
+      );
+    }
+  });
+
   it("rejects member sessions when an admin role is required", async () => {
     const prisma = prismaWithMemberships([
       { id: "membership-1", groupId: "group-1", identityId: "identity-1", role: "member", status: "active" }
@@ -394,6 +455,96 @@ describe("group membership authorization", () => {
 });
 
 describe("group routes", () => {
+  async function createIdentityFor(app: Awaited<ReturnType<typeof buildApp>>, displayName: string) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/identities",
+      payload: { displayName }
+    });
+    expect(response.statusCode).toBe(200);
+    return response.json();
+  }
+
+  async function createGroupFor(
+    app: Awaited<ReturnType<typeof buildApp>>,
+    displayName: string,
+    groupName: string,
+    subtitle?: string
+  ) {
+    const identity = await createIdentityFor(app, displayName);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      headers: { authorization: `Bearer ${identity.identityToken}` },
+      payload: { groupName, ...(subtitle ? { subtitle } : {}) }
+    });
+    expect(response.statusCode).toBe(200);
+    return response.json();
+  }
+
+  async function joinGroupFor(
+    app: Awaited<ReturnType<typeof buildApp>>,
+    displayName: string,
+    inviteCode: string
+  ) {
+    const identity = await createIdentityFor(app, displayName);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/groups/join",
+      headers: { authorization: `Bearer ${identity.identityToken}` },
+      payload: { inviteCode }
+    });
+    expect(response.statusCode).toBe(200);
+    return response.json();
+  }
+
+  it("isolates create and join rate-limit buckets by route and client IP", async () => {
+    const app = await buildApp();
+    const identity = await createIdentityFor(app, "限流成员");
+    const createResponses = [];
+    for (let index = 0; index < 4; index += 1) {
+      createResponses.push(await app.inject({
+        method: "POST",
+        url: "/api/groups",
+        remoteAddress: "203.0.113.30",
+        headers: { authorization: `Bearer ${identity.identityToken}` },
+        payload: { groupName: `小组${index}` }
+      }));
+    }
+    expect(createResponses.at(-1)?.statusCode).toBe(429);
+    expect((await app.inject({
+      method: "POST",
+      url: "/api/groups",
+      remoteAddress: "203.0.113.31",
+      headers: { authorization: `Bearer ${identity.identityToken}` },
+      payload: { groupName: "另一 IP" }
+    })).statusCode).toBe(200);
+
+    const joinResponses = [];
+    for (let index = 0; index < 11; index += 1) {
+      joinResponses.push(await app.inject({
+        method: "POST",
+        url: "/api/groups/join",
+        remoteAddress: "203.0.113.30",
+        headers: { authorization: `Bearer ${identity.identityToken}` },
+        payload: { inviteCode: `LUNCH-BAD${index}` }
+      }));
+    }
+    expect(joinResponses.at(-1)?.statusCode).toBe(429);
+
+    const sessionResponses = [];
+    for (let index = 0; index < 31; index += 1) {
+      sessionResponses.push(await app.inject({
+        method: "POST",
+        url: "/api/groups/group-1/session",
+        remoteAddress: "203.0.113.30",
+        headers: { authorization: "Bearer stable-invalid-token" }
+      }));
+    }
+    expect(sessionResponses.at(-1)?.statusCode).toBe(429);
+    await app.close();
+  });
+
   it("returns 400 for missing and malformed identity creation bodies", async () => {
     const app = await buildApp();
 
@@ -428,12 +579,6 @@ describe("group routes", () => {
 
   it("returns 400 for missing and malformed group join bodies", async () => {
     const app = await buildApp();
-    await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    });
-
     const missingBody = await app.inject({ method: "POST", url: "/api/groups/join" });
     expect(missingBody.statusCode).toBe(400);
     expect(missingBody.json()).toEqual({ error: "invalid_group_join_request", message: "Invite code is required" });
@@ -450,13 +595,7 @@ describe("group routes", () => {
   it("creates an identity and group, then lists active memberships", async () => {
     const app = await buildApp();
 
-    const createGroup = await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "李雷", groupName: "前端干饭组", subtitle: "楼下约饭" }
-    });
-    expect(createGroup.statusCode).toBe(200);
-    const created = createGroup.json();
+    const created = await createGroupFor(app, "李雷", "前端干饭组", "楼下约饭");
     expect(created.identityToken).toEqual(expect.any(String));
     expect(created.groupSessionToken).toEqual(expect.any(String));
     expect(created.group.name).toBe("前端干饭组");
@@ -476,11 +615,7 @@ describe("group routes", () => {
   it("reuses an existing identity when creating a second group", async () => {
     const app = await buildApp();
 
-    const first = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "李雷", groupName: "前端干饭组" }
-    })).json();
+    const first = await createGroupFor(app, "李雷", "前端干饭组");
 
     const secondResponse = await app.inject({
       method: "POST",
@@ -515,7 +650,7 @@ describe("group routes", () => {
     });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json().error).toBe("invalid_token");
+    expect(response.json().error).toBe("missing_token");
     expect(prisma.identity.create).not.toHaveBeenCalled();
   });
 
@@ -554,11 +689,7 @@ describe("group routes", () => {
 
   it("rejects a group session token when listing groups with an identity token", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
 
     const response = await app.inject({
       method: "GET",
@@ -572,11 +703,7 @@ describe("group routes", () => {
 
   it("rejects a group session token when creating a group with an identity token", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
 
     const response = await app.inject({
       method: "POST",
@@ -591,11 +718,7 @@ describe("group routes", () => {
 
   it("rejects a group session token when joining a group with an identity token", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
 
     const response = await app.inject({
       method: "POST",
@@ -610,11 +733,7 @@ describe("group routes", () => {
 
   it("returns 401 for malformed optional authorization when joining a group", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
     vi.mocked(prisma.identity.create).mockClear();
 
     const response = await app.inject({
@@ -625,17 +744,13 @@ describe("group routes", () => {
     });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json().error).toBe("invalid_token");
+    expect(response.json().error).toBe("missing_token");
     expect(prisma.identity.create).not.toHaveBeenCalled();
   });
 
   it("rejects a group session token when exchanging an identity token for a group session", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
 
     const response = await app.inject({
       method: "POST",
@@ -649,19 +764,9 @@ describe("group routes", () => {
 
   it("joins a group with invite code and exchanges identity token for group session", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
 
-    const joinedResponse = await app.inject({
-      method: "POST",
-      url: "/api/groups/join",
-      payload: { displayName: "小赵", inviteCode: created.inviteCode }
-    });
-    expect(joinedResponse.statusCode).toBe(200);
-    const joined = joinedResponse.json();
+    const joined = await joinGroupFor(app, "小赵", created.inviteCode);
     expect(joined.group.groupId).toBe(created.group.groupId);
     expect(joined.group.role).toBe("member");
 
@@ -677,16 +782,8 @@ describe("group routes", () => {
   it("reuses an existing identity when joining another group", async () => {
     const app = await buildApp();
 
-    const groupA = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "小王", groupName: "A 组" }
-    })).json();
-    const groupB = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "小张", groupName: "B 组" }
-    })).json();
+    const groupA = await createGroupFor(app, "小王", "A 组");
+    const groupB = await createGroupFor(app, "小张", "B 组");
 
     const join = await app.inject({
       method: "POST",
@@ -708,11 +805,7 @@ describe("group routes", () => {
 
   it("joining an already-active group is idempotent and returns a fresh session", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
 
     const joinAgain = await app.inject({
       method: "POST",
@@ -727,11 +820,7 @@ describe("group routes", () => {
 
   it("rejects removed members when joining an existing group", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
     prisma.__setMembershipStatus(created.group.membershipId, "removed");
 
     const joinAgain = await app.inject({
@@ -747,11 +836,7 @@ describe("group routes", () => {
 
   it("rejects removing or downgrading the last active admin", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
 
     const response = await app.inject({
       method: "PATCH",
@@ -765,16 +850,8 @@ describe("group routes", () => {
 
   it("returns 403 when a non-admin patches members", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
-    const joined = (await app.inject({
-      method: "POST",
-      url: "/api/groups/join",
-      payload: { displayName: "成员", inviteCode: created.inviteCode }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
+    const joined = await joinGroupFor(app, "成员", created.inviteCode);
 
     const response = await app.inject({
       method: "PATCH",
@@ -788,16 +865,8 @@ describe("group routes", () => {
 
   it("does not allow a removed membership to rejoin with the same identity token", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
-    const joined = (await app.inject({
-      method: "POST",
-      url: "/api/groups/join",
-      payload: { displayName: "成员", inviteCode: created.inviteCode }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
+    const joined = await joinGroupFor(app, "成员", created.inviteCode);
 
     const remove = await app.inject({
       method: "PATCH",
@@ -827,17 +896,9 @@ describe("group routes", () => {
 
   it("does not trust stale admin role in an old group session token", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
     const oldAdminSession = created.groupSessionToken;
-    const joined = (await app.inject({
-      method: "POST",
-      url: "/api/groups/join",
-      payload: { displayName: "成员", inviteCode: created.inviteCode }
-    })).json();
+    const joined = await joinGroupFor(app, "成员", created.inviteCode);
 
     const promote = await app.inject({
       method: "PATCH",
@@ -874,16 +935,8 @@ describe("group routes", () => {
 
   it("locks active admin rows inside the member update transaction before downgrading an admin", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
-    const joined = (await app.inject({
-      method: "POST",
-      url: "/api/groups/join",
-      payload: { displayName: "成员", inviteCode: created.inviteCode }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
+    const joined = await joinGroupFor(app, "成员", created.inviteCode);
 
     const promote = await app.inject({
       method: "PATCH",
@@ -929,11 +982,7 @@ describe("group routes", () => {
 
   it("returns 401 for expired group session tokens on group-scoped routes", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
     const expiredGroupSessionToken = signGroupSessionToken(
       {
         identityId: "identity-expired",
@@ -957,11 +1006,7 @@ describe("group routes", () => {
 
   it("does not accept EXTENSION_READ_TOKEN on new group routes", async () => {
     const app = await buildApp();
-    const created = (await app.inject({
-      method: "POST",
-      url: "/api/groups",
-      payload: { displayName: "组长", groupName: "午饭组" }
-    })).json();
+    const created = await createGroupFor(app, "组长", "午饭组");
 
     const response = await app.inject({
       method: "PATCH",

@@ -4,6 +4,7 @@ import { AuthError } from "./errors.js";
 
 export interface IdentityTokenClaims {
   identityId: string;
+  authVersion?: number;
   exp: number;
 }
 
@@ -12,6 +13,7 @@ export interface GroupSessionClaims {
   groupId: string;
   membershipId: string;
   role: GroupRole;
+  authVersion?: number;
   exp: number;
 }
 
@@ -69,6 +71,14 @@ function assertGroupRole(value: unknown): asserts value is GroupRole {
   }
 }
 
+function normalizedAuthVersion(value: unknown): number {
+  if (value === undefined) return 0;
+  if (!Number.isInteger(value) || (value as number) < 0) {
+    throw new AuthError("unauthorized", "invalid_token", "Invalid token authVersion");
+  }
+  return value as number;
+}
+
 function hasClaim(claims: object, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(claims, field);
 }
@@ -77,28 +87,38 @@ export function signIdentityToken(claims: IdentityTokenClaims, secret: string): 
   return signPayload(claims, secret);
 }
 
-export function verifyIdentityToken(token: string, secret: string): IdentityTokenClaims {
+export function verifyIdentityToken(
+  token: string,
+  secret: string
+): IdentityTokenClaims & { authVersion: number } {
   const claims = verifyPayload<IdentityTokenClaims>(token, secret);
   assertString(claims.identityId, "identityId");
   if (hasClaim(claims, "groupId") || hasClaim(claims, "membershipId") || hasClaim(claims, "role")) {
     throw new AuthError("unauthorized", "invalid_token", "Invalid identity token");
   }
-  return claims;
+  return { ...claims, authVersion: normalizedAuthVersion(claims.authVersion) };
 }
 
 export function signGroupSessionToken(claims: GroupSessionClaims, secret: string): string {
   return signPayload(claims, secret);
 }
 
-export function verifyGroupSessionToken(token: string, secret: string): GroupSessionClaims {
+export function verifyGroupSessionToken(
+  token: string,
+  secret: string
+): GroupSessionClaims & { authVersion: number } {
   const claims = verifyPayload<GroupSessionClaims>(token, secret);
   assertString(claims.identityId, "identityId");
   assertString(claims.groupId, "groupId");
   assertString(claims.membershipId, "membershipId");
   assertGroupRole(claims.role);
-  return claims;
+  return { ...claims, authVersion: normalizedAuthVersion(claims.authVersion) };
 }
 
 export function addDays(date: Date, days: number): number {
   return date.getTime() + days * 24 * 60 * 60 * 1000;
+}
+
+export function expiryIso(exp: number): string {
+  return new Date(exp).toISOString();
 }

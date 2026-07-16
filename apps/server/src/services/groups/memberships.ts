@@ -31,10 +31,22 @@ export async function requireActiveMembership(input: {
   }
 
   const membership = await input.prisma.groupMembership.findUnique({
-    where: { id: claims.membershipId }
+    where: { id: claims.membershipId },
+    include: { identity: true }
   });
-  if (!membership || membership.groupId !== input.groupId || membership.status !== "active") {
+  if (
+    !membership
+    || membership.groupId !== input.groupId
+    || membership.identityId !== claims.identityId
+    || membership.status !== "active"
+  ) {
     throw new AuthError("forbidden", "active_membership_required", "Active membership is required");
+  }
+  if (
+    membership.identity.anonymizedAt
+    || (membership.identity.authVersion ?? 0) !== claims.authVersion
+  ) {
+    throw new AuthError("unauthorized", "invalid_token", "Group session is no longer valid");
   }
   if (input.requiredRole === "admin" && membership.role !== "admin") {
     throw new AuthError("forbidden", "admin_membership_required", "Admin membership is required");

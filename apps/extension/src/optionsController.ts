@@ -1,11 +1,13 @@
 import type {
   CreateGroupRequest,
   CreateGroupResponse,
+  CreateIdentityLinkCodeResponse,
   CreateIdentityResponse,
   GroupSettingsResponse,
   GroupsListResponse,
   JoinGroupResponse,
   PersonalLunchHistoryResponse,
+  RedeemIdentityLinkCodeResponse,
   RefreshGroupSessionResponse
 } from "@lunch/shared";
 import { ExtensionApiError } from "./apiClient";
@@ -31,6 +33,7 @@ export type OptionsViewState =
     storage: ExtensionStorageShape;
     inviteCode?: string | undefined;
     pendingGroupId?: string | undefined;
+    identityLinkCode?: CreateIdentityLinkCodeResponse | undefined;
     error?: string | undefined;
     groupSettings?: OptionsResource<GroupSettingsResponse> | undefined;
     personalHistory?: OptionsResource<PersonalLunchHistoryResponse> | undefined;
@@ -41,6 +44,18 @@ export interface OptionsControllerDependencies {
   createIdentity: (
     apiBaseUrl: string,
     displayName: string
+  ) => Promise<CreateIdentityResponse>;
+  redeemIdentityLinkCode: (
+    apiBaseUrl: string,
+    linkCode: string
+  ) => Promise<RedeemIdentityLinkCodeResponse>;
+  createIdentityLinkCode: (
+    apiBaseUrl: string,
+    identityToken: string
+  ) => Promise<CreateIdentityLinkCodeResponse>;
+  resetIdentitySessions: (
+    apiBaseUrl: string,
+    identityToken: string
   ) => Promise<CreateIdentityResponse>;
   createGroup: (
     apiBaseUrl: string,
@@ -62,9 +77,18 @@ export interface OptionsControllerDependencies {
     groupId: string
   ) => Promise<RefreshGroupSessionResponse>;
   saveIdentityConnection: (
-    displayName: string,
-    identityToken: string
+    response: CreateIdentityResponse
   ) => Promise<void>;
+  saveRenewedIdentityConnection: (
+    response: CreateIdentityResponse
+  ) => Promise<void>;
+  saveResetIdentityConnection: (
+    response: CreateIdentityResponse
+  ) => Promise<void>;
+  refreshIdentitySession: (
+    apiBaseUrl: string,
+    identityToken: string
+  ) => Promise<CreateIdentityResponse>;
   saveGroupConnection: (response: RefreshGroupSessionResponse) => Promise<void>;
   syncGroupSummaries: (groups: GroupsListResponse["groups"]) => Promise<void>;
   saveReminder: (input: {
@@ -96,6 +120,7 @@ export interface OptionsControllerDependencies {
 function mapOptionsError(error: unknown): string {
   if (error instanceof ExtensionApiError) {
     if (error.code === "invalid_invite_code") return "邀请码无效或已经失效。";
+    if (error.code === "invalid_identity_link_code") return "身份连接码无效或已经失效。";
     if (error.code === "removed_member") return "你已被移出该小组，请联系管理员。";
     if (error.status === 401) return "连接已失效，请重新建立身份。";
   }
@@ -111,7 +136,6 @@ function clearConnectionState(
   const cleared: ExtensionStorageShape = {
     ...storage,
     apiBaseUrl,
-    readToken: "",
     sessionsByGroupId: {},
     groupSummariesById: {},
     lastRecommendationsByGroupId: {},
@@ -135,16 +159,10 @@ export function createOptionsController(
   dependencies: OptionsControllerDependencies
 ) {
   let generation = 0;
-  let refreshFlight: {
-    generation: number;
-    groupId: string;
-    promise: Promise<ExtensionGroupContext>;
-  } | undefined;
   let current: OptionsViewState = {
     kind: "loading",
     storage: {
       apiBaseUrl: "http://localhost:3000",
-      readToken: "",
       reminderTime: "11:30",
       enabled: true,
       sessionsByGroupId: {},
@@ -244,73 +262,28 @@ export function createOptionsController(
     }
   }
 
-  async function refreshResourceContext(
+  async function clearInvalidIdentity(
     loadGeneration: number,
-    failedContext: ExtensionGroupContext
-  ): Promise<ExtensionGroupContext> {
-    const latest = await dependencies.loadStorage();
-    if (generation !== loadGeneration) throw new Error("stale_generation");
-    const currentContext = getGroupContext(latest, failedContext.groupId);
-    if (!currentContext) throw new Error("missing_group_session");
-    if (currentContext.groupSessionToken !== failedContext.groupSessionToken) {
-      return currentContext;
-    }
-
-    if (
-      refreshFlight?.generation === loadGeneration
-      && refreshFlight.groupId === failedContext.groupId
-    ) {
-      return refreshFlight.promise;
-    }
-
-    const identityToken = latest.identityToken;
-    if (!identityToken) throw new Error("missing_identity_token");
-    const promise = (async () => {
-      try {
-        const response = await dependencies.refreshSession(
-          failedContext.apiBaseUrl,
-          identityToken,
-          failedContext.groupId
-        );
-        if (generation !== loadGeneration) throw new Error("stale_generation");
-        await dependencies.saveGroupConnection(response);
-        const refreshed = await dependencies.loadStorage();
-        const context = getGroupContext(refreshed, failedContext.groupId);
-        if (!context || generation !== loadGeneration) {
-          throw new Error("stale_generation");
-        }
-        return context;
-      } catch (error) {
-        if (error instanceof ExtensionApiError && error.status === 401) {
-          await clearUnavailableSession(loadGeneration, failedContext);
-        }
-        throw error;
-      }
-    })();
-    refreshFlight = {
-      generation: loadGeneration,
-      groupId: failedContext.groupId,
-      promise
-    };
-    try {
-      return await promise;
-    } finally {
-      if (refreshFlight?.promise === promise) refreshFlight = undefined;
-    }
+    error: unknown
+  ): Promise<void> {
+    if (generation !== loadGeneration) return;
+    generation += 1;
+    await dependencies.disconnectIdentity();
+    const storage = await dependencies.loadStorage().catch(() => (
+      clearConnectionState(current.storage)
+    ));
+    commit({
+      kind: "identity-required",
+      storage,
+      error: mapOptionsError(error)
+    });
   }
 
   async function requestResource<T>(
-    loadGeneration: number,
     context: ExtensionGroupContext,
     request: (context: ExtensionGroupContext) => Promise<T>
   ): Promise<{ context: ExtensionGroupContext; data: T }> {
-    try {
-      return { context, data: await request(context) };
-    } catch (error) {
-      if (!(error instanceof ExtensionApiError) || error.status !== 401) throw error;
-      const refreshed = await refreshResourceContext(loadGeneration, context);
-      return { context: refreshed, data: await request(refreshed) };
-    }
+    return { context, data: await request(context) };
   }
 
   async function handleResourceFailure(
@@ -318,6 +291,10 @@ export function createOptionsController(
     context: ExtensionGroupContext,
     error: unknown
   ): Promise<void> {
+    if (error instanceof ExtensionApiError && error.status === 401) {
+      await clearInvalidIdentity(loadGeneration, error);
+      return;
+    }
     if (
       error instanceof ExtensionApiError
       && error.status === 403
@@ -334,7 +311,7 @@ export function createOptionsController(
     const request = dependencies.getGroupSettingsForContext;
     if (!request) return;
     try {
-      const result = await requestResource(loadGeneration, context, request);
+      const result = await requestResource(context, request);
       if (!isCurrentContext(loadGeneration, result.context)) return;
       await dependencies.saveGroupSettingsCache?.(
         result.context.groupId,
@@ -366,7 +343,7 @@ export function createOptionsController(
     const request = dependencies.getPersonalHistoryForContext;
     if (!request) return;
     try {
-      const result = await requestResource(loadGeneration, context, request);
+      const result = await requestResource(context, request);
       updateResource(loadGeneration, result.context, "personalHistory", {
         status: "ready",
         data: result.data
@@ -441,13 +418,40 @@ export function createOptionsController(
       return;
     }
     try {
-      const response = await dependencies.listGroups(
+      const renewed = await dependencies.refreshIdentitySession(
         storage.apiBaseUrl,
         storage.identityToken
       );
+      await dependencies.saveRenewedIdentityConnection(renewed);
+      const response = await dependencies.listGroups(
+        storage.apiBaseUrl,
+        renewed.identityToken
+      );
       if (generation !== loadGeneration) return;
       await dependencies.syncGroupSummaries(response.groups);
-      const synced = await dependencies.loadStorage();
+      let synced = await dependencies.loadStorage();
+      const activeGroupId = synced.activeGroupId;
+      if (
+        activeGroupId
+        && response.groups.some((group) => group.groupId === activeGroupId)
+      ) {
+        try {
+          const groupSession = await dependencies.refreshSession(
+            synced.apiBaseUrl,
+            renewed.identityToken,
+            activeGroupId
+          );
+          await dependencies.saveGroupConnection(groupSession);
+          synced = await dependencies.loadStorage();
+        } catch (error) {
+          if (error instanceof ExtensionApiError && error.status === 403) {
+            await dependencies.clearGroupSession?.(activeGroupId);
+            synced = await dependencies.loadStorage();
+          } else {
+            throw error;
+          }
+        }
+      }
       if (generation !== loadGeneration) return;
       commit({
         kind: "ready",
@@ -457,6 +461,16 @@ export function createOptionsController(
       await loadStage5Resources(loadGeneration, synced);
     } catch (error) {
       if (generation !== loadGeneration) return;
+      if (error instanceof ExtensionApiError && error.status === 401) {
+        await dependencies.disconnectIdentity();
+        const disconnected = await dependencies.loadStorage().catch(() => clearConnectionState(storage));
+        commit({
+          kind: "identity-required",
+          storage: disconnected,
+          error: mapOptionsError(error)
+        });
+        return;
+      }
       commit({
         kind: "ready",
         storage,
@@ -476,10 +490,7 @@ export function createOptionsController(
         storage.apiBaseUrl,
         displayName
       );
-      await dependencies.saveIdentityConnection(
-        displayName,
-        response.identityToken
-      );
+      await dependencies.saveIdentityConnection(response);
       await load();
     } catch (error) {
       commit({
@@ -487,6 +498,55 @@ export function createOptionsController(
         storage,
         error: mapOptionsError(error)
       });
+    }
+  }
+
+  async function redeemIdentity(linkCode: string): Promise<void> {
+    generation += 1;
+    const storage = await readStorage();
+    if (!storage) return;
+    if (storage.identityToken) {
+      commit({ kind: "ready", storage, error: "请先断开当前身份，再输入连接码。" });
+      return;
+    }
+    commit({ kind: "loading", storage });
+    try {
+      const response = await dependencies.redeemIdentityLinkCode(storage.apiBaseUrl, linkCode);
+      await dependencies.saveIdentityConnection(response);
+      await load();
+    } catch (error) {
+      commit({ kind: "identity-required", storage, error: mapOptionsError(error) });
+    }
+  }
+
+  async function generateIdentityLinkCode(): Promise<void> {
+    const storage = await readStorage();
+    if (!storage?.identityToken) return;
+    try {
+      const identityLinkCode = await dependencies.createIdentityLinkCode(
+        storage.apiBaseUrl,
+        storage.identityToken
+      );
+      if (current.kind === "ready") commit({ ...current, identityLinkCode });
+    } catch (error) {
+      if (current.kind === "ready") commit({ ...current, error: mapOptionsError(error) });
+    }
+  }
+
+  async function resetAllConnections(): Promise<void> {
+    generation += 1;
+    const storage = await readStorage();
+    if (!storage?.identityToken) return;
+    commit({ kind: "loading", storage });
+    try {
+      const response = await dependencies.resetIdentitySessions(
+        storage.apiBaseUrl,
+        storage.identityToken
+      );
+      await dependencies.saveResetIdentityConnection(response);
+      await load();
+    } catch (error) {
+      commit({ kind: "ready", storage, error: mapOptionsError(error) });
     }
   }
 
@@ -690,6 +750,9 @@ export function createOptionsController(
   return {
     load,
     createIdentity,
+    redeemIdentity,
+    generateIdentityLinkCode,
+    resetAllConnections,
     createGroup,
     joinGroup,
     switchGroup,

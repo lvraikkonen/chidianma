@@ -107,13 +107,23 @@ for (const value of suppliedSecretValues) {
   assert(!extensionText.includes(value), "extension_bundle_contains_supplied_secret");
 }
 
-// Stage 7A records these as Stage 7B blockers. Detection keeps the release gate
-// honest without pretending this documentation-only stage removed runtime paths.
-const knownLegacyResidue = {
-  developmentReadToken: extensionText.includes("dev-read-token"),
-  unscopedRecommendations: extensionText.includes("/api/today-recommendations"),
-  legacyReadHeader: extensionText.toLowerCase().includes("x-lunch-read-token")
-};
+const serverFiles = walkFiles(serverDist);
+const serverText = serverFiles
+  .filter((path) => /\.(?:js|json|map)$/.test(path))
+  .map((path) => readFileSync(path, "utf8"))
+  .join("\n");
+const runtimeText = `${extensionText}\n${serverText}`.toLowerCase();
+for (const forbidden of [
+  "dev-read-token",
+  "x-lunch-read-token",
+  "/api/session",
+  "/api/restaurants",
+  "/api/recommendations",
+  "/api/feedback",
+  "/api/today-recommendations"
+]) {
+  assert(!runtimeText.includes(forbidden), `legacy_runtime_residue:${forbidden}`);
+}
 
 const railway = JSON.parse(readFileSync(join(workspaceRoot, "railway.json"), "utf8"));
 assert(railway.$schema === "https://railway.com/railway.schema.json", "railway_schema_missing");
@@ -128,6 +138,6 @@ console.log(JSON.stringify({
   adminFiles: adminFiles.length,
   extensionFiles: extensionFiles.length,
   extensionPermissions: builtManifest.permissions.length,
-  knownLegacyResidue,
+  legacyRuntimeResidue: false,
   railwayConfig: "valid"
 }));

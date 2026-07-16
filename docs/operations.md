@@ -1,15 +1,19 @@
 # Operations
 
-Status: current as of 2026-07-15.
+Status: current as of 2026-07-16.
 
 ## Production inventory
 
 - Railway project/service: `remarkable-reverence / @lunch/server`.
 - Production URL: `https://lunchserver-production.up.railway.app`.
-- Runtime implementation baseline: `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
-- Current Railway revision: `32d414a289c57d6ce0488448e612e8943b446a31`
-  (only Stage 6 documentation differs from the runtime baseline).
-- Current Railway deployment: `c85ac2ab-b43a-42d6-9b55-cf75322ff993`.
+- Current Railway deployment: `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`.
+- Current Railway image digest:
+  `sha256:dba6964449d3f8627c4188855fae15935e3c065313bccb074b664ce5a52133c7`.
+- `/api/ready` reports revision `local` because the approved Stage 7B workspace was uploaded through
+  Railway CLI before it was committed. The deployment ID and image digest are the artifact identity.
+- Immediate pre-variable-change rollback deployment: `2d3db6db-e1ab-41c2-86c0-edd2138dcc1a`.
+- Pre-7B rollback deployment: `371242e7-9783-4866-aaa5-f4f26218ddcf`, commit
+  `ad0260b4abf12b48bbc64e73020858ff316227f3`.
 - Active database: `Postgres-W12K`.
 - Retained rollback database: `Postgres`.
 
@@ -50,16 +54,39 @@ restore confidence and verifier success.
 
 ## Demo/QA data
 
-The Stage 6 QA identities, groups, restaurants and behavior records remain as clearly named Demo/
-smoke fixtures. They are isolated by group and preserve active Admin invariants. Stage 7A does not
-run a production cleanup script. Re-evaluate before expanding beyond the first beta cohort.
+The Stage 6 QA identities, groups, restaurants and behavior records and the clearly named Stage 7B
+production-smoke identity/group remain as Demo fixtures. They are isolated by group and preserve
+active Admin invariants. Stage 7B does not run a production cleanup script. Re-evaluate before
+expanding beyond the first beta cohort.
 
 ## Logging and monitoring
 
-Fastify already emits structured Pino request logs and readiness failures without request headers.
-Stage 7B adds safe business context to important Server failures. Stage 7D adds alerting and
-privacy-bounded reminder delivery/failure observation. Never log Authorization headers, identity/
-group tokens, invite values, session secrets or database URLs.
+Fastify emits structured, allowlisted request logs. Recommendation refresh failures include safe
+group/date/operation/retry/classified-database context. Headers, bodies, queries, display names,
+Tokens, invite/link codes, raw Prisma messages and database URLs are forbidden. Stage 7D still owns
+alerting and privacy-bounded reminder delivery/failure observation.
+
+## Stage 7B rollout and support
+
+The two-step Stage 7B production rollout completed successfully on 2026-07-16:
+
+1. The two old Railway variables were retained while the new Server and migration were deployed.
+2. Health/readiness, Admin static hosting, identity session/link endpoints, closed old APIs, Origin
+   matrix, same-identity Admin/Extension linking and a no-write invalid-code rate-limit probe passed.
+3. The Stage 7B migration and all six live read-only database verifier checks passed.
+4. A separately approved variable change set `ALLOW_PUBLIC_GROUP_CREATION=false` and removed
+   `TEAM_INVITE_CODE` plus `EXTENSION_READ_TOKEN`.
+5. The final deployment repeated health/readiness, verifier, Admin hosting, Origin, legacy 404 and
+   same-identity Admin/Extension smoke. A sanitized create-group probe returned
+   `group_creation_disabled` without creating a group or membership.
+
+Do not run real anonymization apply in production during 7B. Use Demo dry-run and a temporary
+PostgreSQL database for write-command verification.
+
+Operator commands and confirmation syntax are documented in
+[`../apps/server/README.md`](../apps/server/README.md). Every command, including export, is dry-run
+until `--apply` plus the exact printed confirmation; export then creates a new `0600` file. The default support target
+for an export/anonymization request is seven days.
 
 ## Incident entry points
 

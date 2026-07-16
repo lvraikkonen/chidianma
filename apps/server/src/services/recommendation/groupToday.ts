@@ -16,6 +16,7 @@ import {
   snapshotToWeather
 } from "../weather/officeWeather.js";
 import { rankRestaurantCandidates } from "./scorer.js";
+import { SafeOperationalError } from "../../security/requestSecurity.js";
 
 export const GROUP_RECOMMENDATION_ALGORITHM_VERSION = "group-v1";
 
@@ -151,7 +152,13 @@ export async function refreshGroupTodayRecommendations(input: {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable
       });
     } catch (error) {
-      if (attempt === 2 || !isRetryableTransactionError(error)) throw error;
+      if (attempt === 2 || !isRetryableTransactionError(error)) {
+        throw new SafeOperationalError(
+          "recommendation_refresh",
+          { groupId: input.groupId, officeDate, retryCount: attempt },
+          { cause: error }
+        );
+      }
     }
   }
 

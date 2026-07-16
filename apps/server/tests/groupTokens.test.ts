@@ -34,6 +34,7 @@ describe("multi-group signed tokens", () => {
     const identity = signIdentityToken({ identityId: "identity-1", exp: Date.now() + 60_000 }, "session-secret");
     expect(verifyIdentityToken(identity, "session-secret")).toEqual({
       identityId: "identity-1",
+      authVersion: 0,
       exp: Date.now() + 60_000
     });
 
@@ -49,6 +50,7 @@ describe("multi-group signed tokens", () => {
     );
     expect(verifyGroupSessionToken(group, "session-secret")).toEqual({
       identityId: "identity-1",
+      authVersion: 0,
       groupId: "group-1",
       membershipId: "membership-1",
       role: "admin",

@@ -1,4 +1,4 @@
-import type { GroupSessionResponse, GroupSummary } from "@lunch/shared";
+import type { CreateIdentityResponse, GroupSessionResponse, GroupSummary } from "@lunch/shared";
 
 export const ADMIN_SESSION_KEY = "lunchAdminSessionState.v2";
 const API_BASE_URL = import.meta.env.PROD ? "" : (import.meta.env.VITE_API_BASE_URL ?? "");
@@ -6,10 +6,12 @@ const API_BASE_URL = import.meta.env.PROD ? "" : (import.meta.env.VITE_API_BASE_
 export interface AdminSessionState {
   version: 2;
   apiBaseUrl: string;
+  identityId?: string | undefined;
   displayName?: string | undefined;
   identityToken?: string | undefined;
+  identityTokenExpiresAt?: string | undefined;
   activeGroupId?: string | undefined;
-  sessionsByGroupId: Record<string, { token: string }>;
+  sessionsByGroupId: Record<string, { token: string; expiresAt?: string | undefined }>;
   groupSummariesById: Record<string, GroupSummary>;
 }
 
@@ -42,8 +44,12 @@ export function readAdminSession(): AdminSessionState {
     return {
       version: 2,
       apiBaseUrl: parsed.apiBaseUrl,
+      ...(typeof parsed.identityId === "string" ? { identityId: parsed.identityId } : {}),
       ...(typeof parsed.displayName === "string" ? { displayName: parsed.displayName } : {}),
       ...(typeof parsed.identityToken === "string" ? { identityToken: parsed.identityToken } : {}),
+      ...(typeof parsed.identityTokenExpiresAt === "string"
+        ? { identityTokenExpiresAt: parsed.identityTokenExpiresAt }
+        : {}),
       ...(typeof parsed.activeGroupId === "string" ? { activeGroupId: parsed.activeGroupId } : {}),
       sessionsByGroupId: parsed.sessionsByGroupId as AdminSessionState["sessionsByGroupId"],
       groupSummariesById: parsed.groupSummariesById as AdminSessionState["groupSummariesById"]
@@ -57,12 +63,39 @@ export function writeAdminSession(state: AdminSessionState): void {
   window.localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(state));
 }
 
-export function saveIdentity(displayName: string, identityToken: string): void {
+export function saveIdentity(response: CreateIdentityResponse): void {
   writeAdminSession({
     ...getDefaultAdminSession(),
-    displayName: displayName.trim(),
-    identityToken
+    identityId: response.identityId,
+    displayName: response.displayName.trim(),
+    identityToken: response.identityToken,
+    identityTokenExpiresAt: response.identityTokenExpiresAt
   });
+}
+
+export function saveRenewedIdentity(response: CreateIdentityResponse): void {
+  const state = readAdminSession();
+  writeAdminSession({
+    ...state,
+    identityId: response.identityId,
+    displayName: response.displayName.trim(),
+    identityToken: response.identityToken,
+    identityTokenExpiresAt: response.identityTokenExpiresAt
+  });
+}
+
+export function saveResetIdentity(response: CreateIdentityResponse): void {
+  const state = readAdminSession();
+  const next: AdminSessionState = {
+    ...state,
+    identityId: response.identityId,
+    displayName: response.displayName.trim(),
+    identityToken: response.identityToken,
+    identityTokenExpiresAt: response.identityTokenExpiresAt,
+    sessionsByGroupId: {}
+  };
+  delete next.activeGroupId;
+  writeAdminSession(next);
 }
 
 export function saveGroupSession(response: GroupSessionResponse): void {
@@ -70,10 +103,14 @@ export function saveGroupSession(response: GroupSessionResponse): void {
   writeAdminSession({
     ...state,
     identityToken: response.identityToken,
+    identityTokenExpiresAt: response.identityTokenExpiresAt,
     activeGroupId: response.group.groupId,
     sessionsByGroupId: {
       ...state.sessionsByGroupId,
-      [response.group.groupId]: { token: response.groupSessionToken }
+      [response.group.groupId]: {
+        token: response.groupSessionToken,
+        expiresAt: response.groupSessionTokenExpiresAt
+      }
     },
     groupSummariesById: {
       ...state.groupSummariesById,

@@ -25,7 +25,8 @@ Permissions stay limited to:
 ## Use
 
 1. Open Extension options and set the Server URL.
-2. Enter a display name to create a lightweight local identity.
+2. Enter a display name to create a lightweight identity, or enter a one-time
+   identity link code from another connected device.
 3. Create a group or join one with its invite code.
 4. Switch groups without copying tokens, then configure the active group's
    local reminder override if needed.
@@ -38,12 +39,15 @@ and reminder context.
 
 ## Current beta boundary
 
-The normal group flow uses the active group's bearer session. The built code
-still contains an unscoped API/read-token fallback for pre-group storage. That
-is a known Stage 7B blocker, not a supported colleague-beta path. The default
-localhost and development read-token values are development compatibility
-residue and must be removed or disabled before Stage 7C produces a distributable
-build.
+The normal group flow uses the active group's bearer session. Startup renews
+the Identity Token, group 401s share one session renewal and retry once, and a
+removed membership clears only that group. Without an active group the
+Extension shows onboarding, clears old alarms and makes no recommendation or
+notification request. A one-time storage migration removes legacy read-token,
+global recommendation cache and legacy alarm context.
+
+This remains a developer/reviewer build until Stage 7B production rollout and
+Stage 7C distribution work pass; it is not a colleague-beta artifact.
 
 For a custom production API domain, update and review the exact host permission
 in `public/manifest.json`; do not add `<all_urls>`.

@@ -1,9 +1,9 @@
 import type {
+  CreateIdentityResponse,
   GroupSettingsResponse,
   GroupSessionResponse,
   GroupSummary,
-  GroupTodayRecommendationsResponse,
-  TodayRecommendationResponse
+  GroupTodayRecommendationsResponse
 } from "@lunch/shared";
 import { STORAGE_KEYS } from "./config";
 import {
@@ -14,7 +14,6 @@ import {
 
 export interface ExtensionSettings {
   apiBaseUrl: string;
-  readToken: string;
   reminderTime: string;
   enabled: boolean;
 }
@@ -37,8 +36,7 @@ export interface GroupSettingsCacheEntry {
 }
 
 export type ScheduledPrimaryReminder =
-  | { revision: number; mode: "legacy"; scheduledFor: number }
-  | {
+  {
     revision: number;
     mode: "group";
     groupId: string;
@@ -53,9 +51,11 @@ export interface PendingSecondReminder {
 }
 
 export interface ExtensionStorageShape extends ExtensionSettings {
+  identityId?: string | undefined;
   activeGroupId?: string | undefined;
   identityDisplayName?: string | undefined;
   identityToken?: string | undefined;
+  identityTokenExpiresAt?: string | undefined;
   sessionsByGroupId: Record<string, GroupSessionStorage>;
   groupSummariesById: Record<string, GroupSummary>;
   lastRecommendationsByGroupId: Record<string, GroupTodayRecommendationsResponse>;
@@ -75,7 +75,6 @@ export type StorageStateUpdater = (
 export function getDefaultStorageState(): ExtensionStorageShape {
   return {
     apiBaseUrl: "http://localhost:3000",
-    readToken: "dev-read-token",
     reminderTime: "11:30",
     enabled: true,
     sessionsByGroupId: {},
@@ -93,12 +92,33 @@ export function getDefaultSettings(): ExtensionSettings {
 }
 
 export async function getStorageState(): Promise<ExtensionStorageShape> {
-  const data = await chrome.storage.local.get([STORAGE_KEYS.settings, STORAGE_KEYS.state]);
-  return {
+  const data = await chrome.storage.local.get([
+    STORAGE_KEYS.settings,
+    STORAGE_KEYS.state,
+    "lunchLastRecommendation"
+  ]);
+  const merged = {
     ...getDefaultStorageState(),
     ...(data[STORAGE_KEYS.settings] ?? {}),
     ...(data[STORAGE_KEYS.state] ?? {})
-  };
+  } as ExtensionStorageShape & { readToken?: unknown };
+  const { readToken: _legacyReadToken, ...withoutReadToken } = merged;
+  const normalized = withoutReadToken as ExtensionStorageShape;
+  if (normalized.scheduledPrimaryReminder?.mode !== "group") {
+    delete normalized.scheduledPrimaryReminder;
+  }
+  if (
+    _legacyReadToken !== undefined
+    || data[STORAGE_KEYS.settings] !== undefined
+    || data.lunchLastRecommendation !== undefined
+  ) {
+    await chrome.storage.local.set({ [STORAGE_KEYS.state]: normalized });
+    await chrome.storage.local.remove([
+      STORAGE_KEYS.settings,
+      "lunchLastRecommendation"
+    ]);
+  }
+  return normalized;
 }
 
 function getStorageLockManager(): LockManager {
@@ -150,19 +170,53 @@ export async function saveSettings(settings: ExtensionSettings): Promise<void> {
 }
 
 export async function saveIdentityConnection(
-  displayName: string,
-  identityToken: string
+  response: CreateIdentityResponse
 ): Promise<void> {
   await updateStorageState((state) => {
     const next: ExtensionStorageShape = {
       ...state,
-      identityDisplayName: displayName.trim(),
-      identityToken,
+      identityId: response.identityId,
+      identityDisplayName: response.displayName.trim(),
+      identityToken: response.identityToken,
+      identityTokenExpiresAt: response.identityTokenExpiresAt,
       sessionsByGroupId: {},
       groupSummariesById: {},
       lastRecommendationsByGroupId: {},
       localReminderOverridesByGroupId: {},
       groupSettingsCacheByGroupId: {},
+      reminderRevision: state.reminderRevision + 1
+    };
+    delete next.activeGroupId;
+    delete next.scheduledPrimaryReminder;
+    delete next.pendingSecondReminder;
+    return next;
+  });
+  await notifyReminderContextChanged();
+}
+
+export async function saveRenewedIdentityConnection(
+  response: CreateIdentityResponse
+): Promise<void> {
+  await updateStorageState((state) => ({
+    ...state,
+    identityId: response.identityId,
+    identityDisplayName: response.displayName.trim(),
+    identityToken: response.identityToken,
+    identityTokenExpiresAt: response.identityTokenExpiresAt
+  }));
+}
+
+export async function saveResetIdentityConnection(
+  response: CreateIdentityResponse
+): Promise<void> {
+  await updateStorageState((state) => {
+    const next: ExtensionStorageShape = {
+      ...state,
+      identityId: response.identityId,
+      identityDisplayName: response.displayName.trim(),
+      identityToken: response.identityToken,
+      identityTokenExpiresAt: response.identityTokenExpiresAt,
+      sessionsByGroupId: {},
       reminderRevision: state.reminderRevision + 1
     };
     delete next.activeGroupId;
@@ -181,10 +235,14 @@ export async function saveGroupConnection(
     const next = {
       ...state,
       identityToken: response.identityToken,
+      identityTokenExpiresAt: response.identityTokenExpiresAt,
       activeGroupId: response.group.groupId,
       sessionsByGroupId: {
         ...state.sessionsByGroupId,
-        [response.group.groupId]: { token: response.groupSessionToken }
+        [response.group.groupId]: {
+          token: response.groupSessionToken,
+          expiresAt: response.groupSessionTokenExpiresAt
+        }
       },
       groupSummariesById: {
         ...state.groupSummariesById,
@@ -248,7 +306,6 @@ export async function disconnectIdentity(): Promise<void> {
   await updateStorageState((state) => {
     const next: ExtensionStorageShape = {
       ...state,
-      readToken: "",
       sessionsByGroupId: {},
       groupSummariesById: {},
       lastRecommendationsByGroupId: {},
@@ -257,6 +314,8 @@ export async function disconnectIdentity(): Promise<void> {
       reminderRevision: state.reminderRevision + 1
     };
     delete next.identityToken;
+    delete next.identityTokenExpiresAt;
+    delete next.identityId;
     delete next.identityDisplayName;
     delete next.activeGroupId;
     delete next.scheduledPrimaryReminder;
@@ -270,7 +329,6 @@ export async function replaceApiBaseUrl(apiBaseUrl: string): Promise<void> {
   const normalized = new URL(apiBaseUrl).toString().replace(/\/$/, "");
   await updateStorageState((state) => ({
     apiBaseUrl: normalized,
-    readToken: "",
     reminderTime: state.reminderTime,
     enabled: state.enabled,
     sessionsByGroupId: {},
@@ -428,7 +486,6 @@ function isPrimaryContextCurrent(
   context: ScheduledPrimaryReminder
 ): boolean {
   if (context.revision !== state.reminderRevision) return false;
-  if (context.mode === "legacy") return !state.activeGroupId;
   return state.activeGroupId === context.groupId
     && Boolean(state.sessionsByGroupId[context.groupId]?.token);
 }
@@ -524,7 +581,7 @@ export function isStoredReminderContextCurrent(
   input: { revision: number; groupId?: string | undefined }
 ): boolean {
   if (input.revision !== state.reminderRevision) return false;
-  if (!input.groupId) return !state.activeGroupId;
+  if (!input.groupId) return false;
   return state.activeGroupId === input.groupId
     && Boolean(state.sessionsByGroupId[input.groupId]?.token);
 }
@@ -567,24 +624,9 @@ export async function getReminderSettingsForActiveGroup(): Promise<
   };
 }
 
-export async function saveRecommendationCache(response: TodayRecommendationResponse): Promise<void> {
-  await chrome.storage.local.set({
-    [STORAGE_KEYS.lastRecommendation]: {
-      ...response,
-      fromCache: true
-    }
-  });
-}
-
-export async function getRecommendationCache(): Promise<TodayRecommendationResponse | null> {
-  const data = await chrome.storage.local.get(STORAGE_KEYS.lastRecommendation);
-  return data[STORAGE_KEYS.lastRecommendation] ?? null;
-}
-
 function toExtensionSettings(state: ExtensionStorageShape): ExtensionSettings {
   return {
     apiBaseUrl: state.apiBaseUrl,
-    readToken: state.readToken,
     reminderTime: state.reminderTime,
     enabled: state.enabled
   };

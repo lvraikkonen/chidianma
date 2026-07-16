@@ -77,7 +77,8 @@ const prisma = vi.hoisted(() => {
     },
     groupMembership: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
-        return store.memberships.find((membership) => membership.id === where.id) ?? null;
+        const membership = store.memberships.find((candidate) => candidate.id === where.id);
+        return membership ? { ...membership, identity: { authVersion: 0, anonymizedAt: null } } : null;
       })
     },
     restaurant: {

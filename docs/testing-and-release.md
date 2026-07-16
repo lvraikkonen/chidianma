@@ -36,9 +36,9 @@ release-affecting handoff. Behavior changes add tests before implementation when
 pnpm --filter @lunch/server migration:rehearse
 ```
 
-The opt-in Docker rehearsal deploys migrations to fresh PostgreSQL, migrates a legacy fixture,
-checks verifier repeatability and proves overlapping legacy/new batch data aborts atomically. A
-real-PostgreSQL concurrent refresh test remains a Stage 7B requirement.
+The opt-in Docker rehearsal deploys migrations to fresh PostgreSQL, runs two concurrent real
+recommendation refreshes (two successful batches, exactly one current), migrates a legacy fixture,
+checks verifier repeatability and proves overlapping legacy/new batch data aborts atomically.
 
 ## Documentation and artifact gates
 
@@ -51,8 +51,8 @@ real-PostgreSQL concurrent refresh test remains a Stage 7B requirement.
 - Run a supported vulnerability scan against the committed `pnpm-lock.yaml`; record tool version
   and disposition. High/critical findings block release.
 
-Known legacy fallback/dev placeholders are Stage 7B blockers and must be reported during 7A rather
-than silently normalized as a distributable build.
+The artifact gate fails if built Extension/Server runtime contains an old header, unscoped API path
+or development read-token default. It no longer reports legacy residue as an accepted blocker.
 
 ## Chrome manual QA
 
@@ -71,7 +71,8 @@ Record Chrome version, build/revision, tested states and untested areas in `qa/`
 - `v0.1.0-internal` freezes the exact Stage 6 production-QA baseline.
 - The tag is local until separately approved for push; it is not the Stage 7B/7C distributable
   beta version.
-- The hardened client/server pair receives a new version after 7B and 7C pass.
+- Stage 7B is production-verified, but the hardened client/server pair receives a new distributable
+  version only after Stage 7C passes. The current deployed working tree is not that version.
 - `CHANGELOG.md` records user-facing capability; `RELEASE.md` records deployment/database/rollback
   state and known issues.
 

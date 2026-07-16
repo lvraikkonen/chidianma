@@ -22,9 +22,7 @@ The schema is defined in `src/env.ts`.
 | Variable | Purpose | Requirement |
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection | Required |
-| `TEAM_INVITE_CODE` | Legacy single-team compatibility only | Required until Stage 7B removes the legacy surface |
 | `SESSION_SECRET` | Signs identity and group-session tokens | Required; at least 32 characters in production |
-| `EXTENSION_READ_TOKEN` | Legacy unscoped read compatibility only | Required until Stage 7B removes the legacy surface |
 | `ALLOW_PUBLIC_GROUP_CREATION` | Enables identity holders to create groups | Explicitly required in production |
 | `IDENTITY_TOKEN_TTL_DAYS` | Identity-token lifetime | Explicitly required in production |
 | `GROUP_SESSION_TTL_DAYS` | Group-session lifetime | Explicitly required in production |
@@ -37,8 +35,8 @@ The schema is defined in `src/env.ts`.
 | `PORT` | Listener port | Optional; defaults to `3000` and Railway injects it |
 | `RAILWAY_GIT_COMMIT_SHA` | Revision reported by readiness | Optional; Railway supplies it |
 
-Do not print or commit real values for the database URL, invite code, session
-secret, or legacy read token.
+Do not print or commit real values for the database URL, invite/link codes or
+session secret.
 
 ## Railway release contract
 
@@ -62,8 +60,21 @@ Do not seed production. Use migrations and the read-only verifier.
 
 ## Current identity boundary
 
-Group-scoped routes require a bearer group-session token and revalidate active
-membership and role. Identity is still lightweight and local to a browser;
-display names are not verified accounts. The unscoped routes and
-`X-Lunch-Read-Token` remain only as known compatibility surfaces and block
-ordinary colleague beta until Stage 7B removes or disables them.
+Group-scoped routes require a bearer group-session Token and revalidate the
+identity authorization version, active membership and current role. Display
+names are not verified accounts. Connected devices can use a 10-minute,
+single-use identity link code; reset all connections revokes every old Token.
+Legacy unscoped routes and shared read-token auth are not registered.
+
+Operator PII/recovery commands are dry-run by default:
+
+```bash
+pnpm --filter @lunch/server identity:export -- --identity-id ID --output /new/file.json
+pnpm --filter @lunch/server identity:anonymize -- --identity-id ID
+pnpm --filter @lunch/server identity:recover-admin -- --group-id GROUP --old-identity-id OLD --replacement-identity-id NEW
+pnpm --filter @lunch/server identity:revoke-sessions -- --identity-id ID
+```
+
+Use each command's printed confirmation requirement before `--apply --confirm '<printed value>'`;
+even export does not create its `0600` file during dry-run. Never apply directly in production
+without the support/change procedure.

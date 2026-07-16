@@ -9,31 +9,12 @@ import type { FastifyInstance } from "fastify";
 import type { AppEnv } from "../env.js";
 import { prisma } from "../plugins/prisma.js";
 import { AuthError } from "../services/auth/errors.js";
-import { addDays, signGroupSessionToken, signIdentityToken, verifyIdentityToken } from "../services/auth/tokens.js";
-import { generateInviteCode, hashInviteCode, verifyInviteCode } from "../services/groups/inviteCodes.js";
+import { requireActiveIdentity } from "../services/auth/identity.js";
+import { addDays, expiryIso, signGroupSessionToken, signIdentityToken } from "../services/auth/tokens.js";
+import { generateInviteCode, hashInviteCode } from "../services/groups/inviteCodes.js";
 import { assertNotLastActiveAdmin, requireActiveMembership } from "../services/groups/memberships.js";
 import { getGroupMembers } from "../services/groups/operations.js";
-
-function bearerToken(authorization?: string): string | undefined {
-  if (!authorization) return undefined;
-  if (!authorization.startsWith("Bearer ")) {
-    throw new AuthError("unauthorized", "invalid_token", "Authorization bearer token is invalid");
-  }
-  const token = authorization.slice("Bearer ".length).trim();
-  if (!token) {
-    throw new AuthError("unauthorized", "invalid_token", "Authorization bearer token is invalid");
-  }
-  return token;
-}
-
-function authErrorResponse(reply: { code(statusCode: number): unknown }, error: unknown) {
-  if (error instanceof AuthError) {
-    const statusCode = error.code === "unauthorized" ? 401 : error.code === "forbidden" ? 403 : 400;
-    reply.code(statusCode);
-    return { error: error.error, message: error.message };
-  }
-  throw error;
-}
+import { authErrorResponse } from "./routeErrors.js";
 
 function stringField(body: unknown, field: string): string {
   if (!body || typeof body !== "object") return "";
@@ -55,72 +36,47 @@ function groupSummary(membership: {
   };
 }
 
-async function resolveIdentityForRequest(input: {
-  authorization?: string | undefined;
-  displayName?: string | undefined;
-  env: AppEnv;
-}) {
-  const token = bearerToken(input.authorization);
-  if (token) {
-    const claims = verifyIdentityToken(token, input.env.SESSION_SECRET);
-    const identity = await prisma.identity.findUnique({ where: { id: claims.identityId } });
-    if (!identity) {
-      throw new AuthError("unauthorized", "invalid_token", "Identity token is no longer valid");
-    }
-    return prisma.identity.update({ where: { id: identity.id }, data: { lastSeenAt: new Date() } });
-  }
-
-  const displayName = input.displayName?.trim();
-  if (!displayName) {
-    throw new AuthError("bad_request", "display_name_required", "Display name is required");
-  }
-  return prisma.identity.create({ data: { displayName, lastSeenAt: new Date() } });
-}
-
 function signTokens(input: {
   identityId: string;
+  authVersion: number;
   groupId: string;
   membershipId: string;
   role: "admin" | "member";
   env: AppEnv;
-}): { identityToken: string; groupSessionToken: string } {
+}): {
+  identityToken: string;
+  identityTokenExpiresAt: string;
+  groupSessionToken: string;
+  groupSessionTokenExpiresAt: string;
+} {
   const now = new Date();
+  const identityExp = addDays(now, input.env.IDENTITY_TOKEN_TTL_DAYS);
+  const groupExp = addDays(now, input.env.GROUP_SESSION_TTL_DAYS);
   return {
     identityToken: signIdentityToken(
-      { identityId: input.identityId, exp: addDays(now, input.env.IDENTITY_TOKEN_TTL_DAYS) },
+      { identityId: input.identityId, authVersion: input.authVersion, exp: identityExp },
       input.env.SESSION_SECRET
     ),
+    identityTokenExpiresAt: expiryIso(identityExp),
     groupSessionToken: signGroupSessionToken(
       {
         identityId: input.identityId,
+        authVersion: input.authVersion,
         groupId: input.groupId,
         membershipId: input.membershipId,
         role: input.role,
-        exp: addDays(now, input.env.GROUP_SESSION_TTL_DAYS)
+        exp: groupExp
       },
       input.env.SESSION_SECRET
-    )
+    ),
+    groupSessionTokenExpiresAt: expiryIso(groupExp)
   };
 }
 
 export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
-  app.post<{ Body: { displayName: string } }>("/api/identities", async (request, reply) => {
-    const displayName = stringField(request.body, "displayName");
-    if (!displayName) {
-      reply.code(400);
-      return { error: "display_name_required", message: "Display name is required" };
-    }
-    const identity = await prisma.identity.create({ data: { displayName, lastSeenAt: new Date() } });
-    return {
-      identityId: identity.id,
-      identityToken: signIdentityToken(
-        { identityId: identity.id, exp: addDays(new Date(), env.IDENTITY_TOKEN_TTL_DAYS) },
-        env.SESSION_SECRET
-      )
-    };
-  });
-
-  app.post<{ Body: CreateGroupRequest }>("/api/groups", async (request, reply) => {
+  app.post<{ Body: CreateGroupRequest }>("/api/groups", {
+    config: { rateLimit: { max: 3, timeWindow: 60 * 60 * 1000 } }
+  }, async (request, reply) => {
     try {
       if (!env.ALLOW_PUBLIC_GROUP_CREATION) {
         reply.code(403);
@@ -132,10 +88,10 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
         return { error: "invalid_group_create_request", message: "Group name is required" };
       }
 
-      const identity = await resolveIdentityForRequest({
-        authorization: request.headers.authorization,
-        displayName: stringField(request.body, "displayName"),
-        env
+      const { identity } = await requireActiveIdentity({
+        prisma,
+        env,
+        ...(request.headers.authorization ? { authorization: request.headers.authorization } : {})
       });
 
       const inviteCode = generateInviteCode();
@@ -163,6 +119,7 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
 
       const tokens = signTokens({
         identityId: identity.id,
+        authVersion: identity.authVersion,
         groupId: result.group.id,
         membershipId: result.membership.id,
         role: result.membership.role,
@@ -176,11 +133,13 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
 
   app.get("/api/groups", async (request, reply) => {
     try {
-      const token = bearerToken(request.headers.authorization);
-      if (!token) throw new AuthError("unauthorized", "missing_token", "Authorization bearer token is required");
-      const claims = verifyIdentityToken(token, env.SESSION_SECRET);
+      const { identity } = await requireActiveIdentity({
+        prisma,
+        env,
+        ...(request.headers.authorization ? { authorization: request.headers.authorization } : {})
+      });
       const memberships = await prisma.groupMembership.findMany({
-        where: { identityId: claims.identityId, status: "active" },
+        where: { identityId: identity.id, status: "active" },
         include: { group: true },
         orderBy: { joinedAt: "asc" }
       });
@@ -190,27 +149,27 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
     }
   });
 
-  app.post<{ Body: { displayName?: string; inviteCode: string } }>("/api/groups/join", async (request, reply) => {
+  app.post<{ Body: { inviteCode: string } }>("/api/groups/join", {
+    config: { rateLimit: { max: 10, timeWindow: 10 * 60 * 1000 } }
+  }, async (request, reply) => {
     try {
-      const groups = await prisma.lunchGroup.findMany();
       const inviteCode = stringField(request.body, "inviteCode");
       if (!inviteCode) {
         reply.code(400);
         return { error: "invalid_group_join_request", message: "Invite code is required" };
       }
-      const group = groups.find((candidate) =>
-        verifyInviteCode(inviteCode, candidate.inviteCodeHash, env.SESSION_SECRET)
-      );
+      const { identity } = await requireActiveIdentity({
+        prisma,
+        env,
+        ...(request.headers.authorization ? { authorization: request.headers.authorization } : {})
+      });
+      const group = await prisma.lunchGroup.findFirst({
+        where: { inviteCodeHash: hashInviteCode(inviteCode, env.SESSION_SECRET) }
+      });
       if (!group) {
         reply.code(401);
         return { error: "invalid_invite_code", message: "Invite code is invalid" };
       }
-
-      const identity = await resolveIdentityForRequest({
-        authorization: request.headers.authorization,
-        displayName: stringField(request.body, "displayName"),
-        env
-      });
 
       const membership = await prisma.$transaction(async (tx) => {
         const existing = await tx.groupMembership.findUnique({
@@ -233,6 +192,7 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
 
       const tokens = signTokens({
         identityId: identity.id,
+        authVersion: identity.authVersion,
         groupId: membership.groupId,
         membershipId: membership.id,
         role: membership.role,
@@ -244,13 +204,17 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
     }
   });
 
-  app.post<{ Params: { groupId: string } }>("/api/groups/:groupId/session", async (request, reply) => {
+  app.post<{ Params: { groupId: string } }>("/api/groups/:groupId/session", {
+    config: { rateLimit: { max: 30, timeWindow: 60 * 1000 } }
+  }, async (request, reply) => {
     try {
-      const token = bearerToken(request.headers.authorization);
-      if (!token) throw new AuthError("unauthorized", "missing_token", "Authorization bearer token is required");
-      const claims = verifyIdentityToken(token, env.SESSION_SECRET);
+      const { identity } = await requireActiveIdentity({
+        prisma,
+        env,
+        ...(request.headers.authorization ? { authorization: request.headers.authorization } : {})
+      });
       const membership = await prisma.groupMembership.findUnique({
-        where: { groupId_identityId: { groupId: request.params.groupId, identityId: claims.identityId } },
+        where: { groupId_identityId: { groupId: request.params.groupId, identityId: identity.id } },
         include: { group: true }
       });
       if (!membership || membership.status !== "active") {
@@ -258,6 +222,7 @@ export async function registerGroupRoutes(app: FastifyInstance, env: AppEnv) {
       }
       const tokens = signTokens({
         identityId: membership.identityId,
+        authVersion: identity.authVersion,
         groupId: membership.groupId,
         membershipId: membership.id,
         role: membership.role,

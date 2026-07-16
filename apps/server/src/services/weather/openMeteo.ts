@@ -1,4 +1,3 @@
-import type { AppEnv } from "../../env.js";
 import type { WeatherSummary } from "./mockWeather.js";
 
 export interface WeatherOfficeInput {
@@ -15,15 +14,6 @@ export async function fetchWeatherSummaryForOffice(input: WeatherOfficeInput): P
   url.searchParams.set("current", "temperature_2m,precipitation,rain,wind_speed_10m");
   url.searchParams.set("timezone", input.timezone);
   return fetchWeatherUrl(url);
-}
-
-export async function fetchWeatherSummary(env: AppEnv): Promise<WeatherSummary> {
-  return fetchWeatherSummaryForOffice({
-    apiBaseUrl: env.WEATHER_API_BASE_URL,
-    latitude: env.OFFICE_LATITUDE,
-    longitude: env.OFFICE_LONGITUDE,
-    timezone: env.OFFICE_TIMEZONE
-  });
 }
 
 async function fetchWeatherUrl(url: URL): Promise<WeatherSummary> {

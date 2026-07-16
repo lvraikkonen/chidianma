@@ -13,17 +13,21 @@ or documentation workflow. Preserve the role split and record review output in
 
 ## Current context
 
-The product has completed Stage 1–6 production QA. The production-verified
-runtime baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`. Stage 7A is
-complete; Stage 7B is Ready for Planning and has no approved implementation plan
-yet.
+The product has completed Stage 1–6 production QA. The frozen Stage 6 audit
+baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`. Stage 7A and Stage 7B
+are complete; Stage 7C is Ready for Planning. The current Stage 7B production
+runtime is Railway deployment `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`, tracked
+by deployment ID and image digest because it was uploaded from the approved
+uncommitted workspace.
 
 Current sources:
 
 - `specs/2026-07-15-internal-beta-productization-stage7-design.md`
 - `plans/2026-07-15-internal-beta-productization-stage7a.md`
+- `plans/2026-07-15-internal-beta-productization-stage7b.md`
 - `qa/2026-07-15-production-baseline-review-triage.md`
 - `qa/2026-07-15-internal-beta-productization-stage7a.md`
+- `qa/2026-07-15-internal-beta-productization-stage7b.md`
 - `README.md` and `docs/*.md`
 - `roadmap.md`
 
@@ -40,10 +44,11 @@ explicit refreshes.
 
 Production Fastify currently serves the built Admin at the same origin. Current
 identity is a local lightweight identity plus group-scoped sessions; display
-names are not verified accounts. The Extension's legacy unscoped/read-token
-fallback, corresponding Server routes, public-API controls and explicit group
-creation policy are accepted Stage 7B blockers. Do not add features to legacy
-paths or silently expand Stage 7B into formal accounts/OAuth.
+names are not verified accounts. Stage 7B removed the Extension's legacy
+unscoped/read-token fallback and corresponding Server routes, added public-entry
+controls, and disabled production group creation. Do not reintroduce legacy
+paths or silently expand Stage 7C into formal accounts/OAuth. Stage 7C remains
+blocked on an approved detailed plan and must not start ordinary colleague beta.
 
 ## Handoff to Codex
 

@@ -1,6 +1,6 @@
 # Product
 
-Status: current as of 2026-07-15.
+Status: current as of 2026-07-16.
 
 ## Purpose
 
@@ -19,7 +19,7 @@ An Admin role is a group permission, not a formal global account.
 
 ## Core loop
 
-1. A person creates a local lightweight identity.
+1. A person creates a lightweight identity or links an existing identity with a one-time code.
 2. The identity creates a group or joins with that group's invite code.
 3. Members preserve group-specific restaurant and recommendation knowledge.
 4. A member generates the current office-date recommendation batch.
@@ -45,12 +45,15 @@ An Admin role is a group permission, not a formal global account.
 - Old batches remain immutable review history when a new current batch is generated.
 - At least one active Admin must remain in every group.
 - Permissions remain minimal and reminders remain calm.
+- Disconnecting this device is local. Reset all connections increments the identity authorization
+  version and invalidates every previously issued identity/group Token.
 
 ## Current beta boundary
 
-Stage 7A freezes and documents the verified production baseline. Stage 7B must close legacy
-compatibility and public API security blockers. Stage 7C produces the coherent distributable
-client. Stage 7D is the controlled colleague beta and account-system decision.
+Stage 7A froze the verified production baseline and Stage 7B completed the lightweight identity and
+pre-beta security boundary in production. Public group creation is disabled. Stage 7C is Ready for
+Planning but has no detailed plan or distribution artifact yet; Stage 7D colleague beta has not
+started.
 
 ## Non-goals
 

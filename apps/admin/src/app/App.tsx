@@ -10,9 +10,13 @@ import { AdminApiError } from "../api";
 import {
   createGroup,
   createIdentity,
+  createIdentityLinkCode,
   joinGroup,
   listGroups,
-  refreshGroupSession
+  redeemIdentityLinkCode,
+  refreshIdentitySession,
+  refreshGroupSession,
+  resetIdentitySessions
 } from "../clients/groups";
 import {
   getParticipation,
@@ -57,6 +61,8 @@ import {
   readAdminSession,
   saveGroupSession,
   saveIdentity,
+  saveRenewedIdentity,
+  saveResetIdentity,
   syncGroups
 } from "../sessionStore";
 import { createRequestGate } from "./requestGate";
@@ -91,11 +97,17 @@ export function App() {
   const authController = useMemo(() => createAuthController({
     readSession: readAdminSession,
     saveIdentity,
+    saveRenewedIdentity,
+    saveResetIdentity,
     saveGroupSession,
     syncGroups,
     clearGroupSession,
     disconnectAdmin,
     createIdentity,
+    refreshIdentitySession,
+    redeemIdentityLinkCode,
+    createIdentityLinkCode,
+    resetIdentitySessions,
     createGroup,
     joinGroup,
     listGroups,
@@ -143,10 +155,11 @@ export function App() {
     ? connectedState?.session.sessionsByGroupId[activeGroupId]
     : undefined;
   const groupContext: AdminGroupContext | null = activeGroupId && activeGroupSession
-    ? {
+      ? {
         apiBaseUrl: connectedState.session.apiBaseUrl,
         groupId: activeGroupId,
-        token: activeGroupSession.token
+        token: activeGroupSession.token,
+        renewGroupSession: () => authController.renewGroupSession(activeGroupId)
       }
     : null;
   const activeGroup = activeGroupId
@@ -430,6 +443,9 @@ export function App() {
       <LoginPage
         state={authState}
         onCreateIdentity={authController.createIdentity}
+        onRedeemIdentity={authController.redeemIdentity}
+        onGenerateIdentityLinkCode={authController.generateIdentityLinkCode}
+        onResetAllConnections={authController.resetAllConnections}
         onCreateGroup={handleCreateGroup}
         onJoinGroup={handleJoinGroup}
         onSwitchGroup={handleSwitchGroup}
@@ -444,6 +460,9 @@ export function App() {
   const error = shellState.kind === "authenticated"
     ? shellState.error
     : undefined;
+  const identityLinkCode = shellState.kind === "authenticated"
+    ? shellState.identityLinkCode
+    : undefined;
 
   return (
     <AppShell
@@ -451,8 +470,11 @@ export function App() {
       session={shellState.session}
       groups={shellState.groups}
       pendingGroupId={shellState.kind === "switching" ? shellState.pendingGroupId : undefined}
+      identityLinkCode={identityLinkCode}
       onSwitchGroup={handleSwitchGroup}
       onOpenGroupEntry={() => setGroupEntryOpen((open) => !open)}
+      onGenerateIdentityLinkCode={authController.generateIdentityLinkCode}
+      onResetAllConnections={authController.resetAllConnections}
       onDisconnect={handleDisconnect}
       groupEntryPanel={groupEntryOpen ? (
         <div className="shell-entry-wrap">

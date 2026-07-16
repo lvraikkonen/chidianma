@@ -56,8 +56,19 @@ function authenticatedSession(): AdminSessionState {
 function groupSessionResponse(groupId = "group-1"): GroupSessionResponse {
   return {
     identityToken: "fresh-identity-token",
+    identityTokenExpiresAt: "2026-10-13T00:00:00.000Z",
     groupSessionToken: `group-session-token-${groupId}`,
+    groupSessionTokenExpiresAt: "2026-10-13T00:00:00.000Z",
     group: groupSummary(groupId, groupId === "group-1" ? "设计组" : "产品组")
+  };
+}
+
+function identityResponse() {
+  return {
+    identityId: "identity-1",
+    displayName: "小林",
+    identityToken: "identity-token",
+    identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
   };
 }
 
@@ -75,12 +86,34 @@ function authHarness(input: {
   let session = structuredClone(input.initial ?? authenticatedSession());
   const dependencies: AuthControllerDependencies = {
     readSession: () => structuredClone(session),
-    saveIdentity: (displayName, identityToken) => {
+    saveIdentity: (response) => {
       session = {
         ...disconnectedSession(),
-        displayName: displayName.trim(),
-        identityToken
+        identityId: response.identityId,
+        displayName: response.displayName.trim(),
+        identityToken: response.identityToken,
+        identityTokenExpiresAt: response.identityTokenExpiresAt
       };
+    },
+    saveRenewedIdentity: (response) => {
+      session = {
+        ...session,
+        identityId: response.identityId,
+        displayName: response.displayName,
+        identityToken: response.identityToken,
+        identityTokenExpiresAt: response.identityTokenExpiresAt
+      };
+    },
+    saveResetIdentity: (response) => {
+      session = {
+        ...session,
+        identityId: response.identityId,
+        displayName: response.displayName,
+        identityToken: response.identityToken,
+        identityTokenExpiresAt: response.identityTokenExpiresAt,
+        sessionsByGroupId: {}
+      };
+      delete session.activeGroupId;
     },
     saveGroupSession: (response) => {
       session = {
@@ -120,10 +153,14 @@ function authHarness(input: {
       if (session.activeGroupId === groupId) delete session.activeGroupId;
     },
     disconnectAdmin: () => { session = disconnectedSession(); },
-    createIdentity: vi.fn().mockResolvedValue({
-      identityId: "identity-1",
-      identityToken: "identity-token"
+    createIdentity: vi.fn().mockResolvedValue(identityResponse()),
+    refreshIdentitySession: vi.fn().mockImplementation(async () => identityResponse()),
+    redeemIdentityLinkCode: vi.fn().mockResolvedValue(identityResponse()),
+    createIdentityLinkCode: vi.fn().mockResolvedValue({
+      linkCode: "LINK-ABCD-EFGH-JKLM",
+      expiresAt: "2026-07-15T00:10:00.000Z"
     }),
+    resetIdentitySessions: vi.fn().mockResolvedValue(identityResponse()),
     createGroup: vi.fn().mockResolvedValue(createGroupResponse()),
     joinGroup: vi.fn().mockResolvedValue(groupSessionResponse()),
     listGroups: vi.fn().mockImplementation(async () => ({
@@ -158,7 +195,7 @@ describe("auth model", () => {
     await controller.createIdentity("小林");
     await controller.joinGroup("BAD-CODE");
 
-    expect(saveIdentity).toHaveBeenCalledWith("小林", "identity-token");
+    expect(saveIdentity).toHaveBeenCalledWith(identityResponse());
     expect(harness.readSession()).toMatchObject({
       displayName: "小林",
       identityToken: "identity-token"
@@ -171,11 +208,14 @@ describe("auth model", () => {
 
   it("commits the requested group only after fresh session succeeds", async () => {
     let resolveSession!: (response: GroupSessionResponse) => void;
+    const refreshGroupSession = vi.fn()
+      .mockImplementationOnce(() => new Promise<GroupSessionResponse>((resolve) => {
+        resolveSession = resolve;
+      }))
+      .mockResolvedValue(groupSessionResponse("group-2"));
     const harness = authHarness({
       overrides: {
-        refreshGroupSession: vi.fn(() => new Promise<GroupSessionResponse>((resolve) => {
-          resolveSession = resolve;
-        }))
+        refreshGroupSession
       }
     });
     const saveGroupSession = vi.spyOn(harness.dependencies, "saveGroupSession");
@@ -256,6 +296,28 @@ describe("auth model", () => {
     });
   });
 
+  it("shares one group-session renewal across concurrent 401 retries", async () => {
+    let resolve!: (response: GroupSessionResponse) => void;
+    const refreshGroupSession = vi.fn(() => new Promise<GroupSessionResponse>((done) => {
+      resolve = done;
+    }));
+    const harness = authHarness({ overrides: { refreshGroupSession } });
+    const controller = createAuthController(harness.dependencies);
+
+    const renewals = Promise.all([
+      controller.renewGroupSession("group-1"),
+      controller.renewGroupSession("group-1")
+    ]);
+    expect(refreshGroupSession).toHaveBeenCalledOnce();
+    resolve(groupSessionResponse("group-1"));
+    await expect(renewals).resolves.toEqual([
+      "group-session-token-group-1",
+      "group-session-token-group-1"
+    ]);
+    expect(harness.readSession().sessionsByGroupId["group-1"]?.token)
+      .toBe("group-session-token-group-1");
+  });
+
   it.each(["active_membership_required", "removed_member"])(
     "exits the active group for membership error %s",
     async (code) => {
@@ -272,6 +334,26 @@ describe("auth model", () => {
       expect(clearGroupSession).toHaveBeenCalledWith("group-1");
     }
   );
+
+  it("clears the whole identity after a final group-request 401", async () => {
+    const disconnectAdmin = vi.fn();
+    const clearGroupSession = vi.fn();
+    const harness = authHarness({ overrides: { disconnectAdmin, clearGroupSession } });
+    const controller = createAuthController(harness.dependencies);
+
+    await controller.handleGroupError(new AdminApiError({
+      kind: "http",
+      status: 401,
+      code: "invalid_token"
+    }), "group-1");
+
+    expect(disconnectAdmin).toHaveBeenCalledOnce();
+    expect(clearGroupSession).not.toHaveBeenCalled();
+    expect(controller.getState()).toMatchObject({
+      kind: "identity-entry",
+      error: "身份连接已失效，请重新进入。"
+    });
+  });
 
   it("keeps the session for an operation permission error", async () => {
     const clearGroupSession = vi.fn();

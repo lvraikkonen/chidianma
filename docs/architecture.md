@@ -1,6 +1,6 @@
 # Architecture
 
-Status: current as of 2026-07-15.
+Status: current as of 2026-07-16.
 
 ## Runtime topology
 
@@ -26,7 +26,8 @@ Shared contracts prevent each client from inventing a different route or respons
 
 ## Data model
 
-- `Identity` owns a display name and represents a generated lightweight identity ID.
+- `Identity` owns a display name, authorization version and optional anonymization timestamp.
+- `IdentityLinkCode` stores only a one-time HMAC hash plus expiry/consumption state.
 - `LunchGroup` owns settings, restaurants, recommendations, history and invite state.
 - `GroupMembership` joins identity/group and carries role/status.
 - `Restaurant` and `Recommendation` preserve group knowledge.
@@ -38,14 +39,13 @@ Shared contracts prevent each client from inventing a different route or respons
 
 ## Authentication and tenancy
 
-The new flow signs an identity token, then issues a group-session token containing identity,
-group, membership and role claims. Every protected group route verifies signature/expiry, route
-group equality and the current active membership in PostgreSQL. Role-sensitive operations use the
-database membership, including the last-admin invariant.
+The flow signs a versioned identity Token, then issues a group-session Token containing identity,
+group, membership, current role and the same authorization version. Protected routes verify
+signature/expiry, route group, membership ownership, database identity/version/anonymization,
+active status and current database role. Old unversioned Tokens map to version zero only.
 
-Legacy unscoped routes still use a shared invite/read-token compatibility model and a hard-coded
-default group. They are isolated from the normal client flow only imperfectly because the current
-Extension has a no-group fallback. Stage 7B must remove or disable this surface before beta.
+Legacy unscoped routes, shared read-token auth and the default-group runtime are no longer
+registered in production. Historical tables, migrations and legacy batch attribution remain.
 
 ## Recommendation flow
 
@@ -56,9 +56,11 @@ explainable; weather unavailability contributes zero rather than fabricated rain
 
 ## Extension state and scheduling
 
-Identity/group sessions, active group, per-group cache, reminder overrides and alarm claims live in
-`chrome.storage.local`. Long-term scheduling uses `chrome.alarms`; service-worker globals are never
-the source of truth. Cache fallback is scoped to the active group.
+Identity/group sessions with expiries, active group, per-group cache, reminder overrides and alarm
+claims live in `chrome.storage.local`. A one-time storage migration removes legacy read-token/global
+cache/alarm context. Long-term scheduling uses `chrome.alarms`; without an active group the runtime
+clears alarms and performs no network/notification work. Group 401s share one renewal flight and
+retry once.
 
 ## Deployment and data confidence
 

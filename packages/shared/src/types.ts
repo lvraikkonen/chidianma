@@ -15,7 +15,9 @@ export interface GroupSummary {
 
 export interface GroupSessionResponse {
   identityToken: string;
+  identityTokenExpiresAt: string;
   groupSessionToken: string;
+  groupSessionTokenExpiresAt: string;
   group: GroupSummary;
 }
 
@@ -25,11 +27,27 @@ export interface CreateIdentityRequest {
 
 export interface CreateIdentityResponse {
   identityId: string;
+  displayName: string;
   identityToken: string;
+  identityTokenExpiresAt: string;
 }
 
+export type IdentitySessionResponse = CreateIdentityResponse;
+
+export interface CreateIdentityLinkCodeResponse {
+  linkCode: string;
+  expiresAt: string;
+}
+
+export interface RedeemIdentityLinkCodeRequest {
+  linkCode: string;
+}
+
+export type RedeemIdentityLinkCodeResponse = CreateIdentityResponse;
+
+export type ResetIdentitySessionsResponse = CreateIdentityResponse;
+
 export interface CreateGroupRequest {
-  displayName?: string | undefined;
   groupName: string;
   subtitle?: string | undefined;
 }
@@ -39,7 +57,6 @@ export interface CreateGroupResponse extends GroupSessionResponse {
 }
 
 export interface JoinGroupRequest {
-  displayName?: string | undefined;
   inviteCode: string;
 }
 
@@ -54,6 +71,7 @@ export type RefreshGroupSessionResponse = GroupSessionResponse;
 export interface ApiErrorResponse {
   error: string;
   message: string;
+  retryAfterSeconds?: number | undefined;
 }
 
 export interface RecommendationItem {

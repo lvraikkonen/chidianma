@@ -41,9 +41,15 @@ describe("admin session store", () => {
 
   it("saves identity before a group exists", () => {
     const storage = stubStorage();
-    saveIdentity(" 小林 ", "identity-token");
+    saveIdentity({
+      identityId: "identity-1",
+      displayName: " 小林 ",
+      identityToken: "identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
+    });
     expect(storage.read()).toMatchObject({
       version: 2,
+      identityId: "identity-1",
       displayName: "小林",
       identityToken: "identity-token",
       sessionsByGroupId: {},
@@ -59,7 +65,9 @@ describe("admin session store", () => {
     });
     saveGroupSession({
       identityToken: "fresh-identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z",
       groupSessionToken: "group-session-token",
+      groupSessionTokenExpiresAt: "2026-10-13T00:00:00.000Z",
       group: groupSummary()
     });
 

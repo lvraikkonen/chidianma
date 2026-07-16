@@ -126,20 +126,12 @@ describe("reminder policy", () => {
     })).toBeNull();
   });
 
-  it("uses the Shanghai primary-only fallback only without an active group", () => {
+  it("disables reminders without an active group", () => {
     expect(resolveEffectiveReminderSettings({
       ...getDefaultStorageState(),
       reminderTime: "10:45",
       enabled: true
-    })).toEqual({
-      source: "legacy",
-      mode: "legacy",
-      officeTimezone: "Asia/Shanghai",
-      reminderTime: "10:45",
-      weekdayReminderEnabled: true,
-      secondReminderEnabled: false,
-      notificationTitle: "吃饭才是正事，中午吃点啥呢？"
-    });
+    })).toBeNull();
   });
 
   it.each([

@@ -117,21 +117,22 @@ improvement. `(S7)` = already within a Stage 7 substage's planned scope.
 
 **What's wrong.** Five pre-multi-group route plugins are still registered
 ([`app.ts:46-50`](../apps/server/src/app.ts)) and operate exclusively on a hardcoded
-`DEFAULT_GROUP_ID = "seed-group-default"` ([`defaultGroup.ts`](../apps/server/src/services/groups/defaultGroup.ts)):
+`DEFAULT_GROUP_ID = "seed-group-default"` (`apps/server/src/services/groups/defaultGroup.ts`,
+removed by Stage 7B):
 
-- `POST /api/session` ([`session.ts:14,27-39`](../apps/server/src/routes/session.ts)) — anyone
+- `POST /api/session` (`apps/server/src/routes/session.ts:14,27-39`, removed by Stage 7B) — anyone
   who supplies `TEAM_INVITE_CODE` gets a signed admin session, and the handler upserts a
   **single shared identity** (`seed-identity-admin`) and a single shared admin membership over
   the default group. The `Teammate` row is upserted by unique `name`, so two people who type
   the same name share one teammate row. This is the only place in the codebase where
   name-uniqueness is load-bearing and where a display name is effectively treated as identity.
-- `GET /api/restaurants` ([`restaurants.ts:9-14`](../apps/server/src/routes/restaurants.ts)) —
+- `GET /api/restaurants` (`apps/server/src/routes/restaurants.ts:9-14`, removed by Stage 7B) —
   **no auth at all**; returns the default group's restaurants to any caller.
 - `POST/PATCH /api/restaurants`, `POST /api/recommendations`
-  ([`recommendations-admin.ts:17-21`](../apps/server/src/routes/recommendations-admin.ts)),
-  `POST /api/feedback` ([`feedback.ts:17-32`](../apps/server/src/routes/feedback.ts)) — legacy
+  (`apps/server/src/routes/recommendations-admin.ts:17-21`, removed by Stage 7B),
+  `POST /api/feedback` (`apps/server/src/routes/feedback.ts:17-32`, removed by Stage 7B) — legacy
   shared-admin-session or shared-read-token auth, all writing to the default group.
-- `GET /api/today-recommendations` ([`recommendations.ts:8-15`](../apps/server/src/routes/recommendations.ts))
+- `GET /api/today-recommendations` (`apps/server/src/routes/recommendations.ts:8-15`, removed by Stage 7B)
   — shared read-token only.
 
 No production client calls these in the normal flow (admin uses `/api/identities`,
@@ -315,7 +316,8 @@ These areas were examined directly and found clean; they are the reason the over
   in CLI scripts, not the running server.
 - **Signature verification:** both token paths and invite-code verification use HMAC-SHA256 +
   `timingSafeEqual` with length guards ([`tokens.ts:35-40`](../apps/server/src/services/auth/tokens.ts),
-  [`sessionToken.ts:21-26`](../apps/server/src/services/auth/sessionToken.ts), [`inviteCodes.ts:14-19`](../apps/server/src/services/groups/inviteCodes.ts)).
+  `apps/server/src/services/auth/sessionToken.ts:21-26` (removed by Stage 7B),
+  [`inviteCodes.ts:14-19`](../apps/server/src/services/groups/inviteCodes.ts)).
 - **Secret / frontend residue:** zero references to `TEAM_INVITE_CODE`/`SESSION_SECRET`/
   `EXTENSION_READ_TOKEN` in `apps/admin` or `apps/extension` source;
   `scripts/check-stage6-artifacts.mjs` scans the built admin bundle for these plus `localhost`.

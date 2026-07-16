@@ -111,7 +111,8 @@ function seedMembership(status: MembershipStatus = "active") {
     groupId: "group-1",
     identityId: "identity-1",
     role: "member",
-    status
+    status,
+    identity: { authVersion: 0, anonymizedAt: null }
   });
 }
 

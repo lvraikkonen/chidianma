@@ -1,62 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { AppEnv } from "../../env.js";
-import { DEFAULT_GROUP_ID } from "../groups/defaultGroup.js";
 import type { WeatherSummary } from "./mockWeather.js";
-import { fetchWeatherSummary, fetchWeatherSummaryForOffice } from "./openMeteo.js";
-
-export async function getWeatherForOfficeDate(input: {
-  prisma: PrismaClient;
-  env: AppEnv;
-  date: string;
-}): Promise<{ weather: WeatherSummary | null; weatherUnavailable: boolean }> {
-  const snapshotWhere = {
-    groupId_date_city: {
-      groupId: DEFAULT_GROUP_ID,
-      date: input.date,
-      city: input.env.OFFICE_CITY
-    }
-  };
-  const existing = await input.prisma.weatherSnapshot.findUnique({
-    where: snapshotWhere
-  });
-
-  if (existing) {
-    return {
-      weather: snapshotToWeather(existing),
-      weatherUnavailable: false
-    };
-  }
-
-  try {
-    const weather = await fetchWeatherSummary(input.env);
-    try {
-      await input.prisma.weatherSnapshot.create({
-        data: {
-          groupId: DEFAULT_GROUP_ID,
-          date: input.date,
-          city: input.env.OFFICE_CITY,
-          temperatureC: weather.temperatureC,
-          condition: weather.condition,
-          precipitationProbability: weather.precipitationProbability,
-          rawPayload: { source: "open-meteo" }
-        }
-      });
-    } catch (error) {
-      if (isUniqueConstraintError(error)) {
-        const concurrent = await input.prisma.weatherSnapshot.findUnique({
-          where: snapshotWhere
-        });
-        if (concurrent) {
-          return { weather: snapshotToWeather(concurrent), weatherUnavailable: false };
-        }
-      }
-      throw error;
-    }
-    return { weather, weatherUnavailable: false };
-  } catch {
-    return { weather: null, weatherUnavailable: true };
-  }
-}
+import { fetchWeatherSummaryForOffice } from "./openMeteo.js";
 
 export async function getWeatherForGroupOfficeDate(input: {
   prisma: PrismaClient;

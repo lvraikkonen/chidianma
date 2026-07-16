@@ -66,9 +66,10 @@ machine-learning ranking without a current spec. Preserve minimal Chrome
 permissions, PostgreSQL as source of truth, server-side weather, timezone-aware
 dates, group isolation, explicit refresh semantics and calm reminders.
 
-Identity is currently lightweight. Group-scoped clients use bearer group
-sessions; the unscoped routes and `X-Lunch-Read-Token` are legacy compatibility
-only and must not receive new behavior.
+Identity is lightweight. Group-scoped clients use bearer group sessions and
+revalidate the identity authorization version plus active membership. Legacy
+unscoped runtime routes and shared read-token authentication are closed in the
+Stage 7B production runtime; historical attribution remains preserved.
 
 ## Done definition
 

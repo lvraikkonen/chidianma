@@ -118,6 +118,8 @@ describe("grouped extension storage", () => {
   });
 
   it("merges defaults, legacy settings, then current grouped state", async () => {
+    const set = vi.fn().mockResolvedValue(undefined);
+    const remove = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("chrome", {
       storage: {
         local: {
@@ -141,14 +143,16 @@ describe("grouped extension storage", () => {
                 }
               }
             }
-          })
+          }),
+          set,
+          remove
         }
       }
     });
 
-    await expect(getStorageState()).resolves.toMatchObject({
+    const state = await getStorageState();
+    expect(state).toMatchObject({
       apiBaseUrl: "https://current.example",
-      readToken: "legacy-read-token",
       reminderTime: "10:45",
       enabled: true,
       activeGroupId: "group-1",
@@ -159,6 +163,12 @@ describe("grouped extension storage", () => {
       lastRecommendationsByGroupId: {},
       localReminderOverridesByGroupId: {}
     });
+    expect(state).not.toHaveProperty("readToken");
+    expect(set).toHaveBeenCalledWith({ [STORAGE_KEYS.state]: state });
+    expect(remove).toHaveBeenCalledWith([
+      STORAGE_KEYS.settings,
+      "lunchLastRecommendation"
+    ]);
   });
 
   it("stores an identity and clears group-scoped state for a changed identity", async () => {
@@ -182,7 +192,12 @@ describe("grouped extension storage", () => {
       }
     });
 
-    await saveIdentityConnection(" 小林 ", "identity-token");
+    await saveIdentityConnection({
+      identityId: "identity-1",
+      displayName: " 小林 ",
+      identityToken: "identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z"
+    });
 
     expect(readStoredState()).toMatchObject({
       identityDisplayName: "小林",
@@ -215,7 +230,9 @@ describe("grouped extension storage", () => {
 
     await saveGroupConnection({
       identityToken: "new-identity-token",
+      identityTokenExpiresAt: "2026-10-13T00:00:00.000Z",
       groupSessionToken: "group-session-token",
+      groupSessionTokenExpiresAt: "2026-10-13T00:00:00.000Z",
       group: {
         groupId: "group-1",
         name: "设计组",
@@ -309,7 +326,6 @@ describe("grouped extension storage", () => {
     const { locks, readStoredState, sendMessage } = stubMutableStorage({
       ...getDefaultStorageState(),
       apiBaseUrl: "https://lunch.example",
-      readToken: "old-read-token",
       reminderTime: "12:05",
       enabled: false,
       identityToken: "identity-token",
@@ -336,7 +352,6 @@ describe("grouped extension storage", () => {
 
     expect(readStoredState()).toEqual({
       apiBaseUrl: "https://lunch.example",
-      readToken: "",
       reminderTime: "12:05",
       enabled: false,
       sessionsByGroupId: {},
@@ -354,7 +369,6 @@ describe("grouped extension storage", () => {
     const { locks, readStoredState, sendMessage } = stubMutableStorage({
       ...getDefaultStorageState(),
       apiBaseUrl: "https://old.example",
-      readToken: "old-read-token",
       reminderTime: "12:05",
       enabled: false,
       identityToken: "identity-token",
@@ -381,7 +395,6 @@ describe("grouped extension storage", () => {
 
     expect(readStoredState()).toEqual({
       apiBaseUrl: "https://new.example",
-      readToken: "",
       reminderTime: "12:05",
       enabled: false,
       sessionsByGroupId: {},
@@ -477,7 +490,6 @@ describe("grouped extension storage", () => {
     await Promise.all([
       saveSettings({
         apiBaseUrl: "https://lunch.example",
-        readToken: "read-token",
         reminderTime: "12:00",
         enabled: false
       }),
@@ -520,7 +532,6 @@ describe("grouped extension storage", () => {
           get: vi.fn().mockResolvedValue({
             [STORAGE_KEYS.state]: {
               ...getDefaultStorageState(),
-              readToken: "",
               activeGroupId: "group-1",
               sessionsByGroupId: {
                 "group-1": { token: "group-session-token" }
@@ -728,17 +739,18 @@ describe("grouped extension storage", () => {
   });
 });
 
-describe("legacy settings compatibility", () => {
-  it("keeps the legacy default settings contract", () => {
+describe("legacy settings migration", () => {
+  it("keeps current defaults free of legacy credentials", () => {
     expect(getDefaultSettings()).toEqual({
       apiBaseUrl: "http://localhost:3000",
-      readToken: "dev-read-token",
       reminderTime: "11:30",
       enabled: true
     });
   });
 
-  it("reads legacy settings through the grouped storage state", async () => {
+  it("migrates legacy settings without retaining the read token", async () => {
+    const set = vi.fn().mockResolvedValue(undefined);
+    const remove = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("chrome", {
       storage: {
         local: {
@@ -749,20 +761,23 @@ describe("legacy settings compatibility", () => {
               reminderTime: "10:30",
               enabled: false
             }
-          })
+          }),
+          set,
+          remove
         }
       }
     });
 
     await expect(getSettings()).resolves.toEqual({
       apiBaseUrl: "https://legacy.example",
-      readToken: "legacy-read-token",
       reminderTime: "10:30",
       enabled: false
     });
+    expect(set).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledOnce();
   });
 
-  it("saves legacy settings into grouped state and keeps the settings changed message", async () => {
+  it("saves current settings into grouped state and keeps the settings changed message", async () => {
     const set = vi.fn().mockResolvedValue(undefined);
     const sendMessage = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("chrome", {
@@ -784,7 +799,6 @@ describe("legacy settings compatibility", () => {
     });
     const settings = {
       apiBaseUrl: "https://lunch.example",
-      readToken: "saved-read-token",
       reminderTime: "12:00",
       enabled: false
     };

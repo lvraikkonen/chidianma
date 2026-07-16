@@ -3,17 +3,22 @@ import {
   GROUP_ROUTES,
   type CreateGroupRequest,
   type CreateGroupResponse,
+  type CreateIdentityLinkCodeResponse,
   type CreateIdentityResponse,
   type CreateRecommendationRequest,
   type CreateRestaurantRequest,
   type GroupsListResponse,
   type JoinGroupResponse,
+  type RedeemIdentityLinkCodeResponse,
   type RecommendationMutationResponse,
   type RefreshGroupSessionResponse,
+  type IdentitySessionResponse,
+  type ResetIdentitySessionsResponse,
   type RestaurantListResponse,
   type RestaurantMutationResponse
 } from "@lunch/shared";
 import { requestJson } from "./apiClient";
+import { withGroupSessionRetry } from "./groupSessionRetry";
 
 export interface GroupApiContext {
   apiBaseUrl: string;
@@ -25,10 +30,6 @@ function identityHeaders(identityToken: string): Record<string, string> {
   return { [AUTHORIZATION_HEADER]: `Bearer ${identityToken}` };
 }
 
-function groupHeaders(context: GroupApiContext): Record<string, string> {
-  return { [AUTHORIZATION_HEADER]: `Bearer ${context.token}` };
-}
-
 export function createIdentity(apiBaseUrl: string, displayName: string) {
   return requestJson<CreateIdentityResponse>(
     new URL(GROUP_ROUTES.identities, apiBaseUrl),
@@ -37,6 +38,38 @@ export function createIdentity(apiBaseUrl: string, displayName: string) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ displayName: displayName.trim() })
     }
+  );
+}
+
+export function refreshIdentitySession(apiBaseUrl: string, identityToken: string) {
+  return requestJson<IdentitySessionResponse>(
+    new URL(GROUP_ROUTES.identitySession, apiBaseUrl),
+    { method: "POST", headers: identityHeaders(identityToken) }
+  );
+}
+
+export function createIdentityLinkCode(apiBaseUrl: string, identityToken: string) {
+  return requestJson<CreateIdentityLinkCodeResponse>(
+    new URL(GROUP_ROUTES.identityLinkCodes, apiBaseUrl),
+    { method: "POST", headers: identityHeaders(identityToken) }
+  );
+}
+
+export function redeemIdentityLinkCode(apiBaseUrl: string, linkCode: string) {
+  return requestJson<RedeemIdentityLinkCodeResponse>(
+    new URL(GROUP_ROUTES.redeemIdentityLinkCode, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ linkCode: linkCode.trim() })
+    }
+  );
+}
+
+export function resetIdentitySessions(apiBaseUrl: string, identityToken: string) {
+  return requestJson<ResetIdentitySessionsResponse>(
+    new URL(GROUP_ROUTES.resetIdentitySessions, apiBaseUrl),
+    { method: "POST", headers: identityHeaders(identityToken) }
   );
 }
 
@@ -88,36 +121,48 @@ export function refreshGroupSession(
 }
 
 export function listGroupRestaurants(context: GroupApiContext) {
-  return requestJson<RestaurantListResponse>(
-    new URL(GROUP_ROUTES.restaurants(context.groupId), context.apiBaseUrl),
-    { headers: groupHeaders(context) }
-  );
+  return withGroupSessionRetry(context.groupId, context.token, (token) => (
+    requestJson<RestaurantListResponse>(
+      new URL(GROUP_ROUTES.restaurants(context.groupId), context.apiBaseUrl),
+      { headers: { [AUTHORIZATION_HEADER]: `Bearer ${token}` } }
+    )
+  ));
 }
 
 export function createGroupRestaurant(
   context: GroupApiContext,
   input: CreateRestaurantRequest
 ) {
-  return requestJson<RestaurantMutationResponse>(
-    new URL(GROUP_ROUTES.restaurants(context.groupId), context.apiBaseUrl),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", ...groupHeaders(context) },
-      body: JSON.stringify(input)
-    }
-  );
+  return withGroupSessionRetry(context.groupId, context.token, (token) => (
+    requestJson<RestaurantMutationResponse>(
+      new URL(GROUP_ROUTES.restaurants(context.groupId), context.apiBaseUrl),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [AUTHORIZATION_HEADER]: `Bearer ${token}`
+        },
+        body: JSON.stringify(input)
+      }
+    )
+  ));
 }
 
 export function createGroupRecommendation(
   context: GroupApiContext,
   input: CreateRecommendationRequest
 ) {
-  return requestJson<RecommendationMutationResponse>(
-    new URL(GROUP_ROUTES.recommendations(context.groupId), context.apiBaseUrl),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", ...groupHeaders(context) },
-      body: JSON.stringify(input)
-    }
-  );
+  return withGroupSessionRetry(context.groupId, context.token, (token) => (
+    requestJson<RecommendationMutationResponse>(
+      new URL(GROUP_ROUTES.recommendations(context.groupId), context.apiBaseUrl),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [AUTHORIZATION_HEADER]: `Bearer ${token}`
+        },
+        body: JSON.stringify(input)
+      }
+    )
+  ));
 }

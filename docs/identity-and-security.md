@@ -1,16 +1,21 @@
 # Identity and Security
 
-Status: current baseline plus accepted Stage 7B blockers, 2026-07-15.
+Status: Stage 7B production-verified, 2026-07-16.
 
 ## Current lightweight identity
 
-The current product does not have formal accounts. A browser creates an `Identity` with a generated
-ID and user-chosen display name. The signed identity Token proves possession of that generated ID;
-the display name itself proves nothing and need not be unique.
+The product does not have formal accounts. A device creates an `Identity` with a generated ID and
+user-chosen display name. The signed Identity Token proves possession of that generated ID; the
+display name itself proves nothing and need not be unique. Every newly issued Identity/Group Token
+carries `authVersion`; older versionless Tokens are accepted only against database version zero.
 
 An identity joins a lunch group through its rotating invite code. The Server then issues a signed
-group-session Token. Protected group requests revalidate the route group, membership ID, active
-membership status and current role against PostgreSQL.
+group-session Token. Protected group requests revalidate route group, membership ID/identity,
+database identity/anonymization/version, active membership status and current role in PostgreSQL.
+
+An already connected device can generate `LINK-XXXX-XXXX-XXXX`: 60 random bits, 10-minute expiry,
+single use, HMAC-only at rest. Issuing a new code consumes older pending codes. Reset all connections
+increments `authVersion`, deletes pending link codes and returns the current device a new Token.
 
 ## What persists where
 
@@ -18,9 +23,10 @@ membership status and current role against PostgreSQL.
   in PostgreSQL.
 - Admin keeps identity/group tokens in same-origin browser `localStorage`.
 - Extension keeps tokens and cache in extension-isolated `chrome.storage.local`.
-- Clearing browser/Extension storage or changing device loses possession of that local identity.
+- Clearing every connected device loses possession of the lightweight identity. With no remaining
+  Token there is no self-service recovery: create a new identity and rejoin groups.
 
-There is no cross-device recovery, account merge or verified mapping to a real person.
+There is no verified mapping to a real person, account merge or long-term recovery credential.
 
 ## Invite and removal semantics
 
@@ -30,41 +36,54 @@ There is no cross-device recovery, account merge or verified mapping to a real p
 - The same human can create a different identity from another device/display name and attempt to
   join again. Admin removal is therefore a group-membership control, not a human ban.
 - The last active Admin cannot be demoted or removed.
+- If the only Admin loses all Tokens, an operator may replace that Admin only after verifying the
+  known colleague relationship; this is an operational recovery, not personal identity proof.
 
 ## Secret classes
 
 - `SESSION_SECRET` and `DATABASE_URL` are production secrets and must never enter frontend bundles,
   documents, logs or shell output.
-- Identity/group tokens and invite codes are bearer capabilities; avoid screenshots and support
+- Identity/group Tokens, invite codes and identity link codes are bearer capabilities; avoid screenshots and support
   messages containing them.
-- `EXTENSION_READ_TOKEN` and `TEAM_INVITE_CODE` are legacy compatibility values, not strong modern
-  identity controls. They remain Server-only and are scheduled for removal/disablement in Stage 7B.
 
-## Confirmed pre-beta blockers
+The production runtime no longer reads the two legacy compatibility environment values, the
+variables have been removed from Railway, and the unscoped legacy API/auth surface is not
+registered. Public production group creation is disabled.
 
-1. Legacy unscoped routes remain registered; `/api/session` can mint a shared legacy admin session
-   and an unscoped restaurant read is unauthenticated.
-2. The Extension falls back to legacy recommendation/feedback routes when no active group exists.
-3. Public identity/group/join endpoints do not have proxy-aware rate limiting.
-4. CORS reflects arbitrary origins; the replacement policy must cover same-origin Admin, local Vite
-   and the selected unpacked/unlisted Extension model without pretending CORS is authentication.
-5. The intended production `ALLOW_PUBLIC_GROUP_CREATION` policy needs sanitized verification and a
-   documented/tested decision.
+## Edge protection
 
-Stage 7B closes these with tests. `Teammate` records remain historical attribution unless a separate
-spec and migration explicitly preserve and replace that role.
+- Single-replica in-memory rate limits protect identity entry, group create/join, session issuance,
+  link-code generation and reset. Production client IP uses only a validated Railway `X-Real-IP`,
+  otherwise socket IP. A shared store is required before adding replicas.
+- CORS allows the exact public origin, local Vite only outside production, and strict
+  `chrome-extension://[a-p]{32}` origins. It allows no credentials and is not authentication.
+- 500 responses are fixed `internal_error`. Logs whitelist request/Railway IDs, method, route
+  template, group/date/operation/retry and classified Prisma code—never headers, body, query,
+  display name, bearer values, codes, database URL or raw Prisma message.
 
-## Open decisions for ADR 0001
+`Teammate` records remain historical attribution. Closed routes do not delete historical data.
 
-- Support/reset flow when storage is cleared or a device is lost.
-- PII retention, export, deletion or anonymization and its effect on last-admin/history invariants.
-- Whether lightweight identity remains sufficient after observing Stage 7D support burden.
+## PII support and retention
 
-Formal accounts, OAuth, email login and account merging are not approved by the current spec.
+Current identity PII is retained during the controlled beta until an anonymization request. The
+support target for export/anonymization is seven days.
+
+- All four operator commands default to dry-run and apply requires the exact printed confirmation.
+  `identity:export` then writes a new `0600` JSON file and refuses overwrite. It includes only the
+  chosen identity, memberships and that identity's creation/participation/feedback/batch attribution.
+  Cross-group last-Admin checks block anonymization
+  atomically. Anonymization removes active memberships, clears last-seen, uses one anonymous label,
+  increments authorization version and deletes link codes while retaining historical foreign keys.
+- There is no self-service delete API. De-identified history remains; final retention is revisited
+  with the Stage 7D account decision.
+
+Formal accounts, OAuth, email login, single-device remote revocation and account merging are not
+approved. ADR 0001 defines the immediate misuse/operator-recovery/support-rate triggers that force
+a formal-account ADR.
 
 ## Security response
 
-Suspected Token/invite exposure: rotate the relevant invite or `SESSION_SECRET`/database credential
-through controlled operations, invalidate affected sessions as the design permits, inspect
+Suspected Token/invite exposure: rotate the relevant invite or credential through controlled
+operations, use reset all connections/operator revoke for identity sessions, inspect
 group-scoped activity and avoid copying the secret into an incident report. A suspected isolation
 breach follows [the isolation runbook](runbooks/suspected-isolation-breach.md).
