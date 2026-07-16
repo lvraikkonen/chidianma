@@ -83,8 +83,10 @@ decision before expanding Stage 7D beyond the first cohort.
   deployment `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` passed build, pre-deploy verification, readiness,
   Admin static-resource and core API smoke. Chrome `150.0.7871.125` loaded the expected internal
   name, `0.2.0` version and stable ID; the Popup disconnected-state visual check and Options
-  navigation/profile checks passed. Remaining Chrome connected states, responsive detail/
-  notification checks, upgrade retention and colleague distribution approval remain open.
+  navigation/profile checks passed. The existing Admin identity was linked successfully into the
+  Extension, restoring the expected identity/group and entering the recommendation experience.
+  Remaining connected-state actions, responsive detail/notification checks, upgrade retention and
+  colleague distribution approval remain open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)

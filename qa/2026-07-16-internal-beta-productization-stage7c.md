@@ -221,10 +221,20 @@ Options-page review passed by user confirmation in the same Chrome candidate:
 - the service address is the fixed production Railway origin;
 - the internal profile does not expose an API-address editing control.
 
+Identity connection and recommendation-entry review passed by user confirmation:
+
+- an already connected Admin generated a 10-minute identity link code;
+- the Extension redeemed the link code successfully without exposing the code
+  or any Token in QA evidence;
+- the Extension restored the expected existing identity and lunch group;
+- returning to the Popup displayed the active group name and entered the
+  recommendation experience successfully.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
-- Popup loading, ready, empty, cached, error and QuickAdd recovery states.
+- Popup loading, empty, cached, error and QuickAdd recovery states.
+- Connected recommendation cards, refresh and detail navigation.
 - Options and Detail desktop/narrow layouts and system notification icon.
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
