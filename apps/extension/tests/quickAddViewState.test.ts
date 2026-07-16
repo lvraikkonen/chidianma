@@ -8,7 +8,8 @@ import {
 describe("popup quick add cancel lifecycle", () => {
   it.each<QuickAddState>([
     { kind: "submitting-restaurant" },
-    { kind: "submitting-recommendation", restaurantId: "restaurant-1" }
+    { kind: "submitting-recommendation", restaurantId: "restaurant-1" },
+    { kind: "checking", target: "restaurant", verdict: "checking" }
   ])("disables cancellation while $kind is pending", (state) => {
     expect(quickAddControlsForState(state)).toEqual({
       cancelDisabled: true,
@@ -20,11 +21,8 @@ describe("popup quick add cancel lifecycle", () => {
     });
   });
 
-  it("restores cancellation when restaurant creation fails", () => {
-    expect(quickAddControlsForState({
-      kind: "restaurant-error",
-      message: "餐厅没有保存，请重试。"
-    })).toEqual({
+  it("keeps the editable form available before submission", () => {
+    expect(quickAddControlsForState({ kind: "idle" })).toEqual({
       cancelDisabled: false,
       cancelHidden: false,
       fieldsDisabled: false,
@@ -36,9 +34,11 @@ describe("popup quick add cancel lifecycle", () => {
 
   it("leaves only partial-success recovery actions after restaurant creation", () => {
     const state: QuickAddState = {
-      kind: "recommendation-error",
+      kind: "recovery",
+      target: "recommendation",
+      verdict: "confirmed-missing",
       restaurantId: "restaurant-1",
-      message: "餐厅已保存，推荐尚未保存。"
+      message: "已确认餐厅保存成功、推荐尚未保存，可以安全重试推荐。"
     };
     expect(quickAddControlsForState(state)).toEqual({
       cancelDisabled: true,

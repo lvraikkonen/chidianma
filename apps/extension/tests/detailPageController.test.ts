@@ -156,7 +156,7 @@ describe("detail page presenter", () => {
       message: "今天还没有生成推荐。",
       control: {
         kind: "index",
-        label: "打开插件生成推荐",
+        label: "打开 Chrome 扩展生成推荐",
         href: "index.html"
       }
     },

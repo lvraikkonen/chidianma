@@ -4,7 +4,11 @@ import { basename, join, relative, resolve } from "node:path";
 const workspaceRoot = resolve(import.meta.dirname, "..");
 const adminDist = join(workspaceRoot, "apps", "admin", "dist");
 const extensionDist = join(workspaceRoot, "apps", "extension", "dist");
-const extensionSourceManifest = join(workspaceRoot, "apps", "extension", "public", "manifest.json");
+const extensionSourceManifest = join(workspaceRoot, "apps", "extension", "manifest.base.json");
+const extensionInternalPublicKey = readFileSync(
+  join(workspaceRoot, "apps", "extension", "internal-public-key.txt"),
+  "utf8"
+).trim();
 const serverDist = join(workspaceRoot, "apps", "server", "dist");
 
 function assert(condition, code) {
@@ -51,6 +55,7 @@ const extensionRelativeFiles = new Set(
 );
 const requiredExtensionFiles = [
   "manifest.json",
+  "build-profile.json",
   "index.html",
   "detail.html",
   "options.html",
@@ -73,15 +78,37 @@ assert(
 );
 
 const builtManifest = JSON.parse(readFileSync(join(extensionDist, "manifest.json"), "utf8"));
+const builtProfile = JSON.parse(readFileSync(
+  join(extensionDist, "build-profile.json"),
+  "utf8"
+));
 const sourceManifest = JSON.parse(readFileSync(extensionSourceManifest, "utf8"));
+assert(
+  ["dev", "internal"].includes(builtProfile.profile),
+  "extension_build_profile_invalid"
+);
 assert(builtManifest.manifest_version === 3, "extension_manifest_version_changed");
 assert(
   JSON.stringify(builtManifest.permissions) === JSON.stringify(["alarms", "notifications", "storage"]),
   "extension_permissions_changed"
 );
 assert(
-  JSON.stringify(builtManifest.host_permissions) === JSON.stringify(sourceManifest.host_permissions),
+  JSON.stringify(builtManifest.host_permissions) === JSON.stringify(
+    builtProfile.profile === "internal"
+      ? ["https://lunchserver-production.up.railway.app/*"]
+      : [
+        "http://localhost:3000/*",
+        "https://lunchserver-production.up.railway.app/*"
+      ]
+  ),
   "extension_host_permissions_changed"
+);
+assert(builtManifest.version === sourceManifest.version, "extension_version_changed");
+assert(
+  builtProfile.profile === "internal"
+    ? builtManifest.key === extensionInternalPublicKey
+    : builtManifest.key === undefined,
+  "extension_profile_key_changed"
 );
 assert(!builtManifest.host_permissions.includes("<all_urls>"), "extension_broad_host_permission_detected");
 assert(

@@ -1,53 +1,86 @@
 # Chrome Extension
 
-Manifest V3 extension for the daily recommendation, participation, decision,
-feedback, history, and reminder experience.
+Manifest V3 Extension for daily recommendations, participation, decisions,
+feedback, personal history and calm lunch reminders.
 
-## Build and load
+## Build profiles
+
+The default build is the controlled internal candidate:
 
 ```bash
 pnpm --filter @lunch/shared build
 pnpm --filter @lunch/extension build
 ```
 
-Load `apps/extension/dist` through `chrome://extensions` in Developer mode.
-This unpacked route is for developers and reviewers only; the colleague-beta
-distribution choice and installation guide are Stage 7C decisions.
+It produces `apps/extension/dist` with:
+
+- name `中午吃点啥（内部测试）`;
+- version `0.2.0`;
+- fixed service `https://lunchserver-production.up.railway.app`;
+- exact production host permission;
+- public manifest key and stable Extension ID
+  `bbkeaogleldgfnkgebdhdbiohlmonbkk`;
+- read-only version/service information and no editable API address.
+
+For local development:
+
+```bash
+pnpm --filter @lunch/extension build:dev
+```
+
+The dev profile is named `中午吃点啥（开发版）`, has no internal manifest key,
+allows localhost plus the exact production host and exposes advanced API address
+editing. It can coexist with the internal build.
 
 Permissions stay limited to:
 
 - `alarms`
 - `notifications`
 - `storage`
-- `http://localhost:3000/*`
-- `https://*.up.railway.app/*`
+
+The internal host permission is only:
+
+- `https://lunchserver-production.up.railway.app/*`
+
+## Internal install and upgrade
+
+The supported unpacked install, upgrade and rollback procedure is documented in
+[Internal Extension Distribution](../../docs/extension-internal-distribution.md).
+Load a fixed extracted directory, not a temporary download directory.
+
+Adding the fixed public key changes the ID from earlier Stage 7B unpacked
+installations. The first `0.2.0` install reconnects through an existing identity
+connection code; automatic migration from the old Extension storage is not
+promised.
 
 ## Use
 
-1. Open Extension options and set the Server URL.
-2. Enter a display name to create a lightweight identity, or enter a one-time
-   identity link code from another connected device.
-3. Create a group or join one with its invite code.
-4. Switch groups without copying tokens, then configure the active group's
-   local reminder override if needed.
-5. Use the popup/detail pages for recommendations, participation, decisions and
-   feedback; use options for personal history and reminder settings.
+1. Create a lightweight identity or enter a one-time identity connection code.
+2. Create a group or join one with its invite code.
+3. Switch groups without copying tokens.
+4. Use the popup/detail pages for recommendations, participation, decisions and
+   feedback.
+5. Use settings for personal history, local reminder customization and support
+   version/service checks.
 
 Raw identity and group-session tokens are intentionally hidden from the UI.
-Changing the Server URL clears host-specific identity, group sessions, caches
-and reminder context.
+The internal profile cannot switch service origin.
 
-## Current beta boundary
+## Build and release checks
 
-The normal group flow uses the active group's bearer session. Startup renews
-the Identity Token, group 401s share one session renewal and retry once, and a
-removed membership clears only that group. Without an active group the
-Extension shows onboarding, clears old alarms and makes no recommendation or
-notification request. A one-time storage migration removes legacy read-token,
-global recommendation cache and legacy alarm context.
+```bash
+pnpm --filter @lunch/extension test
+pnpm --filter @lunch/extension typecheck
+pnpm --filter @lunch/extension build:dev
+pnpm --filter @lunch/extension build:internal
+STAGE7C_REQUIRE_ARTIFACTS=0 pnpm check:stage7c-release
+```
 
-This remains a developer/reviewer build until Stage 7B production rollout and
-Stage 7C distribution work pass; it is not a colleague-beta artifact.
+The final package command is stricter:
 
-For a custom production API domain, update and review the exact host permission
-in `public/manifest.json`; do not add `<all_urls>`.
+```bash
+pnpm package:extension:internal
+```
+
+It only runs from a clean, committed worktree and writes the ignored ZIP,
+SHA-256 and release metadata under `artifacts/extension/`.

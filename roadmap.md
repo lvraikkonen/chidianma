@@ -43,7 +43,7 @@ small controlled colleague beta. Stage 8 is intentionally not planned here.
 | Stage 4 | Prototype UI Wiring | Done | [Stage 4A Extension](docs/archive/stages/stage-4/2026-07-10-extension-prototype-ui-wiring-stage4a-plan.md)<br>[Stage 4B Admin](docs/archive/stages/stage-4/2026-07-10-admin-prototype-ui-wiring-stage4b-plan.md) | Extension and admin prototype screens connect to real Stage 1-3 APIs |
 | Stage 5 | Dashboard / Settings / Weights | Done | [Stage 5A Shared + Server](docs/archive/stages/stage-5/2026-07-14-dashboard-settings-weights-stage5a-plan.md)<br>[Stage 5B Admin](docs/archive/stages/stage-5/2026-07-14-admin-dashboard-settings-stage5b-plan.md)<br>[Stage 5C Extension](docs/archive/stages/stage-5/2026-07-14-extension-history-reminders-stage5c-plan.md) | Historical review, dashboard metrics, member contribution, reminders, weights |
 | Stage 6 | Deploy Hardening | Done | [`plans/2026-07-15-deploy-hardening-stage6.md`](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-plan.md) | Production hosting, migration verification, extension smoke test, Railway checks |
-| Stage 7 | Internal Beta Productization | In Progress | [Stage 7 design](specs/2026-07-15-internal-beta-productization-stage7-design.md)<br>[Stage 7A plan](plans/2026-07-15-internal-beta-productization-stage7a.md)<br>[Stage 7B plan](plans/2026-07-15-internal-beta-productization-stage7b.md)<br>[Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md) | Frozen release baseline, explicit identity boundary, coherent distribution, and a controlled colleague beta |
+| Stage 7 | Internal Beta Productization | In Progress | [Stage 7 design](specs/2026-07-15-internal-beta-productization-stage7-design.md)<br>[Stage 7A plan](plans/2026-07-15-internal-beta-productization-stage7a.md)<br>[Stage 7B plan](plans/2026-07-15-internal-beta-productization-stage7b.md)<br>[Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md)<br>[Stage 7C approved plan](plans/2026-07-16-internal-beta-productization-stage7c.md) | Frozen release baseline, explicit identity boundary, coherent distribution, and a controlled colleague beta |
 
 ## Planning Cadence
 
@@ -53,8 +53,7 @@ active cadence is sequential:
 1. Stage 7A baseline freeze, documentation/archive closure, debt disposition and
    release checks are complete.
 2. Stage 7B lightweight identity definition and hardening are complete.
-3. Plan and complete Stage 7C brand, experience consistency, and distribution
-   readiness.
+3. Complete the approved Stage 7C brand, focused quality and versioned unpacked-distribution plan.
 4. Start the controlled Stage 7D colleague beta, operate it, collect evidence,
    and make an account-system decision from observed friction.
 
@@ -247,7 +246,7 @@ extension handoff.
 
 ## Stage 7: Internal Beta Productization
 
-**Status:** In Progress. Stage 7A and Stage 7B are complete; Stage 7C is Ready for Planning.
+**Status:** In Progress. Stage 7A and Stage 7B are complete; Stage 7C is approved and in progress.
 
 **Design:** [`specs/2026-07-15-internal-beta-productization-stage7-design.md`](specs/2026-07-15-internal-beta-productization-stage7-design.md)
 
@@ -260,6 +259,12 @@ extension handoff.
 **Stage 7A QA:** [`qa/2026-07-15-internal-beta-productization-stage7a.md`](qa/2026-07-15-internal-beta-productization-stage7a.md)
 
 **Stage 7B QA:** [`qa/2026-07-15-internal-beta-productization-stage7b.md`](qa/2026-07-15-internal-beta-productization-stage7b.md)
+
+**Stage 7B planning revalidation:** [`qa/2026-07-16-stage7b-revalidation-for-stage7c-planning.md`](qa/2026-07-16-stage7b-revalidation-for-stage7c-planning.md)
+
+**Stage 7C approved plan:** [`plans/2026-07-16-internal-beta-productization-stage7c.md`](plans/2026-07-16-internal-beta-productization-stage7c.md)
+
+**Stage 7C implementation QA:** [`qa/2026-07-16-internal-beta-productization-stage7c.md`](qa/2026-07-16-internal-beta-productization-stage7c.md)
 
 **Frozen Stage 6 audit baseline:**
 `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`, production-QA verified on
@@ -281,10 +286,10 @@ and observable internal beta without broadening the lunch-product scope.
 2. **Stage 7B — Lightweight identity (Done):** identity unification, Token renewal/reset, legacy
    closure, edge protection, PII/operator support, PostgreSQL concurrency and the two-step production
    rollout passed their automated, Chrome and production exit gates.
-3. **Stage 7C — Brand and distribution (Ready for Planning):** align brand, icons, detail-page and
-   cross-surface UX, accessibility and QuickAdd idempotency; decide the internal
-   Extension distribution model; and produce a new hardened version with
-   branch-appropriate install/upgrade/privacy/support materials.
+3. **Stage 7C — Brand and distribution (In progress):** align brand, icons, detail-page and
+   cross-surface UX, accessibility and QuickAdd lost-response recovery; produce a stable-ID,
+   fixed-origin versioned unpacked candidate with install/upgrade/rollback materials. Web Store work
+   is deferred until after the first controlled cohort.
 4. **Stage 7D — Controlled colleague beta:** operate a small cohort, monitor the
    release using the existing structured logs plus alerting and privacy-bounded
    reminder observation, collect feedback, and make an evidence-backed account
@@ -328,5 +333,7 @@ without prematurely committing Stage 8 implementation.
 - [x] Stage 7A trusted baseline completed.
 - [x] Stage 7B detailed implementation plan written and approved.
 - [x] Stage 7B identity model and lightweight hardening completed.
+- [x] Stage 7C detailed implementation plan written.
+- [x] Stage 7C detailed implementation plan reviewed and approved.
 - [ ] Stage 7C brand, experience, and distribution readiness completed.
 - [ ] Stage 7D controlled colleague beta completed and account decision recorded.

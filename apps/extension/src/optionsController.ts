@@ -13,7 +13,10 @@ import type {
 import { ExtensionApiError } from "./apiClient";
 import type { ReminderDraft } from "./reminderFormModel";
 import type { ExtensionGroupContext } from "./stage5Client";
-import type { ExtensionStorageShape } from "./storage";
+import {
+  getDefaultStorageState,
+  type ExtensionStorageShape
+} from "./storage";
 
 export type OptionsResource<T> =
   | { status: "idle" }
@@ -161,17 +164,7 @@ export function createOptionsController(
   let generation = 0;
   let current: OptionsViewState = {
     kind: "loading",
-    storage: {
-      apiBaseUrl: "http://localhost:3000",
-      reminderTime: "11:30",
-      enabled: true,
-      sessionsByGroupId: {},
-      groupSummariesById: {},
-      lastRecommendationsByGroupId: {},
-      localReminderOverridesByGroupId: {},
-      groupSettingsCacheByGroupId: {},
-      reminderRevision: 0
-    }
+    storage: getDefaultStorageState()
   };
 
   function commit(next: OptionsViewState): void {

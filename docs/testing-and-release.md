@@ -9,8 +9,10 @@ pnpm test
 pnpm typecheck
 pnpm build
 pnpm build:railway
+pnpm --filter @lunch/extension build:dev
 pnpm check:release-artifacts
 pnpm check:release-secrets
+pnpm check:stage7c-release
 ```
 
 The npm audit endpoint used by pnpm 9 and 11 currently returns HTTP 410. For a
@@ -48,6 +50,13 @@ checks verifier repeatability and proves overlapping legacy/new batch data abort
 - Verify built Admin HTML/hashed assets and Server production entry points.
 - Verify built Extension manifest, MV3 background asset, icons, declared permissions and host
   permissions.
+- Build both Extension profiles and verify names, version, internal key/stable ID, default service,
+  advanced-host visibility, exact production host and absence of localhost/wildcard values from
+  the internal runtime.
+- Verify the four PNG icons, canonical SVG copies, safe margins, alpha, brand pixels and manifest
+  references.
+- Validate the versioned internal ZIP, checksum and release metadata schema. The packaging command
+  refuses a dirty or uncommitted worktree.
 - Run a supported vulnerability scan against the committed `pnpm-lock.yaml`; record tool version
   and disposition. High/critical findings block release.
 
@@ -65,6 +74,8 @@ For Extension changes, build `apps/extension/dist` and load it unpacked in real 
 - permissions, notification click behavior and upgrade/reload behavior.
 
 Record Chrome version, build/revision, tested states and untested areas in `qa/`.
+For the controlled install/upgrade/rollback flow, use
+[Internal Extension Distribution](extension-internal-distribution.md).
 
 ## Version semantics
 
@@ -72,7 +83,7 @@ Record Chrome version, build/revision, tested states and untested areas in `qa/`
 - The tag is local until separately approved for push; it is not the Stage 7B/7C distributable
   beta version.
 - Stage 7B is production-verified, but the hardened client/server pair receives a new distributable
-  version only after Stage 7C passes. The current deployed working tree is not that version.
+  version only after Stage 7C passes. Extension `0.2.0` is the Stage 7C candidate boundary.
 - `CHANGELOG.md` records user-facing capability; `RELEASE.md` records deployment/database/rollback
   state and known issues.
 

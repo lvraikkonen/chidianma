@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chidianma.internal/schemas/extension-internal-release.schema.json",
+  "title": "中午吃点啥内部测试 Extension 发布元数据",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "product",
+    "version",
+    "commit",
+    "extensionId",
+    "buildProfile",
+    "name",
+    "permissions",
+    "hostPermissions",
+    "fileCount",
+    "artifact",
+    "builtAt"
+  ],
+  "properties": {
+    "schema": { "const": "extension-internal-release/1.0" },
+    "schemaVersion": { "const": "1.0" },
+    "product": { "const": "chidianma-extension" },
+    "version": { "type": "string", "pattern": "^0\\.2\\.0$" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "extensionId": { "type": "string", "pattern": "^[a-p]{32}$" },
+    "buildProfile": { "const": "internal" },
+    "name": { "const": "中午吃点啥（内部测试）" },
+    "permissions": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "alarms" },
+        { "const": "notifications" },
+        { "const": "storage" }
+      ],
+      "items": false
+    },
+    "hostPermissions": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "https://lunchserver-production.up.railway.app/*" }
+      ],
+      "items": false
+    },
+    "fileCount": { "type": "integer", "minimum": 1 },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "pattern": "^chidianma-extension-0\\.2\\.0-internal\\.zip$"
+        },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "builtAt": { "type": "string", "format": "date-time" }
+  }
+}

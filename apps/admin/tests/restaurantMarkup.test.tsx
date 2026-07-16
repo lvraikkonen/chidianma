@@ -72,7 +72,8 @@ function pageProps(input: {
     entryState: input.entryState ?? { kind: "idle" as const },
     onRetryLoad: vi.fn(),
     onCreateEntry: vi.fn(),
-    onRetryRecommendation: vi.fn(),
+    onRetryEntry: vi.fn(),
+    onRecheckEntry: vi.fn(),
     onPatchRestaurant: vi.fn(),
     onCreateRecommendation: vi.fn(),
     onPatchRecommendation: vi.fn()
@@ -113,14 +114,16 @@ describe("restaurant page markup", () => {
     const html = renderToStaticMarkup(
       <RestaurantsPage {...pageProps({
         entryState: {
-          kind: "recommendation-error",
+          kind: "recovery",
+          target: "recommendation",
+          verdict: "confirmed-missing",
           restaurantId: "restaurant-new",
-          message: "餐厅已保存，推荐尚未保存。"
+          message: "已确认餐厅保存成功、推荐尚未保存，可以安全重试推荐。"
         }
       })} />
     );
 
     expect(html).toContain("餐厅已保存，推荐尚未保存");
-    expect(html).toContain("只重试保存推荐");
+    expect(html).toContain("安全重试");
   });
 });

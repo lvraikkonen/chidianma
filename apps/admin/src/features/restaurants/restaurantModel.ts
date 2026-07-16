@@ -10,6 +10,11 @@ import type {
   WeatherTag,
   WeekdayTag
 } from "@lunch/shared";
+import {
+  createRestaurantEntryRecoveryController,
+  type RestaurantEntryRecoveryState,
+  type RestaurantListResponse
+} from "@lunch/shared";
 
 export interface RestaurantFilter {
   query: string;
@@ -88,15 +93,11 @@ export interface CreateRestaurantEntryInput {
   moodTags: string[];
 }
 
-export type RestaurantEntryState =
-  | { kind: "idle" }
-  | { kind: "submitting-restaurant" }
-  | { kind: "submitting-recommendation"; restaurantId: string }
-  | { kind: "restaurant-error"; message: string }
-  | { kind: "recommendation-error"; restaurantId: string; message: string }
-  | { kind: "complete"; restaurantId: string };
+export type RestaurantEntryState = RestaurantEntryRecoveryState;
 
 export function createRestaurantEntryController(dependencies: {
+  membershipId: string;
+  listRestaurants: () => Promise<RestaurantListResponse>;
   createRestaurant: (
     input: CreateRestaurantRequest
   ) => Promise<RestaurantMutationResponse>;
@@ -104,58 +105,25 @@ export function createRestaurantEntryController(dependencies: {
     input: CreateRecommendationRequest
   ) => Promise<RecommendationMutationResponse>;
 }) {
-  let state: RestaurantEntryState = { kind: "idle" };
-  let pendingRecommendation: CreateRecommendationRequest | null = null;
-
-  async function saveRecommendation(input: CreateRecommendationRequest) {
-    state = {
-      kind: "submitting-recommendation",
-      restaurantId: input.restaurantId
-    };
-    try {
-      await dependencies.createRecommendation(input);
-      pendingRecommendation = null;
-      state = { kind: "complete", restaurantId: input.restaurantId };
-    } catch {
-      pendingRecommendation = input;
-      state = {
-        kind: "recommendation-error",
-        restaurantId: input.restaurantId,
-        message: "餐厅已保存，推荐尚未保存。"
-      };
-    }
-    return state;
-  }
+  const controller = createRestaurantEntryRecoveryController(dependencies);
 
   async function submit(input: CreateRestaurantEntryInput) {
-    state = { kind: "submitting-restaurant" };
-    pendingRecommendation = null;
-    try {
-      const response = await dependencies.createRestaurant(input.restaurant);
-      return saveRecommendation({
-        restaurantId: response.restaurant.id,
+    return controller.submit({
+      restaurant: input.restaurant,
+      recommendation: {
         dish: input.dish.trim(),
         reason: input.reason.trim(),
         weatherTags: input.weatherTags,
         weekdayTags: input.weekdayTags,
         moodTags: input.moodTags
-      });
-    } catch {
-      state = { kind: "restaurant-error", message: "餐厅没有保存，请重试。" };
-      return state;
-    }
-  }
-
-  async function retryRecommendation() {
-    if (!pendingRecommendation) {
-      throw new Error("restaurant_entry_retry_unavailable");
-    }
-    return saveRecommendation(pendingRecommendation);
+      }
+    });
   }
 
   return {
     submit,
-    retryRecommendation,
-    getState: () => state
+    retry: controller.retry,
+    recheck: controller.recheck,
+    getState: controller.getState
   };
 }

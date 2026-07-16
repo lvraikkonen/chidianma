@@ -14,7 +14,6 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Modal } from "../components/Modal";
 import {
   filterRestaurants,
-  findDuplicateRestaurant,
   recommendationPermissions,
   restaurantPermissions,
   type CreateRestaurantEntryInput,
@@ -43,7 +42,8 @@ interface RestaurantsPageProps {
   onCreateEntry: (
     input: CreateRestaurantEntryInput
   ) => RestaurantEntryState | Promise<RestaurantEntryState>;
-  onRetryRecommendation: () => RestaurantEntryState | Promise<RestaurantEntryState>;
+  onRetryEntry: () => RestaurantEntryState | Promise<RestaurantEntryState>;
+  onRecheckEntry: () => RestaurantEntryState | Promise<RestaurantEntryState>;
   onPatchRestaurant: (
     restaurantId: string,
     input: PatchRestaurantRequest
@@ -90,13 +90,15 @@ export function RestaurantsPage(props: RestaurantsPageProps) {
     props.restaurants.map((restaurant) => restaurant.cuisine).filter(Boolean)
   )).sort() as string[], [props.restaurants]);
   const visible = filterRestaurants(props.restaurants, { query, cuisine, status });
-  const partialState = props.entryState.kind === "recommendation-error"
+  const partialState = props.entryState.kind === "recovery"
     ? props.entryState
     : null;
 
-  async function retryRecommendation() {
+  async function runRecoveryAction(action: "retry" | "recheck") {
     setPending(true);
-    const next = await props.onRetryRecommendation();
+    const next = action === "retry"
+      ? await props.onRetryEntry()
+      : await props.onRecheckEntry();
     setPending(false);
     if (next.kind === "complete") setModal(null);
   }
@@ -124,11 +126,22 @@ export function RestaurantsPage(props: RestaurantsPageProps) {
       {partialState ? (
         <div className="partial-success" aria-live="polite">
           <div>
-            <strong>餐厅已保存，推荐尚未保存</strong>
+            <strong>{recoveryTitle(partialState)}</strong>
             <p>{partialState.message}</p>
           </div>
-          <button className="button secondary" type="button" disabled={pending} onClick={retryRecommendation}>
-            {pending ? "正在重试…" : "只重试保存推荐"}
+          <button
+            className="button secondary"
+            type="button"
+            disabled={pending}
+            onClick={() => runRecoveryAction(
+              partialState.verdict === "confirmed-missing" ? "retry" : "recheck"
+            )}
+          >
+            {pending
+              ? "正在核对…"
+              : partialState.verdict === "confirmed-missing"
+                ? "安全重试"
+                : "重新核对"}
           </button>
         </div>
       ) : null}
@@ -212,7 +225,8 @@ export function RestaurantsPage(props: RestaurantsPageProps) {
               setPending(false);
               if (next.kind === "complete") setModal(null);
             }}
-            onRetry={retryRecommendation}
+            onRetry={() => runRecoveryAction("retry")}
+            onRecheck={() => runRecoveryAction("recheck")}
             onCancel={() => setModal(null)}
           />
         ) : null}
@@ -415,6 +429,7 @@ function CreateRestaurantForm(props: {
   pending: boolean;
   onSubmit: (input: CreateRestaurantEntryInput) => void | Promise<void>;
   onRetry: () => void | Promise<void>;
+  onRecheck: () => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [values, setValues] = useState(() => restaurantValues());
@@ -426,13 +441,6 @@ function CreateRestaurantForm(props: {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const duplicate = findDuplicateRestaurant(props.restaurants, {
-      name: values.name,
-      area: values.area
-    });
-    if (duplicate && !window.confirm(
-      `已存在“${duplicate.name}”（${duplicate.area || "未填写区域"}），仍要继续新增吗？`
-    )) return;
     void props.onSubmit({
       restaurant: restaurantCreate(values),
       dish: dish.trim(),
@@ -463,17 +471,32 @@ function CreateRestaurantForm(props: {
           onWeekdays={setWeekdays}
           onMoods={setMoods}
         />
-        {props.entryState.kind === "restaurant-error" ? <p className="inline-error">{props.entryState.message}</p> : null}
-        {props.entryState.kind === "recommendation-error" ? (
+        {props.entryState.kind === "recovery" ? (
           <div className="partial-success" aria-live="polite">
-            <div><strong>餐厅已保存，推荐尚未保存</strong><p>{props.entryState.message}</p></div>
-            <button className="button secondary" type="button" disabled={props.pending} onClick={props.onRetry}>只重试保存推荐</button>
+            <div>
+              <strong>{recoveryTitle(props.entryState)}</strong>
+              <p>{props.entryState.message}</p>
+            </div>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={props.pending}
+              onClick={
+                props.entryState.verdict === "confirmed-missing"
+                  ? props.onRetry
+                  : props.onRecheck
+              }
+            >
+              {props.entryState.verdict === "confirmed-missing"
+                ? "安全重试"
+                : "重新核对"}
+            </button>
           </div>
         ) : null}
       </div>
       <div className="modal-footer">
         <button className="button ghost" type="button" disabled={props.pending} onClick={props.onCancel}>取消</button>
-        <button className="button primary" type="submit" disabled={props.pending || props.entryState.kind === "recommendation-error"}>
+        <button className="button primary" type="submit" disabled={props.pending || props.entryState.kind === "recovery" || props.entryState.kind === "checking"}>
           {props.pending ? "正在保存…" : "保存餐厅和推荐"}
         </button>
       </div>
@@ -722,4 +745,13 @@ function modalTitle(modal: ModalState): string {
   if (modal.kind === "edit-restaurant") return "编辑餐厅";
   if (modal.kind === "create-recommendation") return "添加推荐";
   return "编辑推荐";
+}
+
+function recoveryTitle(
+  state: Extract<RestaurantEntryState, { kind: "recovery" }>
+): string {
+  if (state.verdict === "uncertain") return "写入结果尚未确认";
+  return state.target === "restaurant"
+    ? "餐厅尚未保存"
+    : "餐厅已保存，推荐尚未保存";
 }

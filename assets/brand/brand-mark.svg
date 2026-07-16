@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="brand-title">
+  <title id="brand-title">中午吃点啥</title>
+  <rect x="16" y="16" width="96" height="96" rx="25" fill="#E86F3D"/>
+  <g fill="none" stroke="#FFF8EE" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M47 51c-4-4-4-9 0-13" stroke-width="7"/>
+    <path d="M73 51c-4-4-4-9 0-13" stroke-width="7"/>
+    <path d="M34 65h60c0 17-13 30-30 30S34 82 34 65Z" stroke-width="7"/>
+    <path d="M43 96h42" stroke-width="7"/>
+  </g>
+</svg>

@@ -128,7 +128,7 @@ function popupGroup(state: PopupViewState): GroupSummary | undefined {
   return "group" in state ? state.group : undefined;
 }
 
-function popupActionContextMatches(
+export function popupActionContextMatches(
   state: PopupViewState,
   storage: ExtensionStorageShape
 ): boolean {
@@ -165,10 +165,28 @@ export async function runPopupActionWithContext<T>(
       message: "当前小组已切换，已加载当前小组内容，请重新操作。"
     };
   }
+  const value = await action(storage);
+  let currentStorage: ExtensionStorageShape;
+  try {
+    currentStorage = await loadStorage();
+  } catch {
+    return {
+      kind: "performed",
+      storage,
+      value
+    };
+  }
+  if (!popupActionContextMatches(state, currentStorage)) {
+    return {
+      kind: "stale",
+      storage: currentStorage,
+      message: "当前小组已切换，已加载当前小组内容，请重新操作。"
+    };
+  }
   return {
     kind: "performed",
-    storage,
-    value: await action(storage)
+    storage: currentStorage,
+    value
   };
 }
 

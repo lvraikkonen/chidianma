@@ -28,6 +28,7 @@ export function quickAddControlsForState(state: QuickAddState): QuickAddControls
   if (
     state.kind === "submitting-restaurant"
     || state.kind === "submitting-recommendation"
+    || state.kind === "checking"
   ) {
     return {
       cancelDisabled: true,
@@ -38,7 +39,7 @@ export function quickAddControlsForState(state: QuickAddState): QuickAddControls
       submitHidden: false
     };
   }
-  if (state.kind === "recommendation-error") {
+  if (state.kind === "recovery") {
     return {
       cancelDisabled: true,
       cancelHidden: true,

@@ -316,8 +316,8 @@ function ReminderSettingsForm(props: SettingsFormProps) {
   const draft = props.editor.drafts.reminder;
   return (
     <form className="panel settings-form" onSubmit={(event) => { event.preventDefault(); props.onSave("reminder"); }}>
-      <div className="section-heading"><div><span className="eyebrow">插件默认值</span><h2>提醒默认值</h2></div></div>
-      <p className="settings-note">这是小组默认值；成员本机已经设置的提醒 override 仍然优先。二次提醒运行时将在 Stage 5C 接入插件。</p>
+      <div className="section-heading"><div><span className="eyebrow">Chrome 扩展默认值</span><h2>提醒默认值</h2></div></div>
+      <p className="settings-note">这是小组默认值；成员的本机自定义提醒仍然优先。二次提醒会在无人决定时按小组设置运行。</p>
       <div className="form-grid">
         <Field label="提醒时间"><input disabled={props.readOnly} type="time" value={draft.reminderTime} onChange={(event) => props.onReminderDraft({ reminderTime: event.target.value })} /></Field>
         <Toggle label="工作日提醒" checked={draft.weekdayReminderEnabled} disabled={props.readOnly} onChange={(checked) => props.onReminderDraft({ weekdayReminderEnabled: checked })} />

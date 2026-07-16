@@ -1,12 +1,14 @@
 {
   "name": "@lunch/extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch",
-    "build": "vite build",
-    "test": "vitest run tests",
+    "dev": "LUNCH_EXTENSION_PROFILE=dev vite build --watch",
+    "build": "pnpm run build:internal",
+    "build:dev": "node ../../scripts/create-extension-icons.mjs && LUNCH_EXTENSION_PROFILE=dev vite build",
+    "build:internal": "node ../../scripts/create-extension-icons.mjs && LUNCH_EXTENSION_PROFILE=internal vite build",
+    "test": "LUNCH_EXTENSION_PROFILE=dev vitest run tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

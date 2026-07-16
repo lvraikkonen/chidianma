@@ -3,16 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>今日午饭推荐</title>
+    <title>中午吃点啥 · 今日推荐详情</title>
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/components.css" />
     <link rel="stylesheet" href="/styles/detail.css" />
   </head>
   <body>
     <main class="detail-page">
+      <h1 class="visually-hidden">今日推荐详情</h1>
       <header class="detail-header">
-        <a href="index.html" class="brand"><span aria-hidden="true">♨</span>中午吃点啥</a>
-        <button id="detail-settings" type="button">设置</button>
+        <a href="index.html" class="brand" aria-label="返回中午吃点啥">
+          <img class="brand-mark" src="/brand-mark.svg" alt="" />
+          <span><strong>中午吃点啥</strong><small>今日推荐详情</small></span>
+        </a>
+        <button id="detail-settings" class="button ghost detail-settings" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M19.1 12a7.4 7.4 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7.7 7.7 0 0 0-1.7-1L14.6 3h-5.2L9 6a7.7 7.7 0 0 0-1.7 1L5 6 3 9.5 5 11a7.4 7.4 0 0 0 0 2l-2 1.5L5 18l2.3-1a7.7 7.7 0 0 0 1.7 1l.4 3h5.2l.4-3a7.7 7.7 0 0 0 1.7-1l2.3 1 2-3.5-2-1.5a7.4 7.4 0 0 0 .1-1Z" />
+          </svg>
+          设置
+        </button>
       </header>
-      <section id="detail-status" aria-live="polite"></section>
+      <section id="detail-status" class="detail-status" aria-live="polite"></section>
       <section id="detail-content" class="detail-content"></section>
     </main>
     <script type="module" src="/src/detail.ts"></script>

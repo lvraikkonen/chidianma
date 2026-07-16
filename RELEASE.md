@@ -68,10 +68,13 @@ decision before expanding Stage 7D beyond the first cohort.
 - **Stage 7B complete:** legacy closure, identity linking/reset, rate limits, Origin policy, safe
   logging, operator tools and real PostgreSQL concurrency are deployed. Both production deployments,
   migration/verifier gates, external smoke, same-identity Admin/Extension checks and Demo dry-run
-  pass. Production group creation is disabled and both legacy variables are removed. Stage 7C is
-  Ready for Planning, but no colleague distribution artifact exists yet.
-- **Blocks colleague distribution (7C):** final Extension distribution/upgrade contract,
-  detail-page/brand consistency, Modal focus behavior and QuickAdd retry idempotency.
+  pass. Production group creation is disabled and both legacy variables are removed. Stage 7C
+  implementation is complete and awaiting final candidate QA; no approved colleague distribution
+  artifact exists yet.
+- **Stage 7C implementation ready for final candidate QA:** brand assets, Extension/Admin visual
+  alignment, Modal focus containment, QuickAdd lost-response recovery, stable-ID build profiles and
+  controlled unpacked packaging are implemented. A final ZIP is intentionally generated only from
+  a clean committed worktree; real Chrome install/upgrade/visual QA and approval remain open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)
@@ -90,4 +93,5 @@ decision before expanding Stage 7D beyond the first cohort.
 
 Evidence: [Stage 6 production QA](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md),
 [Stage 7 review triage](qa/2026-07-15-production-baseline-review-triage.md) and
-[Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md).
+[Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md). The current execution source
+is the approved [Stage 7C detailed plan](plans/2026-07-16-internal-beta-productization-stage7c.md).

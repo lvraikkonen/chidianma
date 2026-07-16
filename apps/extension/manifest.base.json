@@ -1,13 +1,9 @@
 {
   "manifest_version": 3,
   "name": "中午吃点啥",
-  "version": "0.1.0",
-  "description": "每天中午提醒你和同事们：吃饭才是正事，中午吃点啥呢？",
+  "version": "0.2.0",
+  "description": "为小团队提供 2–3 个有理由的午饭选择和适度提醒。",
   "permissions": ["alarms", "notifications", "storage"],
-  "host_permissions": [
-    "http://localhost:3000/*",
-    "https://*.up.railway.app/*"
-  ],
   "action": {
     "default_title": "中午吃点啥",
     "default_popup": "index.html",

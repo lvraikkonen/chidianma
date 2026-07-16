@@ -5,13 +5,13 @@
 
 ## 当前状态
 
-- 阶段：Stage 7 Internal Beta Productization；7A、7B 已完成，7C 已 Ready for Planning。
+- 阶段：Stage 7 Internal Beta Productization；7A、7B 已完成，7C 实现完成并等待最终候选 QA。
 - Admin 与 API 已部署在
   [Railway production](https://lunchserver-production.up.railway.app)，同源提供页面和 API。
 - Stage 6 审计基线：`v0.1.0-internal` →
   `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`。
-- Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build；7C 尚未形成详细计划或
-  分发版本，因此不向普通同事分发。
+- Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build；7C 已实现带稳定 ID、
+  固定生产服务、校验值和升级/回滚说明的 `0.2.0` 内部候选流程，尚未生成获批候选或启动同事分发。
 - 当前是轻量身份：显示名不是可验证账号。已有有效设备可生成 10 分钟单次身份连接码
   连接另一端；所有 Token 都丢失后仍需创建新身份并重新加入。
 
@@ -35,16 +35,18 @@
 
 不要把邀请码、身份 Token 或小组会话 Token 写入文档、聊天或工单。
 
-### 加载 Chrome 扩展（当前仅开发者/审查者）
+### 加载 Chrome 扩展（当前仅候选验证）
 
 ```bash
 pnpm --filter @lunch/extension build
 ```
 
 在 `chrome://extensions` 开启 Developer mode，选择 **Load unpacked** 并加载
-`apps/extension/dist`。进入扩展设置，把 API 地址设为生产 Railway origin 或本地
-Server，再创建身份/连接已有身份并加入小组。没有 active group 时扩展不会请求推荐 API
-或发送提醒。
+`apps/extension/dist`。默认 build 是 `0.2.0` 内部测试 profile，固定生产 Railway
+服务、准确 host permission 和稳定 Extension ID；进入设置后创建身份/连接已有身份并
+加入小组。开发版使用 `pnpm --filter @lunch/extension build:dev`，可连接 localhost。
+完整安装、升级和回滚见
+[内部 Extension 分发说明](docs/extension-internal-distribution.md)。
 
 ## 本地开发
 
@@ -110,6 +112,7 @@ pnpm build
 pnpm build:railway
 pnpm check:release-artifacts
 pnpm check:release-secrets
+STAGE7C_REQUIRE_ARTIFACTS=0 pnpm check:stage7c-release
 ```
 
 Server 迁移 rehearsal：
@@ -139,11 +142,12 @@ Railway 使用 `railway.json`：
 - 没有正式账号、个人身份验证、长期恢复码、账号合并或单设备远程撤销。
 - 唯一管理员丢失全部 Token 时只能走 operator 核验与管理员替换。
 - Stage 7B 已完成生产 rollout；线上制品、变量和回滚点以 `RELEASE.md` 为准。
-- Chrome 扩展没有最终分发/自动升级机制。
-- 独立详情页、品牌一致性、Modal 键盘体验和 QuickAdd 重试仍待 Stage 7C。
+- Chrome 扩展采用受控 unpacked 分发，没有自动升级机制。
+- Stage 7C 的实现门禁已建立；最终候选 ZIP、真实 Chrome 视觉/升级 QA 和批准仍需在
+  干净已提交的版本边界完成。
 - 生产保留明确命名的 Stage 6 Demo/QA fixture 和旧 rollback database；都禁止无审批删除。
 
 ## Roadmap
 
-Stage 1–6、7A 与 7B 已完成。7C 已 Ready for Planning，但尚未创建详细计划；7D 也未
-启动同事内测。详见 [roadmap.md](roadmap.md)。
+Stage 1–6、7A 与 7B 已完成。7C 实现完成并等待最终候选 QA；7D 尚未启动同事内测。详见
+[roadmap.md](roadmap.md)。

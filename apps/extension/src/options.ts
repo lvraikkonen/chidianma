@@ -40,6 +40,12 @@ import {
   type ExtensionStorageShape
 } from "./storage";
 import { createExclusiveActionGate } from "./uiAction";
+import {
+  EXTENSION_BUILD_PROFILE,
+  IS_INTERNAL_BUILD,
+  PRODUCTION_API_ORIGIN,
+  isAllowedDevApiBaseUrl
+} from "./buildProfile";
 
 const globalMessage = document.querySelector<HTMLElement>("#global-message")!;
 const identityState = document.querySelector<HTMLElement>("#identity-state")!;
@@ -93,6 +99,28 @@ const retryHistoryButton = document.querySelector<HTMLButtonElement>(
 )!;
 const apiHostForm = document.querySelector<HTMLFormElement>("#api-host-form")!;
 const apiBaseUrl = document.querySelector<HTMLInputElement>("#api-base-url")!;
+const advancedConnectionSettings = document.querySelector<HTMLElement>(
+  "#advanced-connection-settings"
+)!;
+const extensionVersion = document.querySelector<HTMLElement>(
+  "#extension-version"
+)!;
+const serviceOrigin = document.querySelector<HTMLElement>("#service-origin")!;
+const buildProfileNote = document.querySelector<HTMLElement>(
+  "#build-profile-note"
+)!;
+
+const manifest = chrome.runtime.getManifest();
+extensionVersion.textContent = `${manifest.version} · ${
+  EXTENSION_BUILD_PROFILE === "internal" ? "内部测试版" : "开发版"
+}`;
+serviceOrigin.textContent = IS_INTERNAL_BUILD
+  ? PRODUCTION_API_ORIGIN
+  : "可在高级连接设置中修改";
+buildProfileNote.textContent = IS_INTERNAL_BUILD
+  ? "内部测试版固定连接生产服务，避免误配置导致身份和小组连接失效。"
+  : "开发版可在本地服务与生产服务之间切换。";
+advancedConnectionSettings.hidden = IS_INTERNAL_BUILD;
 
 function createLabel(text: string, input: HTMLInputElement): HTMLLabelElement {
   const label = document.createElement("label");
@@ -460,6 +488,7 @@ function renderOptions(state: OptionsViewState): void {
   reminderCard.hidden = !connected || !hasActiveSession;
   historyCard.hidden = !connected || !hasActiveSession;
   apiBaseUrl.value = state.storage.apiBaseUrl;
+  serviceOrigin.textContent = state.storage.apiBaseUrl;
   renderIdentity(identityState, state);
   renderGroups(groupList, state);
   renderReminder(state);
@@ -582,16 +611,22 @@ retryHistoryButton.addEventListener("click", () => {
   });
 });
 
-apiHostForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const host = apiBaseUrl.value.trim();
-  if (!host) return;
-  void actionGate.run(async () => {
-    if (!window.confirm("更换地址会断开当前身份并清除该服务的分组缓存。")) {
+if (!IS_INTERNAL_BUILD) {
+  apiHostForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const host = apiBaseUrl.value.trim();
+    if (!host) return;
+    if (!isAllowedDevApiBaseUrl(host)) {
+      globalMessage.textContent = "开发版只允许连接 localhost 或固定生产服务。";
       return;
     }
-    await controller.replaceHost(host);
+    void actionGate.run(async () => {
+      if (!window.confirm("更换地址会断开当前身份并清除该服务的分组缓存。")) {
+        return;
+      }
+      await controller.replaceHost(host);
+    });
   });
-});
+}
 
 void actionGate.run(() => controller.load());

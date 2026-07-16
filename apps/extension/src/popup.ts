@@ -9,6 +9,7 @@ import type {
 import {
   createGroupRecommendation,
   createGroupRestaurant,
+  listGroupRestaurants,
   type GroupApiContext
 } from "./groupClient";
 import {
@@ -21,6 +22,7 @@ import {
   resolvePopupActionFailure,
   restoreRecommendationFocus,
   runPopupActionWithContext,
+  popupActionContextMatches,
   type PopupActionContextResult,
   type PopupViewState
 } from "./popupController";
@@ -237,7 +239,7 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
   header.className = "quick-add-header";
   const cancelButton = createButton("← 取消", "detail-back");
   cancelButton.addEventListener("click", () => renderPopup(hostState));
-  const title = document.createElement("h1");
+  const title = document.createElement("h2");
   title.textContent = "加个新店进干饭名单";
   const hint = document.createElement("p");
   hint.textContent = "保存餐厅和第一条真实推荐，带 * 的内容必填。";
@@ -418,9 +420,30 @@ function createQuickAddForStorage(
     groupId,
     token
   };
+  const requireCurrentContext = async (): Promise<void> => {
+    const current = await getStorageState();
+    if (
+      current.apiBaseUrl !== storage.apiBaseUrl
+      || current.identityId !== storage.identityId
+      || !popupActionContextMatches(hostState, current)
+    ) {
+      throw new Error("quick_add_context_stale");
+    }
+  };
   return createQuickAddController({
-    createRestaurant: (input) => createGroupRestaurant(context, input),
-    createRecommendation: (input) => createGroupRecommendation(context, input)
+    membershipId: hostState.group.membershipId,
+    listRestaurants: async () => {
+      await requireCurrentContext();
+      return listGroupRestaurants(context);
+    },
+    createRestaurant: async (input) => {
+      await requireCurrentContext();
+      return createGroupRestaurant(context, input);
+    },
+    createRecommendation: async (input) => {
+      await requireCurrentContext();
+      return createGroupRecommendation(context, input);
+    }
   });
 }
 
@@ -435,40 +458,52 @@ async function handleQuickAddState(
   partialSuccess.replaceChildren();
   updateControls(state);
 
-  if (state.kind === "restaurant-error") {
-    showQuickAddError(fieldError, state.message);
-    return;
-  }
-  if (state.kind === "recommendation-error") {
+  if (state.kind === "recovery") {
     fieldError.hidden = true;
     const message = document.createElement("p");
     message.textContent = state.message;
     const actions = document.createElement("div");
     actions.className = "partial-success-actions";
-    const retryButton = createButton("重试保存推荐", "button primary");
-    const finishButton = createButton("完成并返回", "button ghost");
-    retryButton.addEventListener("click", () => {
+    const primaryButton = createButton(
+      state.verdict === "confirmed-missing"
+        ? state.target === "restaurant"
+          ? "安全重试保存"
+          : "安全重试推荐"
+        : "重新核对",
+      state.verdict === "confirmed-missing"
+        ? "button primary"
+        : "button secondary"
+    );
+    const finishButton = createButton("返回今日推荐", "button ghost");
+    primaryButton.addEventListener("click", () => {
       runExclusive(async () => {
         updateControls({
-          kind: "submitting-recommendation",
-          restaurantId: state.restaurantId
+          kind: "checking",
+          target: state.target,
+          verdict: "checking",
+          ...(state.restaurantId ? { restaurantId: state.restaurantId } : {})
         });
-        retryButton.disabled = true;
+        primaryButton.disabled = true;
         finishButton.disabled = true;
-        retryButton.textContent = "正在重试...";
+        const idleLabel = primaryButton.textContent ?? "";
+        primaryButton.textContent = state.verdict === "confirmed-missing"
+          ? "正在安全重试..."
+          : "正在重新核对...";
         let result: PopupActionContextResult<QuickAddState>;
         try {
           result = await runPopupActionWithContext(
             hostState,
             getStorageState,
-            () => controller.retryRecommendation()
+            () => state.verdict === "confirmed-missing"
+              ? controller.retry()
+              : controller.recheck()
           );
         } catch (error) {
           updateControls(state);
           throw error;
         } finally {
-          retryButton.textContent = "重试保存推荐";
-          retryButton.disabled = false;
+          primaryButton.textContent = idleLabel;
+          primaryButton.disabled = false;
           finishButton.disabled = false;
         }
         if (result.kind === "stale") {
@@ -488,10 +523,14 @@ async function handleQuickAddState(
     finishButton.addEventListener("click", () => {
       runExclusive(async () => {
         await reloadPopup();
-        setStatus("餐厅已保存，推荐尚未保存。");
+        setStatus(
+          state.verdict === "uncertain"
+            ? "写入结果仍未确认；已停止重试，请到餐厅库核对。"
+            : "本次写入尚未完成。"
+        );
       });
     });
-    actions.append(retryButton, finishButton);
+    actions.append(primaryButton, finishButton);
     partialSuccess.append(message, actions);
     return;
   }
@@ -665,7 +704,7 @@ function renderRecommendationContext(
   }
   popupContent.appendChild(context);
 
-  const question = document.createElement("h1");
+  const question = document.createElement("h2");
   question.className = "hero-question";
   question.append("中午吃点", createAccentText("啥"), "呢？");
   popupContent.appendChild(question);
@@ -853,7 +892,7 @@ function createRecommendationDetail(
   const rank = document.createElement("span");
   rank.className = "rank";
   rank.textContent = model.rankLabel;
-  const name = document.createElement("h1");
+  const name = document.createElement("h2");
   name.className = "detail-name";
   name.textContent = model.name;
   detail.append(rank, name);
@@ -1165,10 +1204,13 @@ function renderEmptyRecommendationLibrary(): void {
   ));
 }
 
-function createStatePanel(titleText: string, bodyText: string): HTMLElement {
+function createStatePanel(
+  titleText: string,
+  bodyText: string
+): HTMLElement {
   const panel = document.createElement("section");
   panel.className = "state-panel";
-  const title = document.createElement("h1");
+  const title = document.createElement("h2");
   title.textContent = titleText;
   const body = document.createElement("p");
   body.textContent = bodyText;

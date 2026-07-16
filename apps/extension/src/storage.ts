@@ -7,6 +7,11 @@ import type {
 } from "@lunch/shared";
 import { STORAGE_KEYS } from "./config";
 import {
+  DEFAULT_API_BASE_URL,
+  IS_INTERNAL_BUILD,
+  PRODUCTION_API_ORIGIN
+} from "./buildProfile";
+import {
   getReminderFingerprint,
   isStrictReminderTime,
   validateGroupSettingsForReminder
@@ -74,7 +79,7 @@ export type StorageStateUpdater = (
 
 export function getDefaultStorageState(): ExtensionStorageShape {
   return {
-    apiBaseUrl: "http://localhost:3000",
+    apiBaseUrl: DEFAULT_API_BASE_URL,
     reminderTime: "11:30",
     enabled: true,
     sessionsByGroupId: {},
@@ -104,6 +109,9 @@ export async function getStorageState(): Promise<ExtensionStorageShape> {
   } as ExtensionStorageShape & { readToken?: unknown };
   const { readToken: _legacyReadToken, ...withoutReadToken } = merged;
   const normalized = withoutReadToken as ExtensionStorageShape;
+  const profileAdjusted = IS_INTERNAL_BUILD
+    && normalized.apiBaseUrl !== PRODUCTION_API_ORIGIN;
+  if (profileAdjusted) normalized.apiBaseUrl = PRODUCTION_API_ORIGIN;
   if (normalized.scheduledPrimaryReminder?.mode !== "group") {
     delete normalized.scheduledPrimaryReminder;
   }
@@ -111,6 +119,7 @@ export async function getStorageState(): Promise<ExtensionStorageShape> {
     _legacyReadToken !== undefined
     || data[STORAGE_KEYS.settings] !== undefined
     || data.lunchLastRecommendation !== undefined
+    || profileAdjusted
   ) {
     await chrome.storage.local.set({ [STORAGE_KEYS.state]: normalized });
     await chrome.storage.local.remove([

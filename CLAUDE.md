@@ -15,19 +15,22 @@ or documentation workflow. Preserve the role split and record review output in
 
 The product has completed Stage 1–6 production QA. The frozen Stage 6 audit
 baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`. Stage 7A and Stage 7B
-are complete; Stage 7C is Ready for Planning. The current Stage 7B production
-runtime is Railway deployment `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`, tracked
-by deployment ID and image digest because it was uploaded from the approved
-uncommitted workspace.
+are complete; the approved Stage 7C detailed plan is in progress.
+The current Stage 7B production runtime is Railway deployment
+`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`, tracked by deployment ID and image
+digest because it was uploaded from the approved uncommitted workspace.
 
 Current sources:
 
 - `specs/2026-07-15-internal-beta-productization-stage7-design.md`
 - `plans/2026-07-15-internal-beta-productization-stage7a.md`
 - `plans/2026-07-15-internal-beta-productization-stage7b.md`
+- `plans/2026-07-16-internal-beta-productization-stage7c.md`
 - `qa/2026-07-15-production-baseline-review-triage.md`
 - `qa/2026-07-15-internal-beta-productization-stage7a.md`
 - `qa/2026-07-15-internal-beta-productization-stage7b.md`
+- `qa/2026-07-16-stage7b-revalidation-for-stage7c-planning.md`
+- `qa/2026-07-16-internal-beta-productization-stage7c.md`
 - `README.md` and `docs/*.md`
 - `roadmap.md`
 

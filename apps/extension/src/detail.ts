@@ -291,7 +291,7 @@ function createSettingsButton(label: string): HTMLButtonElement {
 function createButton(label: string, className: string): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = className;
+  button.className = `button ${className}`;
   button.textContent = label;
   return button;
 }

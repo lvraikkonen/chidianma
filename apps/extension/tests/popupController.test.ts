@@ -366,6 +366,43 @@ describe("popup controller", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it("discards an action result when the group changes while the write is in flight", async () => {
+    const renderedState = await loadPopupState(popupDependencies());
+    const groupAStorage = storageForGroup("group-1", "membership-1");
+    const groupBStorage = storageForGroup("group-2", "membership-2");
+    const loadStorage = vi.fn()
+      .mockResolvedValueOnce(groupAStorage)
+      .mockResolvedValueOnce(groupBStorage);
+    const write = vi.fn().mockResolvedValue("saved-to-group-a");
+
+    await expect(runPopupActionWithContext(
+      renderedState,
+      loadStorage,
+      write
+    )).resolves.toEqual({
+      kind: "stale",
+      storage: groupBStorage,
+      message: "当前小组已切换，已加载当前小组内容，请重新操作。"
+    });
+    expect(write).toHaveBeenCalledOnce();
+  });
+
+  it("does not turn a completed write into a retryable failure when the post-check read fails", async () => {
+    const renderedState = await loadPopupState(popupDependencies());
+    const storage = storageForGroup("group-1", "membership-1");
+    const loadStorage = vi.fn()
+      .mockResolvedValueOnce(storage)
+      .mockRejectedValueOnce(new Error("storage temporarily unavailable"));
+    const write = vi.fn().mockResolvedValue("written");
+
+    await expect(runPopupActionWithContext(
+      renderedState,
+      loadStorage,
+      write
+    )).resolves.toEqual({ kind: "performed", storage, value: "written" });
+    expect(write).toHaveBeenCalledOnce();
+  });
+
   it("keeps cached/read-only copy after a stale-action reload", async () => {
     const state = await loadPopupState(popupDependencies({
       loadRecommendations: vi.fn().mockResolvedValue({
@@ -415,7 +452,7 @@ describe("popup controller", () => {
     }, switchMessage)).toBeNull();
   });
 
-  it("passes the one verified click snapshot into the write", async () => {
+  it("passes the verified click snapshot into the write and rechecks afterward", async () => {
     const renderedState = await loadPopupState(popupDependencies());
     const storage = storageForGroup("group-1", "membership-1");
     const loadStorage = vi.fn().mockResolvedValue(storage);
@@ -428,7 +465,7 @@ describe("popup controller", () => {
     );
 
     expect(result).toEqual({ kind: "performed", storage, value: "written" });
-    expect(loadStorage).toHaveBeenCalledOnce();
+    expect(loadStorage).toHaveBeenCalledTimes(2);
     expect(write).toHaveBeenCalledOnce();
     expect(write).toHaveBeenCalledWith(storage);
   });

@@ -4,16 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>中午吃点啥</title>
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/components.css" />
     <link rel="stylesheet" href="/styles/popup.css" />
   </head>
   <body>
     <main class="popup-shell">
+      <h1 class="visually-hidden">中午吃点啥</h1>
       <header class="popup-header">
         <div class="brand-lockup">
-          <span class="brand-mark" aria-hidden="true">♨</span>
+          <img class="brand-mark" src="/brand-mark.svg" alt="" />
           <span><strong>中午吃点啥</strong><small id="active-group-name"></small></span>
         </div>
-        <button id="open-settings" class="icon-button" type="button" aria-label="打开设置">⚙</button>
+        <button id="open-settings" class="icon-button" type="button" aria-label="打开设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M19.1 12a7.4 7.4 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7.7 7.7 0 0 0-1.7-1L14.6 3h-5.2L9 6a7.7 7.7 0 0 0-1.7 1L5 6 3 9.5 5 11a7.4 7.4 0 0 0 0 2l-2 1.5L5 18l2.3-1a7.7 7.7 0 0 0 1.7 1l.4 3h5.2l.4-3a7.7 7.7 0 0 0 1.7-1l2.3 1 2-3.5-2-1.5a7.4 7.4 0 0 0 .1-1Z" />
+          </svg>
+        </button>
       </header>
       <section id="popup-status" class="status-panel" aria-live="polite"></section>
       <section id="popup-content" class="popup-content"></section>

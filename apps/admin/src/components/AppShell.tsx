@@ -2,6 +2,7 @@ import type { CreateIdentityLinkCodeResponse, GroupSummary } from "@lunch/shared
 import type { ReactNode } from "react";
 import type { AdminRoute } from "../app/router";
 import type { AdminSessionState } from "../sessionStore";
+import { BrandLockup } from "./BrandLockup";
 
 export function AppShell(props: {
   route: AdminRoute;
@@ -25,11 +26,7 @@ export function AppShell(props: {
     <div className="admin-shell">
       <aside className="sidebar">
         <div className="brand-block">
-          <span className="brand-mark" aria-hidden="true">餐</span>
-          <span>
-            <strong>中午吃点啥</strong>
-            <small>管理后台</small>
-          </span>
+          <BrandLockup subtitle="管理端" />
         </div>
 
         <nav aria-label="主要导航">

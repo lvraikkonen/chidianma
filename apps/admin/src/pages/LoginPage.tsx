@@ -1,6 +1,7 @@
 import type { CreateGroupRequest } from "@lunch/shared";
 import { useState, type FormEvent } from "react";
 import type { AuthViewState } from "../features/auth/authModel";
+import { BrandLockup } from "../components/BrandLockup";
 import { GroupEntryPanel } from "../components/GroupEntryPanel";
 import { StatusPanel } from "../components/StatusPanel";
 
@@ -45,6 +46,9 @@ export function LoginPage(props: {
     return (
       <div className="login-page">
         <div className="login-card">
+          <div className="login-brand">
+            <BrandLockup subtitle="管理端" />
+          </div>
           <StatusPanel title="正在连接" message="正在读取你的身份和小组…" />
         </div>
       </div>
@@ -56,11 +60,7 @@ export function LoginPage(props: {
       <div className="login-page">
         <div className="login-card">
           <div className="login-brand">
-            <span className="brand-mark" aria-hidden="true">餐</span>
-            <div>
-              <strong>中午吃点啥</strong>
-              <small>团队午饭知识库</small>
-            </div>
+            <BrandLockup subtitle="管理端" />
           </div>
           <h1>先告诉我们怎么称呼你</h1>
           <p className="lead">这里没有正式账号；名字只用于保留团队推荐来源。</p>
@@ -117,6 +117,9 @@ export function LoginPage(props: {
   return (
     <div className="login-page group-entry-page">
       <div className="group-entry-card">
+        <div className="login-brand">
+          <BrandLockup subtitle="管理端" />
+        </div>
         <div className="group-entry-heading">
           <div>
             <span className="eyebrow">你好，{session.displayName}</span>

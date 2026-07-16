@@ -154,15 +154,24 @@ describe("restaurant model", () => {
       .mockRejectedValueOnce(new Error("recommendation failed"))
       .mockResolvedValueOnce(recommendationMutation());
     const controller = createRestaurantEntryController({
+      membershipId: "membership-member",
+      listRestaurants: vi.fn()
+        .mockResolvedValueOnce({ groupId: "group-1", restaurants: [] })
+        .mockResolvedValueOnce({
+          groupId: "group-1",
+          restaurants: [restaurantMutation().restaurant]
+        }),
       createRestaurant,
       createRecommendation
     });
 
     const first = await controller.submit(createEntryInput);
-    const second = await controller.retryRecommendation();
+    const second = await controller.retry();
 
     expect(first).toMatchObject({
-      kind: "recommendation-error",
+      kind: "recovery",
+      target: "recommendation",
+      verdict: "confirmed-missing",
       restaurantId: "restaurant-new"
     });
     expect(second).toEqual({ kind: "complete", restaurantId: "restaurant-new" });
@@ -173,13 +182,18 @@ describe("restaurant model", () => {
   it("does not attempt a recommendation when restaurant creation fails", async () => {
     const createRecommendation = vi.fn();
     const controller = createRestaurantEntryController({
+      membershipId: "membership-member",
+      listRestaurants: vi.fn()
+        .mockResolvedValueOnce({ groupId: "group-1", restaurants: [] })
+        .mockResolvedValueOnce({ groupId: "group-1", restaurants: [] }),
       createRestaurant: vi.fn().mockRejectedValue(new Error("restaurant failed")),
       createRecommendation
     });
 
-    expect(await controller.submit(createEntryInput)).toEqual({
-      kind: "restaurant-error",
-      message: "餐厅没有保存，请重试。"
+    expect(await controller.submit(createEntryInput)).toMatchObject({
+      kind: "recovery",
+      target: "restaurant",
+      verdict: "confirmed-missing"
     });
     expect(createRecommendation).not.toHaveBeenCalled();
   });

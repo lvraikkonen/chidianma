@@ -322,15 +322,40 @@ export function App() {
   async function handleCreateRestaurantEntry(
     input: CreateRestaurantEntryInput
   ): Promise<RestaurantEntryState> {
-    if (!groupContext) {
-      return { kind: "restaurant-error", message: "当前小组连接不可用，请重新选择小组。" };
+    if (!groupContext || !activeGroup) {
+      return {
+        kind: "recovery",
+        target: "restaurant",
+        verdict: "uncertain",
+        message: "当前小组连接不可用，请重新选择小组后再操作。"
+      };
     }
     const context = { ...groupContext };
+    const membershipId = activeGroup.membershipId;
     const request = requestGate.current.begin();
+    const requireCurrentContext = () => {
+      if (
+        !requestGate.current.isCurrent(request)
+        || groupContext?.groupId !== context.groupId
+      ) {
+        throw new Error("restaurant_entry_context_stale");
+      }
+    };
     setRestaurantOperationError(undefined);
     setRestaurantEntryState({ kind: "submitting-restaurant" });
     const controller = createRestaurantEntryController({
+      membershipId,
+      listRestaurants: async () => {
+        requireCurrentContext();
+        try {
+          return await listRestaurants(context);
+        } catch (error) {
+          await handleRestaurantError(error, context, request, "entry");
+          throw error;
+        }
+      },
       createRestaurant: async (restaurantInput) => {
+        requireCurrentContext();
         try {
           return await createRestaurantRecord(context, restaurantInput);
         } catch (error) {
@@ -339,6 +364,7 @@ export function App() {
         }
       },
       createRecommendation: async (recommendationInput) => {
+        requireCurrentContext();
         try {
           return await createRestaurantRecommendation(context, recommendationInput);
         } catch (error) {
@@ -356,25 +382,59 @@ export function App() {
     return next;
   }
 
-  async function handleRetryRestaurantRecommendation(): Promise<RestaurantEntryState> {
+  async function handleRetryRestaurantEntry(): Promise<RestaurantEntryState> {
     const pendingEntry = restaurantEntryController.current;
     if (!pendingEntry
       || pendingEntry.groupId !== groupContext?.groupId
       || !requestGate.current.isCurrent(pendingEntry.request)) {
       return {
-        kind: "recommendation-error",
-        restaurantId: "unavailable",
-        message: "重试上下文已失效，请刷新餐厅库后重新操作。"
+        kind: "recovery",
+        target: "restaurant",
+        verdict: "uncertain",
+        message: "恢复上下文已失效，请刷新餐厅库后重新操作。"
       };
     }
     const controllerState = pendingEntry.controller.getState();
+    if (controllerState.kind !== "recovery") return controllerState;
     setRestaurantEntryState({
-      kind: "submitting-recommendation",
-      restaurantId: controllerState.kind === "recommendation-error"
-        ? controllerState.restaurantId
-        : "pending"
+      kind: "checking",
+      target: controllerState.target,
+      verdict: "checking",
+      ...(controllerState.restaurantId
+        ? { restaurantId: controllerState.restaurantId }
+        : {})
     });
-    const next = await pendingEntry.controller.retryRecommendation();
+    const next = await pendingEntry.controller.retry();
+    if (requestGate.current.isCurrent(pendingEntry.request)) {
+      setRestaurantEntryState(next);
+      if (next.kind === "complete") setRestaurantReload((value) => value + 1);
+    }
+    return next;
+  }
+
+  async function handleRecheckRestaurantEntry(): Promise<RestaurantEntryState> {
+    const pendingEntry = restaurantEntryController.current;
+    if (!pendingEntry
+      || pendingEntry.groupId !== groupContext?.groupId
+      || !requestGate.current.isCurrent(pendingEntry.request)) {
+      return {
+        kind: "recovery",
+        target: "restaurant",
+        verdict: "uncertain",
+        message: "核对上下文已失效，请刷新餐厅库后重新操作。"
+      };
+    }
+    const controllerState = pendingEntry.controller.getState();
+    if (controllerState.kind !== "recovery") return controllerState;
+    setRestaurantEntryState({
+      kind: "checking",
+      target: controllerState.target,
+      verdict: "checking",
+      ...(controllerState.restaurantId
+        ? { restaurantId: controllerState.restaurantId }
+        : {})
+    });
+    const next = await pendingEntry.controller.recheck();
     if (requestGate.current.isCurrent(pendingEntry.request)) {
       setRestaurantEntryState(next);
       if (next.kind === "complete") setRestaurantReload((value) => value + 1);
@@ -512,7 +572,8 @@ export function App() {
           entryState={restaurantEntryState}
           onRetryLoad={() => setRestaurantReload((value) => value + 1)}
           onCreateEntry={handleCreateRestaurantEntry}
-          onRetryRecommendation={handleRetryRestaurantRecommendation}
+          onRetryEntry={handleRetryRestaurantEntry}
+          onRecheckEntry={handleRecheckRestaurantEntry}
           onPatchRestaurant={handlePatchRestaurant}
           onCreateRecommendation={handleCreateRecommendation}
           onPatchRecommendation={handlePatchRecommendation}

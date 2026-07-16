@@ -17,16 +17,19 @@
     "check:docs": "node scripts/check-markdown-links.mjs",
     "check:release-artifacts": "node scripts/check-stage6-artifacts.mjs",
     "check:release-secrets": "node scripts/check-release-secrets.mjs",
+    "check:stage7c-release": "node scripts/check-stage7c-release.mjs",
     "check:production-vulnerabilities": "node scripts/classify-production-osv-report.mjs",
     "check:stage6-artifacts": "node scripts/check-stage6-artifacts.mjs",
     "dev:server": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/server dev",
     "dev:extension": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/extension dev",
     "dev:admin": "pnpm --filter @lunch/shared build && pnpm --filter @lunch/admin dev",
-    "icons:extension": "node scripts/create-extension-icons.mjs"
+    "icons:extension": "node scripts/create-extension-icons.mjs",
+    "package:extension:internal": "node scripts/package-extension-release.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "pngjs": "^7.0.0",
+    "sharp": "0.34.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },

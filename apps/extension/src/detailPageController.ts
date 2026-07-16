@@ -17,7 +17,7 @@ import { createExclusiveActionGate } from "./uiAction";
 
 export type DetailPageControl =
   | { kind: "settings"; label: "设置" }
-  | { kind: "index"; label: "打开插件生成推荐"; href: "index.html" }
+  | { kind: "index"; label: "打开 Chrome 扩展生成推荐"; href: "index.html" }
   | { kind: "retry"; label: "重试" };
 
 export type DetailPageRenderModel =
@@ -79,7 +79,7 @@ export function toDetailPageRenderModel(
       message: "今天还没有生成推荐。",
       control: {
         kind: "index",
-        label: "打开插件生成推荐",
+        label: "打开 Chrome 扩展生成推荐",
         href: "index.html"
       }
     };

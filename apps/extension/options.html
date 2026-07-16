@@ -3,15 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>中午吃点啥设置</title>
+    <title>中午吃点啥 · Chrome 扩展设置</title>
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/components.css" />
     <link rel="stylesheet" href="/styles/options.css" />
   </head>
   <body>
     <main class="settings-page">
       <header class="settings-header">
         <a class="brand" href="index.html" aria-label="返回今日推荐">
-          <span class="brand-mark" aria-hidden="true">♨</span>
-          <span><strong>中午吃点啥</strong><small>插件设置</small></span>
+          <img class="brand-mark" src="/brand-mark.svg" alt="" />
+          <span><strong>中午吃点啥</strong><small>Chrome 扩展设置</small></span>
         </a>
         <p id="global-message" class="global-message" aria-live="polite"></p>
       </header>
@@ -64,11 +66,20 @@
         <div id="history-content"></div>
       </section>
 
-      <details class="settings-card advanced-card">
+      <section class="settings-card build-card" aria-labelledby="build-title">
+        <div class="section-heading"><span>05</span><h2 id="build-title">版本与服务</h2></div>
+        <dl class="build-details">
+          <div><dt>版本</dt><dd id="extension-version"></dd></div>
+          <div><dt>服务</dt><dd id="service-origin"></dd></div>
+        </dl>
+        <p id="build-profile-note"></p>
+      </section>
+
+      <details id="advanced-connection-settings" class="settings-card advanced-card" hidden>
         <summary>高级连接设置</summary>
         <form id="api-host-form" class="stack">
           <label>API 地址<input id="api-base-url" type="url" required /></label>
-          <p>更换地址会断开当前身份并清除该服务的分组缓存。</p>
+          <p>仅开发版提供，可在 localhost 与生产服务之间切换。更换地址会断开当前身份并清除该服务的分组缓存。</p>
           <button class="button danger" type="submit">更换 API 地址</button>
         </form>
       </details>

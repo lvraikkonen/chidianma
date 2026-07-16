@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 
 const workspaceRoot = resolve(import.meta.dirname, "..");
 const textExtensions = new Set([".css", ".html", ".js", ".json", ".map", ".md"]);
@@ -10,6 +11,18 @@ function assert(condition, code) {
     throw new Error(code);
   }
 }
+
+const trackedFilesResult = spawnSync(
+  "git",
+  ["ls-files"],
+  { cwd: workspaceRoot, encoding: "utf8" }
+);
+assert(trackedFilesResult.status === 0, "tracked_file_scan_failed");
+const trackedFiles = trackedFilesResult.stdout.split("\n").filter(Boolean);
+assert(
+  !trackedFiles.some((path) => /\.(?:pem|p12|pfx)$/i.test(path)),
+  "tracked_private_key_file_detected"
+);
 
 function walkTextFiles(root) {
   return readdirSync(root).flatMap((name) => {
