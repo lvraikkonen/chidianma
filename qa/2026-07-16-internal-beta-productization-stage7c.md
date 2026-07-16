@@ -213,11 +213,18 @@ Screenshot archive:
 `qa/screenshots/stage7c/chrome-150-popup-disconnected.png`, 798×1064 PNG,
 SHA-256 `13fd91e07416f8be885fc591ba073429038e86cae18997fbc5c76d79d660ab21`.
 
+Options-page review passed by user confirmation in the same Chrome candidate:
+
+- the Popup settings gear opens the Options page;
+- the page uses the approved `中午吃点啥 / Chrome 扩展设置` naming;
+- support information reports version `0.2.0`;
+- the service address is the fixed production Railway origin;
+- the internal profile does not expose an API-address editing control.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
 - Popup loading, ready, empty, cached, error and QuickAdd recovery states.
-- Settings gear navigation and Options support information.
 - Options and Detail desktop/narrow layouts and system notification icon.
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
