@@ -86,8 +86,10 @@ decision before expanding Stage 7D beyond the first cohort.
   navigation/profile checks passed. The existing Admin identity was linked successfully into the
   Extension, restoring the expected identity/group and entering the recommendation experience.
   Recommendation cards, readable reasons, batch refresh, detail navigation and detail-state controls
-  also passed. Remaining exceptional Popup states, QuickAdd recovery, desktop detail/notification,
-  upgrade retention and colleague distribution approval remain open.
+  also passed. QuickAdd successfully created a non-duplicate restaurant/recommendation and the
+  result was confirmed in the Admin restaurant library. Remaining exceptional Popup states,
+  QuickAdd recovery, desktop detail/notification, upgrade retention and colleague distribution
+  approval remain open.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)

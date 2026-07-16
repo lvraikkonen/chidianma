@@ -254,10 +254,20 @@ Screenshot archive:
 `qa/screenshots/stage7c/chrome-150-popup-detail-ready.png`, 798×1226 PNG,
 SHA-256 `5ec1fc24eb4f278dd49c987681ba8bf0ca48fc0a87f8af23667449c7caadff93`.
 
+QuickAdd normal-path review passed by user confirmation:
+
+- `加个新店` opened the QuickAdd flow;
+- a real, non-duplicate restaurant and recommendation were accepted;
+- both writes completed successfully without a duplicate or uncertain state;
+- the newly saved knowledge was visible in the Admin restaurant library;
+- no restaurant, recommendation, member or Token value is retained in this QA
+  evidence.
+
 ## Manual QA still required
 
 - Real Chrome light/dark toolbar check for the 16px icon.
-- Popup loading, empty, cached, error and QuickAdd recovery states.
+- Popup loading, empty, cached and error states.
+- QuickAdd lost-response recovery and uncertain-state behavior.
 - Detail desktop layout and system notification icon.
 - Admin desktop/390px layout and live Modal keyboard behavior.
 - Load the same fixed-key candidate from two directories and confirm identical
