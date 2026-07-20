@@ -5,14 +5,17 @@
 
 ## 当前状态
 
-- 阶段：Stage 7 Internal Beta Productization；7A、7B、7C 已完成，7D 已具备详细规划条件。
+- 阶段：Stage 7 Internal Beta Productization；7A、7B、7C 已完成，7D.0 基线冻结已完成。
 - Admin 与 API 已部署在
   [Railway production](https://lunchserver-production.up.railway.app)，同源提供页面和 API。
 - Stage 6 审计基线：`v0.1.0-internal` →
   `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`。
+- Stage 7D 基线：已推送的 `v0.2.0-internal` →
+  `072ce70abda268f2cdf4fea1a349c16a976e70b5`。
 - Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build；`0.2.0` 内部候选已通过
   自动化、Railway 与真实 Chrome 退出门，带稳定 ID、固定生产服务、校验值和升级/回滚
-  说明。实际同事 cohort 尚未启动，需先完成 Stage 7D 详细计划和批准。
+  说明。Stage 7D 详细计划已批准，实际同事 cohort 尚未启动；新功能实现后将按
+  group 白名单默认关闭并逐步验证。
 - 当前是轻量身份：显示名不是可验证账号。已有有效设备可生成 10 分钟单次身份连接码
   连接另一端；所有 Token 都丢失后仍需创建新身份并重新加入。
 
@@ -147,10 +150,11 @@ Railway 使用 `railway.json`：
 - Stage 7C 已完成生产候选 rollout；线上制品、变量和回滚点以 `RELEASE.md` 为准。
 - Chrome 扩展采用受控 unpacked 分发，没有自动升级机制。
 - Stage 7C 候选 ZIP、Railway smoke、真实 Chrome 视觉与安装/升级 QA 已完成。
-- Stage 7D 同事 cohort 尚未启动。
+- Stage 7D.0 基线已冻结；大转盘进入独立分支实施，同事 cohort 尚未启动。
 - 生产保留明确命名的 Stage 6 Demo/QA fixture 和旧 rollback database；都禁止无审批删除。
 
 ## Roadmap
 
-Stage 1–6 与 7A–7C 已完成。7D 已具备详细规划条件，但尚未启动同事内测。详见
+Stage 1–6 与 7A–7C 已完成，7D.0 基线已冻结，7D.1 正按独立分支推进；尚未启动
+同事内测。详见
 [roadmap.md](roadmap.md)。

@@ -79,9 +79,12 @@ Historical or superseded Stage documents must not override a later current spec,
 ## Current Stage Documents
 
 - specs/2026-07-15-internal-beta-productization-stage7-design.md
+- specs/2026-07-20-controlled-colleague-beta-stage7d-design.md
 - plans/2026-07-15-internal-beta-productization-stage7a.md
 - plans/2026-07-15-internal-beta-productization-stage7b.md
 - plans/2026-07-16-internal-beta-productization-stage7c.md
+- plans/2026-07-20-controlled-colleague-beta-stage7d.md
+- docs/releases/stage-7d-colleague-beta-2026-07-20.md
 - docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md
 - qa/2026-07-15-production-baseline-review-triage.md
 - qa/2026-07-15-internal-beta-productization-stage7a.md
@@ -92,14 +95,15 @@ Historical or superseded Stage documents must not override a later current spec,
 - docs/ai-collaboration-protocol.md
 
 The frozen Stage 6 audit baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
-The current production runtime is the Stage 7C Railway candidate deployment
-`a1e581ad-cb05-48b3-b7f9-6db9858b4fb2`, sourced from commit
-`2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`; Stage 7B deployment
-`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` is the immediate application rollback point. Stage 7A,
-Stage 7B and Stage 7C are complete; Stage 7C implementation, packaging, Railway QA, real Chrome
-install/upgrade/visual QA and final release gates all passed. Stage 7D is Ready for Planning but its
-colleague cohort has not started. Do not execute Stage 7D until a current detailed plan is written
-and approved; do not execute earlier, completed, superseded or Web Store work.
+The Stage 7D baseline is `072ce70abda268f2cdf4fea1a349c16a976e70b5`, recorded by the pushed annotated
+tag `v0.2.0-internal`. The current production runtime remains the Stage 7C Railway deployment
+`03d744f6-a5bd-486c-ba65-3541dbfe9096`, sourced from commit
+`e9912c9cc72e237b0baa1aa922b3f49c5473f66a`; the later main commit only changed documentation and
+its Railway deployment was skipped. Stage 7B deployment `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`
+remains the deeper application rollback point. Stage 7A, Stage 7B and Stage 7C are complete; Stage
+7D.0 is complete and the current Stage 7D design and plan govern execution. Implement Stage 7D.1
+on `feat/lucky-restaurant-wheel` first. Keep Stage 7D.2 on the later independent
+`spike/poi-reference-search` branch; do not mix the workstreams or execute Web Store work.
 
 ## Product Principles
 

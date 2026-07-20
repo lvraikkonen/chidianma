@@ -247,7 +247,7 @@ extension handoff.
 
 ## Stage 7: Internal Beta Productization
 
-**Status:** In Progress. Stage 7A–7C are complete; Stage 7D is Ready for Planning.
+**Status:** In Progress. Stage 7A–7C and Stage 7D.0 are complete; Stage 7D.1 is next.
 
 **Design:** [`specs/2026-07-15-internal-beta-productization-stage7-design.md`](specs/2026-07-15-internal-beta-productization-stage7-design.md)
 
@@ -267,17 +267,25 @@ extension handoff.
 
 **Stage 7C implementation QA:** [`qa/2026-07-16-internal-beta-productization-stage7c.md`](qa/2026-07-16-internal-beta-productization-stage7c.md)
 
+**Stage 7D design:** [`specs/2026-07-20-controlled-colleague-beta-stage7d-design.md`](specs/2026-07-20-controlled-colleague-beta-stage7d-design.md)
+
+**Stage 7D approved plan:** [`plans/2026-07-20-controlled-colleague-beta-stage7d.md`](plans/2026-07-20-controlled-colleague-beta-stage7d.md)
+
+**Stage 7D baseline release record:** [`docs/releases/stage-7d-colleague-beta-2026-07-20.md`](docs/releases/stage-7d-colleague-beta-2026-07-20.md)
+
 **Frozen Stage 6 audit baseline:**
 `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`, production-QA verified on
-2026-07-15. The local annotated tag `v0.1.0-internal` has been created and
-verified at that exact commit; it has not been pushed or published. The current production runtime
-is Stage 7C Railway deployment `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2`, sourced from committed
-candidate `2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497` and tracked by deployment ID and image
-digest, not by the Stage 6 tag. Stage 7B deployment
-`6d80eb52-d35a-4554-9d66-aa44dd2d6b1c` remains the immediate application rollback point.
+2026-07-15. The local annotated tag `v0.1.0-internal` remains the Stage 6 audit marker. The pushed
+annotated tag `v0.2.0-internal` freezes the Stage 7D baseline at
+`072ce70abda268f2cdf4fea1a349c16a976e70b5`. The current production runtime remains Stage 7C
+Railway deployment `03d744f6-a5bd-486c-ba65-3541dbfe9096`, sourced from commit
+`e9912c9cc72e237b0baa1aa922b3f49c5473f66a`; the later main commit only changed documentation and
+its Railway deployment was skipped. Deployment ID, source commit and image digest identify the
+runtime; the baseline tag does not claim a deployment.
 
 **Goal:** Turn the verified production deployment into a coherent, supportable,
-and observable internal beta without broadening the lunch-product scope.
+and observable internal beta, add only the approved wheel and reference-search slices, and avoid
+expanding into a full restaurant discovery, map or import platform.
 
 **Ordered substages:**
 
@@ -294,11 +302,12 @@ and observable internal beta without broadening the lunch-product scope.
    stable-ID, fixed-origin versioned unpacked candidate passed automated, Railway, real Chrome and
    release-artifact exit gates. Web Store work remains deferred until after the first controlled
    cohort.
-4. **Stage 7D — Controlled colleague beta (Ready for Planning):** write and approve a detailed
-   plan, then operate a small cohort, monitor the
-   release using the existing structured logs plus alerting and privacy-bounded
-   reminder observation, collect feedback, and make an evidence-backed account
-   system decision. This is the beta process, not a pre-beta gate.
+4. **Stage 7D — Controlled colleague beta (In Progress):** Stage 7D.0 froze the baseline and
+   approved the current design/plan. Stage 7D.1 implements the lucky restaurant wheel first;
+   Stage 7D.2 later validates Mock + gated Amap reference search on an independent branch. Both
+   remain default-off, group-allowlisted beta capabilities. The cohort then operates with the
+   existing structured logs plus alerting and privacy-bounded reminder observation, collects
+   feedback, and makes an evidence-backed account-system decision.
 
 Stages 7A–7C block the ordinary colleague beta. Stage 7D is the beta itself.
 
@@ -341,4 +350,6 @@ without prematurely committing Stage 8 implementation.
 - [x] Stage 7C detailed implementation plan written.
 - [x] Stage 7C detailed implementation plan reviewed and approved.
 - [x] Stage 7C brand, experience, and distribution readiness completed.
+- [x] Stage 7D detailed design and implementation plan written and approved.
+- [x] Stage 7D.0 baseline validated and frozen at pushed tag `v0.2.0-internal`.
 - [ ] Stage 7D controlled colleague beta completed and account decision recorded.

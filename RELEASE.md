@@ -1,24 +1,30 @@
 # Internal Release Record
 
-Status: `Stage 7C complete; Stage 7D ready for planning, cohort not started`
+Status: `Stage 7D.0 baseline frozen; Stage 7D.1 ready, cohort not started`
 
-Date: 2026-07-16
+Date: 2026-07-20
 
 ## Version and deployment
 
-- Local annotated tag: `v0.1.0-internal`.
-- Peeled commit: `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
-- Tag push / remote release: not performed.
-- Stage 7C candidate source commit:
-  `2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`.
+- Stage 6 local annotated audit tag: `v0.1.0-internal`.
+- Stage 6 peeled commit: `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
+- Stage 7D pushed annotated baseline tag: `v0.2.0-internal`.
+- Stage 7D baseline peeled commit: `072ce70abda268f2cdf4fea1a349c16a976e70b5`.
+- Remote tag object: `de578a58f3057966e6af7153fd92ae4e94185faf`.
+- Current Stage 7C runtime source commit:
+  `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`.
 - Extension `0.2.0` candidate ID: `bbkeaogleldgfnkgebdhdbiohlmonbkk`.
 - Extension ZIP SHA-256:
   `4a1db2cf62c998b6759f88dff1e775f91e7c6455dc037558effd8f2e4e9d948c`.
 - Railway project/service: `remarkable-reverence / @lunch/server`.
-- Current Railway deployment: `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2` (`SUCCESS`).
+- Current Railway deployment: `03d744f6-a5bd-486c-ba65-3541dbfe9096` (`SUCCESS`).
 - Current Railway image digest:
-  `sha256:c31bbb92379f0a2c1594b96c475bf64666f57bee762f9be49ef7cfe4e9a0695c`.
-- Immediate application rollback deployment:
+  `sha256:66a975d5fd720cf85c143f1b1303ec37224955b8950aee833bbdd56b543d939c`.
+- Skipped docs-only deployment for `072ce70`:
+  `029815eb-e635-45d9-8254-289fb760e6ff`.
+- Immediate pre-Stage 7D application rollback deployment:
+  `03d744f6-a5bd-486c-ba65-3541dbfe9096`.
+- Deeper Stage 7B application rollback deployment:
   `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`.
 - Pre-Stage 7B variable-change rollback deployment:
   `2d3db6db-e1ab-41c2-86c0-edd2138dcc1a`.
@@ -29,11 +35,11 @@ Date: 2026-07-16
 - Production URL: `https://lunchserver-production.up.railway.app`.
 - Runtime: Node `22.23.1`, pnpm `9.15.0`.
 
-The current deployment is a Railway CLI upload from committed Stage 7C source
-`2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`, but `/api/ready` still reports revision `local`.
-Use the source commit, deployment ID and image digest above as the artifact identity. The
-`v0.1.0-internal` tag remains only the Stage 6 audit baseline; it does not represent the current
-production runtime or a distributable Stage 7 release.
+The current deployment reports revision `e9912c9cc72e237b0baa1aa922b3f49c5473f66a` from
+`/api/ready`. Use the source commit, deployment ID and image digest above as the runtime artifact
+identity. Main commit `072ce70abda268f2cdf4fea1a349c16a976e70b5` only changed documentation, so Railway
+correctly skipped its deployment. `v0.2.0-internal` freezes the approved Stage 7D planning baseline;
+it does not assert that the docs-only commit is the current production runtime.
 
 ## Database and migrations
 
@@ -104,8 +110,8 @@ decision before expanding Stage 7D beyond the first cohort.
   with no observed HTTP 5xx in the verification window. Popup loading/empty/cached/error and
   QuickAdd lost-response/uncertain paths are accepted through deterministic source/state mapping and
   automated coverage rather than risky production fault injection. Stage 7C is approved as the
-  input to Stage 7D planning; actual colleague distribution still requires the Stage 7D detailed
-  plan and explicit cohort approval.
+  input to Stage 7D. The Stage 7D detailed plan is now approved and its baseline is frozen; actual
+  colleague distribution still requires explicit group allowlisting and cohort approval.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)

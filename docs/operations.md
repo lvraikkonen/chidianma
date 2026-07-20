@@ -1,18 +1,21 @@
 # Operations
 
-Status: current as of 2026-07-16.
+Status: current as of 2026-07-20.
 
 ## Production inventory
 
 - Railway project/service: `remarkable-reverence / @lunch/server`.
 - Production URL: `https://lunchserver-production.up.railway.app`.
-- Current Railway deployment: `a1e581ad-cb05-48b3-b7f9-6db9858b4fb2`.
+- Current Railway deployment: `03d744f6-a5bd-486c-ba65-3541dbfe9096`.
 - Current Railway image digest:
-  `sha256:c31bbb92379f0a2c1594b96c475bf64666f57bee762f9be49ef7cfe4e9a0695c`.
-- Stage 7C source commit: `2b2e48c063e3df7d5ccd7ac6a5a2b84dbc436497`.
-- `/api/ready` reports revision `local` for this Railway CLI upload. Use the source commit,
-  deployment ID and image digest as the artifact identity.
-- Immediate application rollback deployment: `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`.
+  `sha256:66a975d5fd720cf85c143f1b1303ec37224955b8950aee833bbdd56b543d939c`.
+- Stage 7C source commit: `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`.
+- `/api/ready` reports revision `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`. Use the source
+  commit, deployment ID and image digest as the artifact identity.
+- Main commit `072ce70abda268f2cdf4fea1a349c16a976e70b5` only changed documentation; Railway
+  deployment `029815eb-e635-45d9-8254-289fb760e6ff` was skipped by watch-path evaluation.
+- Immediate pre-Stage 7D application rollback deployment: `03d744f6-a5bd-486c-ba65-3541dbfe9096`.
+- Deeper Stage 7B rollback deployment: `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`.
 - Pre-Stage 7B variable-change rollback deployment: `2d3db6db-e1ab-41c2-86c0-edd2138dcc1a`.
 - Pre-7B rollback deployment: `371242e7-9783-4866-aaa5-f4f26218ddcf`, commit
   `ad0260b4abf12b48bbc64e73020858ff316227f3`.

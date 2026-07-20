@@ -1,6 +1,6 @@
 # Testing and Release
 
-Status: current as of 2026-07-16.
+Status: current as of 2026-07-20.
 
 ## Automated gates
 
@@ -80,12 +80,15 @@ For the controlled install/upgrade/rollback flow, use
 ## Version semantics
 
 - `v0.1.0-internal` freezes the exact Stage 6 production-QA baseline.
-- The tag is local until separately approved for push; it is not the Stage 7B/7C distributable
+- `v0.1.0-internal` remains a local Stage 6 audit tag; it is not the Stage 7B/7C distributable
   beta version.
+- The pushed annotated tag `v0.2.0-internal` freezes the Stage 7D baseline at
+  `072ce70abda268f2cdf4fea1a349c16a976e70b5`; it does not assert that this docs-only commit is the
+  current Railway runtime.
 - Stage 7B is production-verified. Extension `0.2.0` is the Stage 7C candidate boundary and has
   passed automated, Railway and real Chrome exit gates.
-- Stage 7C completion approves the candidate for Stage 7D planning; it does not itself start or
-  authorize the colleague cohort.
+- Stage 7D.0 freezes the approved planning baseline. Stage 7D feature flags and explicit cohort
+  approval still control colleague rollout.
 - `CHANGELOG.md` records user-facing capability; `RELEASE.md` records deployment/database/rollback
   state and known issues.
 
