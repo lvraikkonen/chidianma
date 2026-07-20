@@ -36,6 +36,8 @@
 
 不要把邀请码、身份 Token 或小组会话 Token 写入文档、聊天或工单。
 
+面向同事的完整操作步骤见[同事 Quick Start](docs/colleague-quick-start.md)。
+
 ### 加载 Chrome 扩展（受控内部候选）
 
 ```bash
