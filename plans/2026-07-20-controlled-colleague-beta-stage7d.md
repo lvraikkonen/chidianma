@@ -1,6 +1,6 @@
 # Stage 7D：受控同事内测实施计划
 
-Status: `Approved — Stage 7D.0 Complete, Stage 7D.1 Ready`
+Status: `Approved — Stage 7D.0 Complete, Stage 7D.1 In Progress`
 
 Date: 2026-07-20
 
@@ -20,7 +20,7 @@ Date: 2026-07-20
 5. 创建 `feat/lucky-restaurant-wheel`，新增当前 Stage 7D 规格、计划和 release note。
 6. 运行文档链接、secret 和 diff 检查，提交 `chore: record stage 7d beta baseline`。
 
-完成状态：步骤 1–5 已执行；提交前质量检查作为本 slice 最后门禁。
+完成状态：步骤 1–6 已完成；基线记录提交为 `e5646f2`。
 
 ## Stage 7D.1 — Lucky restaurant wheel
 
@@ -29,10 +29,15 @@ Date: 2026-07-20
 - 在 `packages/shared` 增加 capabilities response 和 route builder；
 - 在 Server `env.ts` 增加默认关闭的全局开关和 group ID allowlist；
 - 新增 group-session 认证的 capabilities route；
-- Extension 每次打开/切换 group 获取 capabilities，失败默认关闭；
+- Extension 每次打开 Popup 获取 capabilities，失败默认关闭；Options 切换 group 后不
+  持久化 capability，下次打开 Popup 时从新的 group/storage 快照获取；
 - wheel route 独立 gate，防止绕过 UI。
 
 第一提交：`feat: add group scoped beta capabilities`，包含 shared/server/extension tests。
+
+完成状态：capabilities contract、默认关闭配置、active membership route、Extension
+fail-closed 获取和自动化测试已实现；后续 wheel candidate route 必须复用同一 Server
+predicate 再次 gate。
 
 ### 2. Wheel 纯算法（TDD）
 

@@ -123,6 +123,8 @@ const env = {
   DATABASE_URL: "postgresql://example",
   SESSION_SECRET: "stage7b-session-secret",
   ALLOW_PUBLIC_GROUP_CREATION: true,
+  LUCKY_RESTAURANT_WHEEL_ENABLED: false,
+  LUCKY_RESTAURANT_WHEEL_GROUP_IDS: [],
   IDENTITY_TOKEN_TTL_DAYS: 90,
   GROUP_SESSION_TTL_DAYS: 14,
   WEATHER_API_BASE_URL: "https://api.open-meteo.com/v1",

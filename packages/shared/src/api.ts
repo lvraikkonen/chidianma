@@ -10,6 +10,7 @@ export const GROUP_ROUTES = {
   groups: "/api/groups",
   joinGroup: "/api/groups/join",
   groupSession: (groupId: string) => `/api/groups/${groupId}/session`,
+  capabilities: (groupId: string) => `/api/groups/${groupId}/capabilities`,
   todayRecommendations: (groupId: string) => `/api/groups/${groupId}/today-recommendations`,
   refreshTodayRecommendations: (groupId: string) => `/api/groups/${groupId}/today-recommendations/refresh`,
   participationToday: (groupId: string) => `/api/groups/${groupId}/participation/today`,

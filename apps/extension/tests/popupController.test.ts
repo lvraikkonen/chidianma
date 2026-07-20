@@ -1,4 +1,5 @@
 import type {
+  GroupCapabilitiesResponse,
   GroupTodayRecommendationsResponse,
   ParticipationTodayResponse,
   PutParticipationTodayResponse
@@ -14,6 +15,7 @@ import {
   loadRefreshedPopupState,
   loadRefreshedPopupStateForStorage,
   loadPopupState,
+  loadPopupStateForStorage,
   runPopupActionWithContext,
   resolvePopupActionFailure,
   restoreRecommendationFocus,
@@ -77,6 +79,22 @@ function participationResponse(
   };
 }
 
+function capabilitiesResponse(
+  groupId = "group-1",
+  luckyRestaurantWheel = true
+): GroupCapabilitiesResponse {
+  return {
+    groupId,
+    features: {
+      luckyRestaurantWheel,
+      poiReferenceSearch: false,
+      poiReferenceDraft: false,
+      poiOfficePreset: false,
+      poiProvider: null
+    }
+  };
+}
+
 function popupDependencies(
   overrides: Partial<PopupDependencies> = {}
 ): PopupDependencies {
@@ -97,7 +115,8 @@ function popupDependencies(
       }
     }),
     loadRecommendations: vi.fn().mockResolvedValue(todayResponse("group-1")),
-    loadParticipation: vi.fn().mockResolvedValue(participationResponse())
+    loadParticipation: vi.fn().mockResolvedValue(participationResponse()),
+    loadCapabilities: vi.fn().mockResolvedValue(capabilitiesResponse())
   };
   return { ...dependencies, ...overrides };
 }
@@ -126,14 +145,17 @@ function storageForGroup(
 describe("popup controller", () => {
   it("returns disconnected before making a network request", async () => {
     const loadRecommendations = vi.fn();
+    const loadCapabilities = vi.fn();
     const state = await loadPopupState({
       loadStorage: vi.fn().mockResolvedValue(getDefaultStorageState()),
       loadRecommendations,
-      loadParticipation: vi.fn()
+      loadParticipation: vi.fn(),
+      loadCapabilities
     });
 
     expect(state.kind).toBe("disconnected");
     expect(loadRecommendations).not.toHaveBeenCalled();
+    expect(loadCapabilities).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -208,11 +230,90 @@ describe("popup controller", () => {
     const state = await loadPopupState(popupDependencies());
     expect(state).toMatchObject({
       kind: "ready",
+      capabilities: {
+        groupId: "group-1",
+        features: { luckyRestaurantWheel: true }
+      },
       currentMember: {
         membershipId: "membership-1",
         status: "joining"
       }
     });
+  });
+
+  it("uses the same captured storage snapshot to load capabilities", async () => {
+    const captured = storageForGroup("group-1", "membership-1");
+    const loadCapabilities = vi.fn().mockResolvedValue(capabilitiesResponse());
+    const state = await loadPopupStateForStorage(captured, popupDependencies({
+      loadCapabilities
+    }));
+
+    expect(loadCapabilities).toHaveBeenCalledOnce();
+    expect(loadCapabilities).toHaveBeenCalledWith(
+      captured,
+      expect.any(AbortSignal)
+    );
+    expect(state).toMatchObject({
+      kind: "ready",
+      capabilities: { features: { luckyRestaurantWheel: true } }
+    });
+  });
+
+  it.each([
+    ["request failure", new Error("offline")],
+    ["an older server returning 404", new ExtensionApiError({
+      kind: "http",
+      status: 404,
+      code: "not_found"
+    })],
+    ["group mismatch", capabilitiesResponse("group-2")]
+  ] as const)("fails capabilities closed after %s", async (_case, outcome) => {
+    const loadCapabilities = outcome instanceof Error
+      ? vi.fn().mockRejectedValue(outcome)
+      : vi.fn().mockResolvedValue(outcome);
+    const state = await loadPopupState(popupDependencies({ loadCapabilities }));
+
+    expect(state).toMatchObject({
+      kind: "ready",
+      capabilities: {
+        groupId: "group-1",
+        features: {
+          luckyRestaurantWheel: false,
+          poiReferenceSearch: false,
+          poiReferenceDraft: false,
+          poiOfficePreset: false,
+          poiProvider: null
+        }
+      }
+    });
+    expect(state).toMatchObject({ response: todayResponse("group-1") });
+  });
+
+  it("does not let a pending capabilities request block recommendations", async () => {
+    vi.useFakeTimers();
+    try {
+      let capabilitySignal: AbortSignal | undefined;
+      const statePromise = loadPopupState(popupDependencies({
+        loadCapabilities: vi.fn((_storage, signal) => {
+          capabilitySignal = signal;
+          return new Promise<GroupCapabilitiesResponse>(() => undefined);
+        })
+      }));
+
+      await vi.runAllTimersAsync();
+
+      await expect(statePromise).resolves.toMatchObject({
+        kind: "ready",
+        response: todayResponse("group-1"),
+        capabilities: {
+          groupId: "group-1",
+          features: { luckyRestaurantWheel: false }
+        }
+      });
+      expect(capabilitySignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("preserves recommendations if participation fails", async () => {

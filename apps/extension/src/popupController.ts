@@ -1,4 +1,5 @@
 import type {
+  GroupCapabilitiesResponse,
   GroupSummary,
   GroupTodayRecommendationsResponse,
   ParticipationMember,
@@ -7,6 +8,8 @@ import type {
 } from "@lunch/shared";
 import { ExtensionApiError, isServiceUnavailable } from "./apiClient";
 import type { ExtensionStorageShape } from "./storage";
+
+const CAPABILITIES_REQUEST_TIMEOUT_MS = 1_500;
 
 const POPUP_LOAD_ERROR_MESSAGE = "暂时无法加载今日推荐，请重试。";
 
@@ -24,16 +27,19 @@ export type PopupViewState =
     response: GroupTodayRecommendationsResponse;
     group: GroupSummary;
     readOnly: true;
+    capabilities: GroupCapabilitiesResponse;
   }
   | {
     kind: "empty";
     response: GroupTodayRecommendationsResponse;
     group: GroupSummary;
+    capabilities: GroupCapabilitiesResponse;
   }
   | {
     kind: "ready";
     response: GroupTodayRecommendationsResponse;
     group: GroupSummary;
+    capabilities: GroupCapabilitiesResponse;
     participation?: ParticipationTodayResponse | undefined;
     currentMember?: ParticipationMember | undefined;
     participationUnavailable?: boolean | undefined;
@@ -54,6 +60,10 @@ export interface PopupDependencies {
   loadParticipation: (
     storage: ExtensionStorageShape
   ) => Promise<ParticipationTodayResponse>;
+  loadCapabilities: (
+    storage: ExtensionStorageShape,
+    signal?: AbortSignal
+  ) => Promise<GroupCapabilitiesResponse>;
 }
 
 export interface PopupRefreshDependencies extends PopupDependencies {
@@ -196,6 +206,46 @@ function safeLoadError(group: GroupSummary): PopupViewState {
     group,
     message: POPUP_LOAD_ERROR_MESSAGE
   };
+}
+
+function disabledGroupCapabilities(groupId: string): GroupCapabilitiesResponse {
+  return {
+    groupId,
+    features: {
+      luckyRestaurantWheel: false,
+      poiReferenceSearch: false,
+      poiReferenceDraft: false,
+      poiOfficePreset: false,
+      poiProvider: null
+    }
+  };
+}
+
+async function loadCapabilitiesFailClosed(
+  storage: ExtensionStorageShape,
+  dependencies: PopupDependencies,
+  groupId: string
+): Promise<GroupCapabilitiesResponse> {
+  const abortController = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const capabilities = await Promise.race([
+      dependencies.loadCapabilities(storage, abortController.signal),
+      new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          abortController.abort();
+          reject(new Error("capabilities_request_timeout"));
+        }, CAPABILITIES_REQUEST_TIMEOUT_MS);
+      })
+    ]);
+    return capabilities.groupId === groupId
+      ? capabilities
+      : disabledGroupCapabilities(groupId);
+  } catch {
+    return disabledGroupCapabilities(groupId);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 }
 
 function failureState(
@@ -350,13 +400,26 @@ export async function loadPopupStateForStorage(
   const session = groupId ? storage.sessionsByGroupId[groupId] : undefined;
   if (!groupId || !group || !session?.token) return { kind: "disconnected" };
 
+  const [recommendationResult, capabilities] = await Promise.all([
+    loadRecommendations(storage).then(
+      (response) => ({ ok: true as const, response }),
+      (error: unknown) => ({ ok: false as const, error })
+    ),
+    loadCapabilitiesFailClosed(storage, dependencies, groupId)
+  ]);
+  if (!recommendationResult.ok) {
+    return failureState(recommendationResult.error, groupId, group);
+  }
+
   try {
-    const response = await loadRecommendations(storage);
+    const response = recommendationResult.response;
     if (response.groupId !== groupId) return safeLoadError(group);
     if (response.fromCache) {
-      return { kind: "cached", response, group, readOnly: true };
+      return { kind: "cached", response, group, readOnly: true, capabilities };
     }
-    if (response.items.length === 0) return { kind: "empty", response, group };
+    if (response.items.length === 0) {
+      return { kind: "empty", response, group, capabilities };
+    }
     try {
       const participation = await dependencies.loadParticipation(storage);
       if (participation.groupId !== groupId) return safeLoadError(group);
@@ -364,6 +427,7 @@ export async function loadPopupStateForStorage(
         kind: "ready",
         response,
         group,
+        capabilities,
         participation,
         currentMember: currentMemberParticipation(
           participation,
@@ -376,6 +440,7 @@ export async function loadPopupStateForStorage(
           kind: "ready",
           response,
           group,
+          capabilities,
           participationUnavailable: true
         };
       }

@@ -13,6 +13,19 @@ export interface GroupSummary {
   membershipId: string;
 }
 
+export type PoiProviderId = "mock" | "amap";
+
+export interface GroupCapabilitiesResponse {
+  groupId: string;
+  features: {
+    luckyRestaurantWheel: boolean;
+    poiReferenceSearch: boolean;
+    poiReferenceDraft: boolean;
+    poiOfficePreset: boolean;
+    poiProvider: PoiProviderId | null;
+  };
+}
+
 export interface GroupSessionResponse {
   identityToken: string;
   identityTokenExpiresAt: string;

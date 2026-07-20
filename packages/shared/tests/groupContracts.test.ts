@@ -5,6 +5,7 @@ import type {
   CreateRecommendationRequest,
   CreateRestaurantRequest,
   FeedbackType,
+  GroupCapabilitiesResponse,
   GroupTodayRecommendationsResponse,
   GroupRole,
   MembershipStatus,
@@ -55,6 +56,30 @@ describe("multi-group shared contracts", () => {
     expect(GROUP_ROUTES.refreshTodayRecommendations("group-1")).toBe(
       "/api/groups/group-1/today-recommendations/refresh"
     );
+  });
+
+  it("defines the group-scoped beta capabilities contract", () => {
+    const response: GroupCapabilitiesResponse = {
+      groupId: "group-1",
+      features: {
+        luckyRestaurantWheel: false,
+        poiReferenceSearch: false,
+        poiReferenceDraft: false,
+        poiOfficePreset: false,
+        poiProvider: null
+      }
+    };
+
+    expect(GROUP_ROUTES.capabilities("group-1")).toBe(
+      "/api/groups/group-1/capabilities"
+    );
+    expect(response.features).toEqual({
+      luckyRestaurantWheel: false,
+      poiReferenceSearch: false,
+      poiReferenceDraft: false,
+      poiOfficePreset: false,
+      poiProvider: null
+    });
   });
 
   it("defines request contracts for group restaurant knowledge", () => {

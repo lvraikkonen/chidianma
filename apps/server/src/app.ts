@@ -3,6 +3,7 @@ import rateLimit from "@fastify/rate-limit";
 import Fastify, { LogController, type FastifyBaseLogger } from "fastify";
 import { loadEnv, type AppEnv } from "./env.js";
 import { registerAdminStaticRoutes } from "./routes/adminStatic.js";
+import { registerGroupCapabilitiesRoutes } from "./routes/groupCapabilities.js";
 import { registerGroupDashboardRoutes } from "./routes/groupDashboard.js";
 import { registerGroupHistoryRoutes } from "./routes/groupHistory.js";
 import { registerGroupOperationsRoutes } from "./routes/groupOperations.js";
@@ -114,6 +115,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
   await registerIdentityRoutes(app, env);
   await registerGroupRoutes(app, env);
+  await registerGroupCapabilitiesRoutes(app, env);
   await registerGroupDashboardRoutes(app, env);
   await registerGroupHistoryRoutes(app, env);
   await registerGroupOperationsRoutes(app, env);

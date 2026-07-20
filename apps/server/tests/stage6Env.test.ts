@@ -20,9 +20,29 @@ const baseEnv: NodeJS.ProcessEnv = {
 };
 
 describe("Stage 6 environment validation", () => {
+  it("defaults beta capabilities to disabled with an empty group allowlist", () => {
+    expect(loadEnv(baseEnv)).toMatchObject({
+      LUCKY_RESTAURANT_WHEEL_ENABLED: false,
+      LUCKY_RESTAURANT_WHEEL_GROUP_IDS: []
+    });
+  });
+
+  it("parses and normalizes the lucky wheel group allowlist", () => {
+    expect(loadEnv({
+      ...baseEnv,
+      LUCKY_RESTAURANT_WHEEL_ENABLED: "true",
+      LUCKY_RESTAURANT_WHEEL_GROUP_IDS: " group-1,group-2, group-1 ,,"
+    })).toMatchObject({
+      LUCKY_RESTAURANT_WHEEL_ENABLED: true,
+      LUCKY_RESTAURANT_WHEEL_GROUP_IDS: ["group-1", "group-2"]
+    });
+  });
+
   it("parses explicit false without JavaScript truthiness", () => {
     expect(loadEnv({ ...baseEnv, ALLOW_PUBLIC_GROUP_CREATION: "false" }))
       .toMatchObject({ ALLOW_PUBLIC_GROUP_CREATION: false });
+    expect(loadEnv({ ...baseEnv, LUCKY_RESTAURANT_WHEEL_ENABLED: "false" }))
+      .toMatchObject({ LUCKY_RESTAURANT_WHEEL_ENABLED: false });
   });
 
   it.each(["", "off", "yes", "FALSE "])(
@@ -30,6 +50,16 @@ describe("Stage 6 environment validation", () => {
     (value) => {
       expect(() => loadEnv({ ...baseEnv, ALLOW_PUBLIC_GROUP_CREATION: value }))
         .toThrow();
+    }
+  );
+
+  it.each(["", "off", "yes", "TRUE", "FALSE "])(
+    "rejects ambiguous lucky wheel boolean value %j",
+    (value) => {
+      expect(() => loadEnv({
+        ...baseEnv,
+        LUCKY_RESTAURANT_WHEEL_ENABLED: value
+      })).toThrow();
     }
   );
 

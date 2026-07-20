@@ -4,6 +4,10 @@ import { z } from "zod";
 const StrictBooleanSchema = z.union([z.literal("true"), z.literal("false"), z.boolean()])
   .transform((value) => value === true || value === "true");
 
+const GroupIdAllowlistSchema = z.string().default("").transform((value) => (
+  [...new Set(value.split(",").map((groupId) => groupId.trim()).filter(Boolean))]
+));
+
 const IanaTimeZoneSchema = z.string().min(1).refine((value) => {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
@@ -17,6 +21,8 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
   SESSION_SECRET: z.string().min(8),
   ALLOW_PUBLIC_GROUP_CREATION: StrictBooleanSchema.default("true"),
+  LUCKY_RESTAURANT_WHEEL_ENABLED: StrictBooleanSchema.default("false"),
+  LUCKY_RESTAURANT_WHEEL_GROUP_IDS: GroupIdAllowlistSchema,
   IDENTITY_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
   GROUP_SESSION_TTL_DAYS: z.coerce.number().int().positive().default(14),
   WEATHER_API_BASE_URL: z.string().url().default("https://api.open-meteo.com/v1"),

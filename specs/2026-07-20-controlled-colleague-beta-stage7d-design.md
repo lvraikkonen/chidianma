@@ -1,6 +1,6 @@
 # Stage 7D：受控同事内测（Controlled Colleague Beta）
 
-Status: `Approved — Stage 7D.0 Complete, Stage 7D.1 Ready`
+Status: `Approved — Stage 7D.0 Complete, Stage 7D.1 In Progress`
 
 Date: 2026-07-20
 

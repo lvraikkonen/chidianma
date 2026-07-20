@@ -45,6 +45,23 @@ reduce the watch scope to only `apps/server`; that would skip Admin-only or Shar
 
 Never run `prisma:seed` in production.
 
+## Stage 7D beta capabilities
+
+The Server is authoritative for beta availability. `GET /api/groups/:groupId/capabilities`
+requires that group's bearer session and revalidates active membership on every request. The
+Extension keeps the response only in the current Popup state and treats missing, invalid, 404 or
+unavailable responses as all features disabled.
+
+The lucky-wheel capability is enabled only when both conditions are true:
+
+- `LUCKY_RESTAURANT_WHEEL_ENABLED=true`;
+- `LUCKY_RESTAURANT_WHEEL_GROUP_IDS` contains the exact group ID in its comma-separated list.
+
+Missing values resolve to `false` and an empty list. Wildcards are not supported. Keep both values
+off/empty until the matching Server and Extension builds pass beta QA; future wheel business routes
+must enforce the same Server predicate and must not trust UI visibility. POI capabilities remain
+disabled in this Stage 7D.1 slice. No database or Chrome storage migration is involved.
+
 ## Database verification
 
 The verifier checks unfinished migrations, cross-group relationships, duplicate current batches,

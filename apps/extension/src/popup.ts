@@ -6,6 +6,7 @@ import type {
   WeatherTag,
   WeekdayTag
 } from "@lunch/shared";
+import { fetchGroupCapabilitiesForStorage } from "./capabilitiesClient";
 import {
   createGroupRecommendation,
   createGroupRestaurant,
@@ -143,7 +144,8 @@ async function loadCurrentPopupState(
     loadStorage: getStorageState,
     loadRecommendations:
       fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
-    loadParticipation: fetchTodayParticipationForStorage
+    loadParticipation: fetchTodayParticipationForStorage,
+    loadCapabilities: fetchGroupCapabilitiesForStorage
   };
   try {
     return storage
@@ -1147,6 +1149,7 @@ async function runRecommendationRefresh(
           loadRecommendations:
             fetchGroupTodayRecommendationsWithCacheFallbackForStorage,
           loadParticipation: fetchTodayParticipationForStorage,
+          loadCapabilities: fetchGroupCapabilitiesForStorage,
           refreshRecommendations: refreshGroupTodayRecommendationsForStorage
         })
       );

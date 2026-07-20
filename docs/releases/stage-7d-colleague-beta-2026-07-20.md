@@ -137,6 +137,6 @@ Detailed procedure: [rollback runbook](../runbooks/rollback.md).
 
 ## Next step
 
-Implement Stage 7D.1 on `feat/lucky-restaurant-wheel`, beginning with group-scoped capabilities and
-pure wheel ticket/selection tests. Do not start POI implementation or enable a colleague cohort in
-this baseline slice.
+Continue Stage 7D.1 on `feat/lucky-restaurant-wheel` with the pure wheel ticket/selection tests.
+Group-scoped capabilities are implemented after the frozen baseline but remain disabled by default;
+do not start POI implementation or enable a colleague cohort in this slice.

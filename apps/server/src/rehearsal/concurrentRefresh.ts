@@ -8,6 +8,8 @@ const env = {
   DATABASE_URL: process.env.DATABASE_URL!,
   SESSION_SECRET: "stage7b-rehearsal-secret",
   ALLOW_PUBLIC_GROUP_CREATION: false,
+  LUCKY_RESTAURANT_WHEEL_ENABLED: false,
+  LUCKY_RESTAURANT_WHEEL_GROUP_IDS: [],
   IDENTITY_TOKEN_TTL_DAYS: 90,
   GROUP_SESSION_TTL_DAYS: 14,
   WEATHER_API_BASE_URL: "https://invalid.example",

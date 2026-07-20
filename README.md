@@ -5,7 +5,8 @@
 
 ## 当前状态
 
-- 阶段：Stage 7 Internal Beta Productization；7A、7B、7C 已完成，7D.0 基线冻结已完成。
+- 阶段：Stage 7 Internal Beta Productization；7A、7B、7C 已完成，7D.0 基线冻结已完成，
+  7D.1 正在实施。
 - Admin 与 API 已部署在
   [Railway production](https://lunchserver-production.up.railway.app)，同源提供页面和 API。
 - Stage 6 审计基线：`v0.1.0-internal` →
@@ -78,6 +79,9 @@ VITE_API_BASE_URL=http://localhost:3000 pnpm dev:admin
 - `DATABASE_URL`：PostgreSQL 连接。
 - `SESSION_SECRET`：签名身份和小组会话；生产至少 32 字符。
 - `ALLOW_PUBLIC_GROUP_CREATION`：是否允许公开创建小组。
+- `LUCKY_RESTAURANT_WHEEL_ENABLED`：大转盘全局开关，默认 `false`。
+- `LUCKY_RESTAURANT_WHEEL_GROUP_IDS`：允许使用大转盘的小组 ID 逗号分隔清单，默认空；
+  只有全局开关和精确小组匹配同时成立时才启用。
 - `IDENTITY_TOKEN_TTL_DAYS`、`GROUP_SESSION_TTL_DAYS`：轻量身份/会话有效期。
 - `WEATHER_API_BASE_URL`：Server 使用的天气 API。
 - `OFFICE_CITY`、`OFFICE_LATITUDE`、`OFFICE_LONGITUDE`、`OFFICE_TIMEZONE`：办公室信号。
