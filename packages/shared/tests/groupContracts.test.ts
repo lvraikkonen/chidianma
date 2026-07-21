@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_GROUP_SCORING_WEIGHTS, GROUP_ROUTES } from "../src";
+import {
+  DEFAULT_GROUP_SCORING_WEIGHTS,
+  GROUP_ROUTES,
+  buildWheelCandidates
+} from "../src";
 import type {
   CreateGroupFeedbackRequest,
   CreateRecommendationRequest,
@@ -7,6 +11,7 @@ import type {
   FeedbackType,
   GroupCapabilitiesResponse,
   GroupTodayRecommendationsResponse,
+  GroupWheelCandidatesResponse,
   GroupRole,
   MembershipStatus,
   PatchRestaurantRequest,
@@ -79,6 +84,40 @@ describe("multi-group shared contracts", () => {
       poiReferenceDraft: false,
       poiOfficePreset: false,
       poiProvider: null
+    });
+  });
+
+  it("defines the group-scoped wheel candidate route and seed contract", () => {
+    const response: GroupWheelCandidatesResponse = {
+      groupId: "group-1",
+      officeDate: "2026-07-09",
+      batchId: "batch-1",
+      algorithmVersion: "group-v1",
+      candidates: [{
+        restaurantId: "restaurant-1",
+        recommendationId: "recommendation-1",
+        name: "米饭小馆",
+        dish: "卤肉饭",
+        reason: "离办公室近，多人推荐",
+        distanceMinutes: 8,
+        tags: ["近", "下饭"],
+        recommendationScore: 40,
+        selectedWithinLast7Days: false
+      }]
+    };
+
+    expect(GROUP_ROUTES.wheelCandidates("group-1")).toBe(
+      "/api/groups/group-1/today-recommendations/wheel-candidates"
+    );
+    expect(response.candidates[0]).toMatchObject({
+      name: "米饭小馆",
+      recommendationScore: 40,
+      selectedWithinLast7Days: false
+    });
+    expect(buildWheelCandidates(response.candidates, "weighted")[0]).toMatchObject({
+      restaurantId: "restaurant-1",
+      tickets: 1,
+      probability: 1
     });
   });
 

@@ -92,6 +92,31 @@ capabilities 失败时按全部关闭处理；业务路由必须再次校验，
   `DailyParticipation(status="decided")`；
 - 本轮排除只保存在 wheel session，不写成永久 `avoid` 或停用餐厅。
 
+API 返回稳定有序、可直接交给 shared wheel 算法的候选种子，不在 Server 预先写入
+模式、票数或概率：
+
+```ts
+interface GroupWheelCandidate extends WheelCandidateInput {
+  recommendationId?: string;
+  dish?: string;
+  reason: string;
+  distanceMinutes?: number;
+  tags: string[];
+}
+
+interface GroupWheelCandidatesResponse {
+  groupId: string;
+  officeDate: string;
+  batchId: string;
+  algorithmVersion: string;
+  candidates: GroupWheelCandidate[];
+}
+```
+
+路由执行顺序固定为 active membership revalidation、Server capability predicate、只读
+候选查询。全局开关关闭或 group 未在 allowlist 时统一返回 404
+`lucky_restaurant_wheel_not_enabled`，且不得查询 recommendation batch 或餐厅。
+
 ### 模式和票数
 
 ```ts

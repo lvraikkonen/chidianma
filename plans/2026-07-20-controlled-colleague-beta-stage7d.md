@@ -76,10 +76,19 @@ storage 或持久化变化。
 - 新增 `GET /api/groups/:groupId/today-recommendations/wheel-candidates`；
 - 复用 group bearer session、membership revalidation 和现有 route error 风格。
 
+响应只返回 `groupId + officeDate + batchId + algorithmVersion + candidates` 候选种子；
+票数和概率由 shared 纯算法根据 Popup 选择的模式生成。路由先 revalidate active
+membership，再复用 `isLuckyRestaurantWheelEnabled`；关闭时返回 404
+`lucky_restaurant_wheel_not_enabled`，且不读取 batch 或餐厅。
+
 测试覆盖无 batch、0/1/2/8/>8、inactive、当前成员当日 `skip/avoid` 硬排除、其他成员
 反馈不误排除、group 隔离、office timezone、flag off、确定性截断和不改变当前 3 条推荐。
 
 第三提交：`feat: add group wheel candidate endpoint`。
+
+完成状态：shared contract/route builder、可配置候选构造、稳定同分排序、只读 wheel
+service 和 group-scoped gated route 已实现；refresh 仍显式 `limit=3`，wheel 使用
+`limit=8`，没有 schema、storage 或写路径变化。
 
 ### 4. Extension controller、client 和 storage
 

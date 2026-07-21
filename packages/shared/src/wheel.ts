@@ -19,6 +19,22 @@ export interface WheelCandidate extends WheelCandidateInput {
   cumulativeProbabilityEnd: number;
 }
 
+export interface GroupWheelCandidate extends WheelCandidateInput {
+  recommendationId?: string | undefined;
+  dish?: string | undefined;
+  reason: string;
+  distanceMinutes?: number | undefined;
+  tags: string[];
+}
+
+export interface GroupWheelCandidatesResponse {
+  groupId: string;
+  officeDate: string;
+  batchId: string;
+  algorithmVersion: string;
+  candidates: GroupWheelCandidate[];
+}
+
 export interface CryptoRandomValuesSource {
   getRandomValues(values: Uint32Array): Uint32Array;
 }

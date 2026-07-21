@@ -2,12 +2,14 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AppEnv } from "../env.js";
 import { prisma } from "../plugins/prisma.js";
 import { AuthError } from "../services/auth/errors.js";
+import { isLuckyRestaurantWheelEnabled } from "../services/features/groupCapabilities.js";
 import { requireActiveMembership } from "../services/groups/memberships.js";
 import {
   NoCurrentBatchError,
   getCurrentGroupTodayRecommendations,
   refreshGroupTodayRecommendations
 } from "../services/recommendation/groupToday.js";
+import { getGroupWheelCandidates } from "../services/recommendation/wheelCandidates.js";
 
 function membershipAuthInput(groupId: string, authorization: string | undefined) {
   return authorization ? { groupId, authorization } : { groupId };
@@ -42,6 +44,36 @@ export async function registerGroupTodayRoutes(app: FastifyInstance, env: AppEnv
       return sendGroupTodayError(reply, error);
     }
   });
+
+  app.get<{ Params: { groupId: string } }>(
+    "/api/groups/:groupId/today-recommendations/wheel-candidates",
+    async (request, reply) => {
+      try {
+        const membership = await requireActiveMembership({
+          prisma,
+          env,
+          ...membershipAuthInput(
+            request.params.groupId,
+            request.headers.authorization
+          )
+        });
+        if (!isLuckyRestaurantWheelEnabled(env, request.params.groupId)) {
+          reply.code(404);
+          return {
+            error: "lucky_restaurant_wheel_not_enabled",
+            message: "Lucky restaurant wheel is not enabled for this group"
+          };
+        }
+        return await getGroupWheelCandidates({
+          prisma,
+          groupId: request.params.groupId,
+          membership
+        });
+      } catch (error) {
+        return sendGroupTodayError(reply, error);
+      }
+    }
+  );
 
   app.post<{ Params: { groupId: string } }>(
     "/api/groups/:groupId/today-recommendations/refresh",

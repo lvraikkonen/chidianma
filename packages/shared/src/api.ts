@@ -12,6 +12,8 @@ export const GROUP_ROUTES = {
   groupSession: (groupId: string) => `/api/groups/${groupId}/session`,
   capabilities: (groupId: string) => `/api/groups/${groupId}/capabilities`,
   todayRecommendations: (groupId: string) => `/api/groups/${groupId}/today-recommendations`,
+  wheelCandidates: (groupId: string) =>
+    `/api/groups/${groupId}/today-recommendations/wheel-candidates`,
   refreshTodayRecommendations: (groupId: string) => `/api/groups/${groupId}/today-recommendations/refresh`,
   participationToday: (groupId: string) => `/api/groups/${groupId}/participation/today`,
   restaurants: (groupId: string) => `/api/groups/${groupId}/restaurants`,

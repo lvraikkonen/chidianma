@@ -229,6 +229,27 @@ describe("group today recommendation service", () => {
     );
   });
 
+  it("keeps the current recommendation batch limited to three items", async () => {
+    const prisma = buildPrismaForRefreshTest({ restaurantCount: 10 });
+
+    const response = await refreshGroupTodayRecommendations({
+      prisma: prisma as unknown as PrismaClient,
+      env,
+      groupId: "group-1",
+      membership: {
+        identityId: "identity-1",
+        groupId: "group-1",
+        membershipId: "membership-1",
+        role: "member"
+      }
+    });
+
+    expect(response.items).toHaveLength(3);
+    expect(
+      prisma.dailyRecommendationBatch.create.mock.calls[0]?.[0].data.items.create
+    ).toHaveLength(3);
+  });
+
   it("retries refresh after a serializable transaction conflict", async () => {
     const prisma = buildPrismaForRefreshTest();
     const conflict = Object.assign(new Error("serialization failure"), {
@@ -344,6 +365,7 @@ function buildPrismaForExistingBatchTest(input: {
 function buildPrismaForRefreshTest(options: {
   weatherSnapshot?: Record<string, unknown> | null;
   scoringWeights?: typeof DEFAULT_GROUP_SCORING_WEIGHTS | undefined;
+  restaurantCount?: number | undefined;
 } = {}) {
   const group = {
     id: "group-1",
@@ -378,6 +400,22 @@ function buildPrismaForRefreshTest(options: {
     ],
     feedback: []
   };
+  const restaurants = Array.from(
+    { length: options.restaurantCount ?? 1 },
+    (_, index) => {
+      if (index === 0) return restaurant;
+      const suffix = index + 1;
+      return {
+        ...restaurant,
+        id: `restaurant-${suffix}`,
+        name: `拉面小馆 ${suffix}`,
+        recommendations: restaurant.recommendations.map((recommendation) => ({
+          ...recommendation,
+          id: `recommendation-${suffix}`
+        }))
+      };
+    }
+  );
   const defaultSnapshot = {
     id: "weather-1",
     groupId: "group-1",
@@ -405,7 +443,7 @@ function buildPrismaForRefreshTest(options: {
       upsert: vi.fn().mockResolvedValue(defaultSnapshot)
     },
     restaurant: {
-      findMany: vi.fn().mockResolvedValue([restaurant])
+      findMany: vi.fn().mockResolvedValue(restaurants)
     },
     dailyRecommendationItem: {
       findMany: vi.fn().mockResolvedValue([])
@@ -417,15 +455,20 @@ function buildPrismaForRefreshTest(options: {
         id: "batch-1",
         ...data,
         createdAt: new Date("2026-07-09T04:00:00.000Z"),
-        items: data.items.create.map((item: Record<string, unknown>, index: number) => ({
-          id: `item-${index + 1}`,
-          ...item,
-          restaurant,
-          recommendation: restaurant.recommendations.find(
-            (recommendation) => recommendation.id === item.recommendationId
-          ) ?? null,
-          createdAt: new Date("2026-07-09T04:00:00.000Z")
-        }))
+        items: data.items.create.map((item: Record<string, unknown>, index: number) => {
+          const itemRestaurant = restaurants.find(
+            (candidate) => candidate.id === item.restaurantId
+          ) ?? restaurant;
+          return {
+            id: `item-${index + 1}`,
+            ...item,
+            restaurant: itemRestaurant,
+            recommendation: itemRestaurant.recommendations.find(
+              (recommendation) => recommendation.id === item.recommendationId
+            ) ?? null,
+            createdAt: new Date("2026-07-09T04:00:00.000Z")
+          };
+        })
       }))
     },
     groupMembership: {

@@ -15,7 +15,7 @@ import {
   getWeatherForGroupOfficeDate,
   snapshotToWeather
 } from "../weather/officeWeather.js";
-import { rankRestaurantCandidates } from "./scorer.js";
+import { buildRankedRecommendationCandidates } from "./candidates.js";
 import { SafeOperationalError } from "../../security/requestSecurity.js";
 
 export const GROUP_RECOMMENDATION_ALGORITHM_VERSION = "group-v1";
@@ -88,13 +88,14 @@ export async function refreshGroupTodayRecommendations(input: {
     try {
       return await input.prisma.$transaction(async (tx) => {
         const weights = await readWeightsSnapshot(tx, input.groupId);
-        const ranked = await buildRankedItems({
-          tx,
+        const ranked = await buildRankedRecommendationCandidates({
+          prisma: tx,
           groupId: input.groupId,
           officeDate,
           weekdayTag: todayWeekday,
           weatherCondition: weatherResult.weather?.condition ?? null,
-          weights
+          weights,
+          limit: 3
         });
         const aggregate = await tx.dailyRecommendationBatch.aggregate({
           where: { groupId: input.groupId, officeDate },
@@ -222,62 +223,6 @@ async function readWeightsSnapshot(
     recentDuplicatePenalty: weights.recentDuplicatePenalty,
     negativeFeedbackPenalty: weights.negativeFeedbackPenalty
   };
-}
-
-async function buildRankedItems(input: {
-  tx: Prisma.TransactionClient;
-  groupId: string;
-  officeDate: string;
-  weekdayTag: string | null;
-  weatherCondition: string | null;
-  weights: ScoringWeightsSnapshot;
-}) {
-  const restaurants = await input.tx.restaurant.findMany({
-    where: { groupId: input.groupId, status: "active" },
-    include: {
-      recommendations: true,
-      feedback: { where: { officeDate: input.officeDate, type: { in: ["skip", "avoid"] } } }
-    }
-  });
-  const recent = await input.tx.dailyRecommendationItem.findMany({
-    where: {
-      batch: { groupId: input.groupId, officeDate: { not: input.officeDate } }
-    },
-    select: { restaurantId: true },
-    take: 20,
-    orderBy: { createdAt: "desc" }
-  });
-  const recentIds = new Set(recent.map((item) => item.restaurantId));
-
-  return rankRestaurantCandidates({
-    limit: 3,
-    weights: input.weights,
-    candidates: restaurants.flatMap((restaurant) => {
-      const recommendations = restaurant.recommendations.length > 0
-        ? restaurant.recommendations
-        : [{
-            id: undefined,
-            dish: undefined,
-            weatherTags: [] as string[],
-            weekdayTags: [] as string[],
-            moodTags: [] as string[]
-          }];
-      return recommendations.map((recommendation) => ({
-        restaurantId: restaurant.id,
-        recommendationId: recommendation.id,
-        name: restaurant.name,
-        dish: recommendation.dish ?? undefined,
-        distanceMinutes: restaurant.distanceMinutes ?? undefined,
-        tags: [...new Set([...restaurant.tags, ...recommendation.moodTags])],
-        weekdayMatch: input.weekdayTag && recommendation.weekdayTags.includes(input.weekdayTag) ? 1 : 0,
-        weatherMatch: input.weatherCondition
-          && recommendation.weatherTags.includes(input.weatherCondition) ? 1 : 0,
-        teammateRecommendationCount: restaurant.recommendations.length,
-        recentlyRecommended: recentIds.has(restaurant.id),
-        negativeFeedbackCount: restaurant.feedback.length
-      }));
-    })
-  });
 }
 
 function formatBatchResponse(input: {

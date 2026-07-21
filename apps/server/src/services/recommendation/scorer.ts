@@ -53,7 +53,19 @@ export function rankRestaurantCandidates(input: {
         scoreBreakdown: result.breakdown
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((left, right) => {
+      const scoreDifference = right.score - left.score;
+      if (scoreDifference !== 0) return scoreDifference;
+      const restaurantDifference = compareIds(
+        left.restaurantId,
+        right.restaurantId
+      );
+      if (restaurantDifference !== 0) return restaurantDifference;
+      return compareIds(
+        left.recommendationId ?? "",
+        right.recommendationId ?? ""
+      );
+    });
 
   const byRestaurant = new Map<string, RankedRecommendation>();
   for (const item of ranked) {
@@ -63,4 +75,10 @@ export function rankRestaurantCandidates(input: {
   }
 
   return [...byRestaurant.values()].slice(0, input.limit);
+}
+
+function compareIds(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
