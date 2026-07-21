@@ -47,10 +47,17 @@ the docs-only baseline commit is the current production image.
 - Extension version: `0.2.0`.
 - Extension ID: `bbkeaogleldgfnkgebdhdbiohlmonbkk`.
 - Extension `lunchState`: additive, migrate-on-read and not assigned a global schema version.
+- Stage 7D.1 wheel session key: `luckyWheelSession.v1`; it is independent from `lunchState`,
+  contains no bearer token or raw candidate response, and stores a zero-spin batch marker plus the
+  minimal last-result ticket/recommendation binding. Active group, membership, identity and API
+  origin mutations clear it; batch changes replace it with a CAS-protected marker, except that a
+  same-day pending acceptance remains terminal until reconciled instead of silently reopening a
+  reroll.
 - Admin localStorage key: `lunchAdminSessionState.v2`.
 - Build metadata schema: `1.0`.
 
-Stage 7D.0 introduces no Prisma migration or Chrome storage change.
+Stage 7D.0 introduces no Prisma migration or Chrome storage change. The later Stage 7D.1
+implementation adds only the versioned wheel session key above; Prisma remains unchanged.
 
 ## Feature flags at baseline
 
@@ -137,6 +144,7 @@ Detailed procedure: [rollback runbook](../runbooks/rollback.md).
 
 ## Next step
 
-Continue Stage 7D.1 on `feat/lucky-restaurant-wheel` with the pure wheel ticket/selection tests.
-Group-scoped capabilities are implemented after the frozen baseline but remain disabled by default;
-do not start POI implementation or enable a colleague cohort in this slice.
+Continue Stage 7D.1 on `feat/lucky-restaurant-wheel` with the Popup wheel UI and accessibility
+slice. Group-scoped capabilities, pure selection, the Server candidate API and the Extension
+controller/client/session storage are implemented after the frozen baseline but remain disabled by
+default; do not start POI implementation or enable a colleague cohort in this slice.

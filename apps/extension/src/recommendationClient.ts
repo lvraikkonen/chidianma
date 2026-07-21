@@ -18,12 +18,17 @@ import {
   saveGroupRecommendationCache,
   type ExtensionStorageShape
 } from "./storage";
-import { withGroupSessionRetry } from "./groupSessionRetry";
+import {
+  groupSessionRetrySnapshotForStorage,
+  withGroupSessionRetry,
+  type GroupSessionRetrySnapshot
+} from "./groupSessionRetry";
 
 interface ActiveGroupRequestContext {
   apiBaseUrl: string;
   groupId: string;
   token: string;
+  retrySnapshot?: GroupSessionRetrySnapshot | undefined;
 }
 
 export type ExtensionRecommendationResponse = GroupTodayRecommendationsResponse;
@@ -41,7 +46,12 @@ function getActiveGroupRequestContext(
   if (!groupId) return null;
   const token = state.sessionsByGroupId[groupId]?.token;
   if (!token) throw new Error("No active group session configured");
-  return { apiBaseUrl: state.apiBaseUrl, groupId, token };
+  return {
+    apiBaseUrl: state.apiBaseUrl,
+    groupId,
+    token,
+    retrySnapshot: groupSessionRetrySnapshotForStorage(state, groupId)
+  };
 }
 
 async function requireActiveGroupRequestContext(): Promise<ActiveGroupRequestContext> {
@@ -61,15 +71,18 @@ async function activeGroupJson<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  return withGroupSessionRetry(context.groupId, context.token, (token) => (
-    requestJson<T>(new URL(path, context.apiBaseUrl), {
+  return withGroupSessionRetry(
+    context.groupId,
+    context.token,
+    (token) => requestJson<T>(new URL(path, context.apiBaseUrl), {
       ...init,
       headers: {
         ...(init.headers ?? {}),
         [AUTHORIZATION_HEADER]: `Bearer ${token}`
       }
-    })
-  ));
+    }),
+    context.retrySnapshot
+  );
 }
 
 async function fetchGroupTodayRecommendationsNetworkOnlyForContext(

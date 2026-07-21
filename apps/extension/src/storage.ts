@@ -5,7 +5,7 @@ import type {
   GroupSummary,
   GroupTodayRecommendationsResponse
 } from "@lunch/shared";
-import { STORAGE_KEYS } from "./config";
+import { STORAGE_KEYS, STORAGE_STATE_LOCK_NAME } from "./config";
 import {
   DEFAULT_API_BASE_URL,
   IS_INTERNAL_BUILD,
@@ -26,6 +26,22 @@ export interface ExtensionSettings {
 export interface GroupSessionStorage {
   token: string;
   expiresAt?: string | undefined;
+}
+
+export interface IdentityStorageGuard {
+  apiBaseUrl: string;
+  identityId?: string | undefined;
+  identityToken: string;
+}
+
+export interface GroupSessionStorageGuard extends IdentityStorageGuard {
+  groupId: string;
+  membershipId: string;
+  groupSessionToken: string;
+}
+
+export interface GroupSummariesStorageGuard extends IdentityStorageGuard {
+  groupContextFingerprint: string;
 }
 
 export interface LocalReminderOverride {
@@ -71,7 +87,7 @@ export interface ExtensionStorageShape extends ExtensionSettings {
   pendingSecondReminder?: PendingSecondReminder | undefined;
 }
 
-export const STORAGE_STATE_LOCK_NAME = "lunch-extension-storage-state";
+export { STORAGE_STATE_LOCK_NAME } from "./config";
 
 export type StorageStateUpdater = (
   state: ExtensionStorageShape
@@ -153,6 +169,16 @@ export async function saveStorageState(state: ExtensionStorageShape): Promise<vo
 export async function updateStorageState(
   updater: StorageStateUpdater
 ): Promise<ExtensionStorageShape> {
+  return mutateStorageState(updater);
+}
+
+async function mutateStorageState(
+  updater: StorageStateUpdater,
+  shouldClearLuckyWheelSession?: (
+    current: ExtensionStorageShape,
+    next: ExtensionStorageShape
+  ) => boolean
+): Promise<ExtensionStorageShape> {
   return getStorageLockManager().request(
     STORAGE_STATE_LOCK_NAME,
     { mode: "exclusive" },
@@ -160,6 +186,9 @@ export async function updateStorageState(
       const current = await getStorageState();
       const next = updater(current);
       await writeStorageStateUnlocked(next);
+      if (shouldClearLuckyWheelSession?.(current, next)) {
+        await chrome.storage.local.remove(STORAGE_KEYS.luckyWheelSession);
+      }
       return next;
     }
   );
@@ -171,17 +200,17 @@ export async function getSettings(): Promise<ExtensionSettings> {
 }
 
 export async function saveSettings(settings: ExtensionSettings): Promise<void> {
-  await updateStorageState((state) => invalidateReminderContext({
+  await mutateStorageState((state) => invalidateReminderContext({
     ...state,
     ...settings
-  }));
+  }), (current, next) => current.apiBaseUrl !== next.apiBaseUrl);
   await chrome.runtime.sendMessage({ type: "settingsChanged" }).catch(() => undefined);
 }
 
 export async function saveIdentityConnection(
   response: CreateIdentityResponse
 ): Promise<void> {
-  await updateStorageState((state) => {
+  await mutateStorageState((state) => {
     const next: ExtensionStorageShape = {
       ...state,
       identityId: response.identityId,
@@ -199,7 +228,7 @@ export async function saveIdentityConnection(
     delete next.scheduledPrimaryReminder;
     delete next.pendingSecondReminder;
     return next;
-  });
+  }, () => true);
   await notifyReminderContextChanged();
 }
 
@@ -218,7 +247,7 @@ export async function saveRenewedIdentityConnection(
 export async function saveResetIdentityConnection(
   response: CreateIdentityResponse
 ): Promise<void> {
-  await updateStorageState((state) => {
+  await mutateStorageState((state) => {
     const next: ExtensionStorageShape = {
       ...state,
       identityId: response.identityId,
@@ -232,15 +261,91 @@ export async function saveResetIdentityConnection(
     delete next.scheduledPrimaryReminder;
     delete next.pendingSecondReminder;
     return next;
-  });
+  }, () => true);
   await notifyReminderContextChanged();
 }
 
-export async function saveGroupConnection(
-  response: GroupSessionResponse
-): Promise<void> {
+function identityGuardMatches(
+  state: ExtensionStorageShape,
+  guard: IdentityStorageGuard
+): boolean {
+  return state.apiBaseUrl === guard.apiBaseUrl
+    && state.identityId === guard.identityId
+    && state.identityToken === guard.identityToken;
+}
+
+function groupSessionGuardMatches(
+  state: ExtensionStorageShape,
+  guard: GroupSessionStorageGuard
+): boolean {
+  return identityGuardMatches(state, guard)
+    && state.activeGroupId === guard.groupId
+    && state.groupSummariesById[guard.groupId]?.membershipId
+      === guard.membershipId
+    && state.sessionsByGroupId[guard.groupId]?.token
+      === guard.groupSessionToken;
+}
+
+function groupContextFingerprint(state: ExtensionStorageShape): string {
+  const groupIds = [...new Set([
+    ...Object.keys(state.sessionsByGroupId),
+    ...Object.keys(state.groupSummariesById)
+  ])].sort();
+  return JSON.stringify({
+    activeGroupId: state.activeGroupId ?? null,
+    groups: groupIds.map((groupId) => {
+      const group = state.groupSummariesById[groupId];
+      const session = state.sessionsByGroupId[groupId];
+      return [
+        groupId,
+        group?.membershipId ?? null,
+        group?.role ?? null,
+        group?.name ?? null,
+        session?.token ?? null,
+        session?.expiresAt ?? null
+      ];
+    })
+  });
+}
+
+export function groupSummariesStorageGuardFor(
+  state: ExtensionStorageShape
+): GroupSummariesStorageGuard | null {
+  if (!state.identityToken) return null;
+  return {
+    apiBaseUrl: state.apiBaseUrl,
+    identityId: state.identityId,
+    identityToken: state.identityToken,
+    groupContextFingerprint: groupContextFingerprint(state)
+  };
+}
+
+function groupSummariesGuardMatches(
+  state: ExtensionStorageShape,
+  guard: GroupSummariesStorageGuard
+): boolean {
+  return identityGuardMatches(state, guard)
+    && groupContextFingerprint(state) === guard.groupContextFingerprint;
+}
+
+async function commitGroupConnection(
+  response: GroupSessionResponse,
+  guard?: GroupSessionStorageGuard
+): Promise<boolean> {
+  let committed = false;
   let contextChanged = false;
-  await updateStorageState((state) => {
+  await mutateStorageState((state) => {
+    if (
+      guard
+      && (
+        response.group.groupId !== guard.groupId
+        || response.group.membershipId !== guard.membershipId
+        || !groupSessionGuardMatches(state, guard)
+      )
+    ) {
+      return state;
+    }
+    committed = true;
     const next = {
       ...state,
       identityToken: response.identityToken,
@@ -262,14 +367,41 @@ export async function saveGroupConnection(
       || state.sessionsByGroupId[response.group.groupId]?.token
         !== response.groupSessionToken;
     return contextChanged ? invalidateReminderContext(next) : next;
-  });
-  if (contextChanged) await notifyReminderContextChanged();
+  }, (current, next) => (
+    current.activeGroupId !== next.activeGroupId
+    || (
+      next.activeGroupId !== undefined
+      && current.groupSummariesById[next.activeGroupId]?.membershipId
+        !== next.groupSummariesById[next.activeGroupId]?.membershipId
+    )
+  ));
+  if (committed && contextChanged) await notifyReminderContextChanged();
+  return committed;
 }
 
-export async function syncGroupSummaries(groups: GroupSummary[]): Promise<void> {
+export async function saveGroupConnection(
+  response: GroupSessionResponse
+): Promise<void> {
+  await commitGroupConnection(response);
+}
+
+export async function saveGroupConnectionIfCurrent(
+  response: GroupSessionResponse,
+  guard: GroupSessionStorageGuard
+): Promise<boolean> {
+  return commitGroupConnection(response, guard);
+}
+
+async function commitGroupSummaries(
+  groups: GroupSummary[],
+  guard?: GroupSummariesStorageGuard
+): Promise<boolean> {
   const allowed = new Set(groups.map((group) => group.groupId));
+  let committed = false;
   let contextChanged = false;
-  await updateStorageState((state) => {
+  await mutateStorageState((state) => {
+    if (guard && !groupSummariesGuardMatches(state, guard)) return state;
+    committed = true;
     const next: ExtensionStorageShape = {
       ...state,
       groupSummariesById: Object.fromEntries(
@@ -292,13 +424,38 @@ export async function syncGroupSummaries(groups: GroupSummary[]): Promise<void> 
       return invalidateReminderContext(next);
     }
     return next;
-  });
-  if (contextChanged) await notifyReminderContextChanged();
+  }, (current, next) => committed && (
+    current.activeGroupId !== next.activeGroupId
+    || (
+      next.activeGroupId !== undefined
+      && current.groupSummariesById[next.activeGroupId]?.membershipId
+        !== next.groupSummariesById[next.activeGroupId]?.membershipId
+    )
+  ));
+  if (committed && contextChanged) await notifyReminderContextChanged();
+  return committed;
 }
 
-export async function clearGroupSession(groupId: string): Promise<void> {
+export async function syncGroupSummaries(groups: GroupSummary[]): Promise<void> {
+  await commitGroupSummaries(groups);
+}
+
+export async function syncGroupSummariesIfCurrent(
+  groups: GroupSummary[],
+  guard: GroupSummariesStorageGuard
+): Promise<boolean> {
+  return commitGroupSummaries(groups, guard);
+}
+
+async function clearGroupSessionWithGuard(
+  groupId: string,
+  guard?: GroupSessionStorageGuard
+): Promise<boolean> {
+  let committed = false;
   let contextChanged = false;
-  await updateStorageState((state) => {
+  await mutateStorageState((state) => {
+    if (guard && !groupSessionGuardMatches(state, guard)) return state;
+    committed = true;
     const sessionsByGroupId = { ...state.sessionsByGroupId };
     contextChanged = state.activeGroupId === groupId
       && Boolean(sessionsByGroupId[groupId]?.token);
@@ -307,12 +464,37 @@ export async function clearGroupSession(groupId: string): Promise<void> {
     return contextChanged
       ? invalidateReminderContext(next)
       : next;
-  });
-  if (contextChanged) await notifyReminderContextChanged();
+  }, (current) => committed && current.activeGroupId === groupId);
+  if (committed && contextChanged) await notifyReminderContextChanged();
+  return committed;
 }
 
-export async function disconnectIdentity(): Promise<void> {
-  await updateStorageState((state) => {
+export async function clearGroupSession(groupId: string): Promise<void> {
+  await clearGroupSessionWithGuard(groupId);
+}
+
+export async function clearGroupSessionIfCurrent(
+  guard: GroupSessionStorageGuard
+): Promise<boolean> {
+  return clearGroupSessionWithGuard(guard.groupId, guard);
+}
+
+async function disconnectIdentityWithGuard(
+  guard?: IdentityStorageGuard | GroupSessionStorageGuard
+): Promise<boolean> {
+  let committed = false;
+  await mutateStorageState((state) => {
+    if (
+      guard
+      && (
+        "groupId" in guard
+          ? !groupSessionGuardMatches(state, guard)
+          : !identityGuardMatches(state, guard)
+      )
+    ) {
+      return state;
+    }
+    committed = true;
     const next: ExtensionStorageShape = {
       ...state,
       sessionsByGroupId: {},
@@ -330,13 +512,24 @@ export async function disconnectIdentity(): Promise<void> {
     delete next.scheduledPrimaryReminder;
     delete next.pendingSecondReminder;
     return next;
-  });
-  await notifyReminderContextChanged();
+  }, () => committed);
+  if (committed) await notifyReminderContextChanged();
+  return committed;
+}
+
+export async function disconnectIdentity(): Promise<void> {
+  await disconnectIdentityWithGuard();
+}
+
+export async function disconnectIdentityIfCurrent(
+  guard: IdentityStorageGuard | GroupSessionStorageGuard
+): Promise<boolean> {
+  return disconnectIdentityWithGuard(guard);
 }
 
 export async function replaceApiBaseUrl(apiBaseUrl: string): Promise<void> {
   const normalized = new URL(apiBaseUrl).toString().replace(/\/$/, "");
-  await updateStorageState((state) => ({
+  await mutateStorageState((state) => ({
     apiBaseUrl: normalized,
     reminderTime: state.reminderTime,
     enabled: state.enabled,
@@ -346,7 +539,7 @@ export async function replaceApiBaseUrl(apiBaseUrl: string): Promise<void> {
     localReminderOverridesByGroupId: {},
     groupSettingsCacheByGroupId: {},
     reminderRevision: state.reminderRevision + 1
-  }));
+  }), () => true);
   await notifyReminderContextChanged();
 }
 

@@ -153,7 +153,27 @@ type RandomSource = () => number;
 - 第二抽后可以移除结果但不允许第三抽；
 - 「就这家」复用现有 group participation API；
 - 使用 `luckyWheelSession.v1` 按 `groupId + officeDate + batchId` 保存最小会话，防止
-  关闭 Popup 绕过次数；batch/group/API origin 变化时清理；
+  关闭 Popup 绕过次数；首次候选加载即以 `spinNumber=0` 原子写入当前批次标记，避免
+  多个 Popup 让旧批次重新占有会话；group/API origin 变化时清理；
+- 会话额外保存当前 membership、算法版本、锁定模式、已用抽数、临时排除，以及最后
+  一次抽签的 `restaurantId + selectedRecommendationId(null 表示原本为空) + tickets`；
+  不保存 bearer token、完整候选响应或随机数；
+- 抽签先由 shared 算法确定唯一结果并成功写入会话，再进入瞬时 `spinning` 状态；Popup
+  在动画中关闭后重新打开时直接恢复同一结果和真实票数，不再次随机；
+- 同组 session token 自动续期保留会话；续期、清理和 group summaries resync 都在共享
+  storage lock 内按原 API/identity/group/membership/token 快照复验，迟到的旧上下文请求
+  fail-stale，不复用 reset/reconnect 后的新 token；
+- group、membership 或 API origin 的 storage mutation 会清理会话；office date、batch 或
+  算法版本变化时以 compare-and-swap 切换到新的零抽批次标记。同一 office date 若已有
+  `acceptancePending`，不得以新 batch 覆盖该未决结果；候选或 recommendation 变化时，
+  普通未接受结果丢弃但保留已消耗抽数，`accepted`/`acceptancePending` 结果保持终态；
+- 排除当前结果只修改 versioned wheel session 并重算剩余候选，不调用 feedback 或餐厅
+  写 API。接受先以 CAS 将当前结果标记为 `acceptancePending`，再发送幂等 participation
+  PUT；pending 时禁止重转和排除，失败或最终本地确认失败时保留原结果供重试。只有 PUT
+  返回严格匹配的 group、office date、membership、restaurant 和 recommendation 后，
+  才以第二次 CAS 标记 `accepted=true`；
+- wheel candidate client 不使用今日推荐缓存或 refresh fallback；缓存 Popup 状态不得
+  发起候选请求、新抽签、排除或接受；
 - `prefers-reduced-motion` 下不执行长旋转，只直接显示或短淡入；
 - 所有操作可键盘完成，结果通过 `aria-live` 宣告，信息不只依赖颜色。
 

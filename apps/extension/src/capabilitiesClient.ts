@@ -5,7 +5,10 @@ import {
   type PoiProviderId
 } from "@lunch/shared";
 import { ExtensionApiError, requestJson } from "./apiClient";
-import { withGroupSessionRetry } from "./groupSessionRetry";
+import {
+  groupSessionRetrySnapshotForStorage,
+  withGroupSessionRetry
+} from "./groupSessionRetry";
 import type { ExtensionStorageShape } from "./storage";
 
 function invalidResponse(code: string): never {
@@ -71,8 +74,10 @@ export async function fetchGroupCapabilitiesForStorage(
     throw new Error("No active group session configured");
   }
 
-  const response = await withGroupSessionRetry(groupId, token, (sessionToken) => (
-    requestJson<unknown>(
+  const response = await withGroupSessionRetry(
+    groupId,
+    token,
+    (sessionToken) => requestJson<unknown>(
       new URL(GROUP_ROUTES.capabilities(groupId), storage.apiBaseUrl),
       {
         headers: {
@@ -80,7 +85,8 @@ export async function fetchGroupCapabilitiesForStorage(
         },
         ...(signal ? { signal } : {})
       }
-    )
-  ));
+    ),
+    groupSessionRetrySnapshotForStorage(storage, groupId)
+  );
   return parseCapabilitiesResponse(response, groupId);
 }

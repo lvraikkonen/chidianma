@@ -6,10 +6,10 @@ import { getDefaultStorageState } from "../src/storage";
 const dependencies = vi.hoisted(() => ({
   requestJson: vi.fn(),
   getStorageState: vi.fn(),
-  saveGroupConnection: vi.fn(),
-  disconnectIdentity: vi.fn(),
-  clearGroupSession: vi.fn(),
-  syncGroupSummaries: vi.fn()
+  saveGroupConnectionIfCurrent: vi.fn(),
+  disconnectIdentityIfCurrent: vi.fn(),
+  clearGroupSessionIfCurrent: vi.fn(),
+  syncGroupSummariesIfCurrent: vi.fn()
 }));
 
 vi.mock("../src/apiClient", async (importOriginal) => ({
@@ -19,10 +19,10 @@ vi.mock("../src/apiClient", async (importOriginal) => ({
 vi.mock("../src/storage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/storage")>()),
   getStorageState: dependencies.getStorageState,
-  saveGroupConnection: dependencies.saveGroupConnection,
-  disconnectIdentity: dependencies.disconnectIdentity,
-  clearGroupSession: dependencies.clearGroupSession,
-  syncGroupSummaries: dependencies.syncGroupSummaries
+  saveGroupConnectionIfCurrent: dependencies.saveGroupConnectionIfCurrent,
+  disconnectIdentityIfCurrent: dependencies.disconnectIdentityIfCurrent,
+  clearGroupSessionIfCurrent: dependencies.clearGroupSessionIfCurrent,
+  syncGroupSummariesIfCurrent: dependencies.syncGroupSummariesIfCurrent
 }));
 
 const renewed = {
@@ -50,10 +50,10 @@ beforeEach(() => {
     groupSummariesById: { "group-1": renewed.group }
   });
   dependencies.requestJson.mockResolvedValue(renewed);
-  dependencies.saveGroupConnection.mockResolvedValue(undefined);
-  dependencies.disconnectIdentity.mockResolvedValue(undefined);
-  dependencies.clearGroupSession.mockResolvedValue(undefined);
-  dependencies.syncGroupSummaries.mockResolvedValue(undefined);
+  dependencies.saveGroupConnectionIfCurrent.mockResolvedValue(true);
+  dependencies.disconnectIdentityIfCurrent.mockResolvedValue(true);
+  dependencies.clearGroupSessionIfCurrent.mockResolvedValue(true);
+  dependencies.syncGroupSummariesIfCurrent.mockResolvedValue(true);
 });
 
 describe("extension group session retry", () => {
@@ -71,7 +71,7 @@ describe("extension group session retry", () => {
       withGroupSessionRetry("group-1", "old-group-token", operation)
     )))).resolves.toEqual(["new-group-token", "new-group-token"]);
     expect(dependencies.requestJson).toHaveBeenCalledOnce();
-    expect(dependencies.saveGroupConnection).toHaveBeenCalledOnce();
+    expect(dependencies.saveGroupConnectionIfCurrent).toHaveBeenCalledOnce();
     expect(operations[0]).toHaveBeenCalledTimes(2);
     expect(operations[1]).toHaveBeenCalledTimes(2);
   });
@@ -85,9 +85,17 @@ describe("extension group session retry", () => {
     await expect(withGroupSessionRetry("group-1", "old-group-token", async () => {
       throw new ExtensionApiError({ kind: "http", status: 401 });
     })).rejects.toMatchObject({ status: 403 });
-    expect(dependencies.clearGroupSession).toHaveBeenCalledWith("group-1");
-    expect(dependencies.syncGroupSummaries).toHaveBeenCalledWith([]);
-    expect(dependencies.disconnectIdentity).not.toHaveBeenCalled();
+    expect(dependencies.clearGroupSessionIfCurrent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        groupId: "group-1",
+        groupSessionToken: "old-group-token"
+      })
+    );
+    expect(dependencies.syncGroupSummariesIfCurrent).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ identityToken: "identity-token" })
+    );
+    expect(dependencies.disconnectIdentityIfCurrent).not.toHaveBeenCalled();
   });
 
   it("clears and resynchronizes a membership rejected by the business route", async () => {
@@ -97,9 +105,17 @@ describe("extension group session retry", () => {
         kind: "http", status: 403, code: "removed_member"
       });
     })).rejects.toMatchObject({ status: 403, code: "removed_member" });
-    expect(dependencies.clearGroupSession).toHaveBeenCalledWith("group-1");
-    expect(dependencies.syncGroupSummaries).toHaveBeenCalledWith([]);
-    expect(dependencies.saveGroupConnection).not.toHaveBeenCalled();
+    expect(dependencies.clearGroupSessionIfCurrent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        groupId: "group-1",
+        groupSessionToken: "old-group-token"
+      })
+    );
+    expect(dependencies.syncGroupSummariesIfCurrent).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ identityToken: "identity-token" })
+    );
+    expect(dependencies.saveGroupConnectionIfCurrent).not.toHaveBeenCalled();
   });
 
   it("disconnects the identity atomically if identity renewal is no longer possible", async () => {
@@ -109,8 +125,8 @@ describe("extension group session retry", () => {
     await expect(withGroupSessionRetry("group-1", "old-group-token", async () => {
       throw new ExtensionApiError({ kind: "http", status: 401 });
     })).rejects.toMatchObject({ status: 401 });
-    expect(dependencies.disconnectIdentity).toHaveBeenCalledOnce();
-    expect(dependencies.clearGroupSession).not.toHaveBeenCalled();
+    expect(dependencies.disconnectIdentityIfCurrent).toHaveBeenCalledOnce();
+    expect(dependencies.clearGroupSessionIfCurrent).not.toHaveBeenCalled();
   });
 
   it("disconnects the identity when the single retried business request is still 401", async () => {
@@ -124,6 +140,76 @@ describe("extension group session retry", () => {
     )).rejects.toMatchObject({ status: 401 });
     expect(operation).toHaveBeenCalledTimes(2);
     expect(dependencies.requestJson).toHaveBeenCalledOnce();
-    expect(dependencies.disconnectIdentity).toHaveBeenCalledOnce();
+    expect(dependencies.disconnectIdentityIfCurrent).toHaveBeenCalledOnce();
+  });
+
+  it("does not persist or retry a renewal after the captured group context changes", async () => {
+    dependencies.saveGroupConnectionIfCurrent.mockResolvedValue(false);
+    const operation = vi.fn(async (token: string) => {
+      if (token === "old-group-token") {
+        throw new ExtensionApiError({ kind: "http", status: 401 });
+      }
+      return token;
+    });
+
+    await expect(withGroupSessionRetry(
+      "group-1",
+      "old-group-token",
+      operation
+    )).rejects.toMatchObject({
+      kind: "invalid-response",
+      code: "group_context_stale"
+    });
+
+    expect(operation).toHaveBeenCalledOnce();
+    expect(dependencies.saveGroupConnectionIfCurrent).toHaveBeenCalledWith(
+      renewed,
+      expect.objectContaining({
+        apiBaseUrl: "https://lunch.example",
+        groupId: "group-1",
+        membershipId: "membership-1",
+        groupSessionToken: "old-group-token"
+      })
+    );
+    expect(dependencies.disconnectIdentityIfCurrent).not.toHaveBeenCalled();
+  });
+
+  it("rejects a newer token that could come from an explicit session reset", async () => {
+    dependencies.getStorageState.mockResolvedValue({
+      ...getDefaultStorageState(),
+      apiBaseUrl: "https://lunch.example",
+      identityId: "identity-1",
+      identityToken: "newer-identity-token",
+      activeGroupId: "group-1",
+      sessionsByGroupId: { "group-1": { token: "newer-group-token" } },
+      groupSummariesById: { "group-1": renewed.group }
+    });
+    const operation = vi.fn(async (token: string) => {
+      if (token === "old-group-token") {
+        throw new ExtensionApiError({ kind: "http", status: 401 });
+      }
+      return token;
+    });
+
+    await expect(withGroupSessionRetry(
+      "group-1",
+      "old-group-token",
+      operation,
+      {
+        apiBaseUrl: "https://lunch.example",
+        identityId: "identity-1",
+        identityToken: "identity-token",
+        membershipId: "membership-1"
+      }
+    )).rejects.toMatchObject({
+      kind: "invalid-response",
+      code: "group_context_stale"
+    });
+
+    expect(operation).toHaveBeenCalledOnce();
+    expect(dependencies.requestJson).not.toHaveBeenCalled();
+    expect(dependencies.saveGroupConnectionIfCurrent).not.toHaveBeenCalled();
+    expect(dependencies.disconnectIdentityIfCurrent).not.toHaveBeenCalled();
+    expect(dependencies.clearGroupSessionIfCurrent).not.toHaveBeenCalled();
   });
 });

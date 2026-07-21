@@ -94,8 +94,10 @@ service 和 group-scoped gated route 已实现；refresh 仍显式 `limit=3`，w
 
 - 新增 wheel client，复用 group session retry 与上下文失效保护；
 - 新增纯 controller/state machine：loading、ready、spinning、result、insufficient、error；
-- 新增 `luckyWheelSession.v1`，边界为 group + office date + batch；
-- group/API origin/batch 变化或断开身份时清理；
+- 新增 `luckyWheelSession.v1`，边界为 group + office date + batch，首次加载即保存零抽
+  context marker；
+- group/API origin/identity/membership 变化时清理；batch/算法变化以 CAS 切换 marker，
+  同日 pending acceptance 保留并阻止覆盖；
 - 第一次抽签后锁定模式，最多两次抽签；
 - 排除只影响本轮，不调用 feedback 或餐厅写 API；
 - 「就这家」复用 participation PUT。
@@ -103,6 +105,17 @@ service 和 group-scoped gated route 已实现；refresh 仍显式 `limit=3`，w
 测试覆盖 Popup 重开、重转限制、排除、上下文切换、cached 状态禁止新抽签和接受失败。
 
 第四提交：`feat: add reroll exclusion and accepted decision flow`。
+
+完成状态：实时 wheel client 已复用 group session 单次续期且严格校验 0–8 家响应；纯
+controller 已实现 `loading / ready / spinning / result / insufficient / error`、默认
+weighted、首次抽签后锁定模式、最多两抽、会话内排除和 participation 接受。独立
+`luckyWheelSession.v1` 使用与 `lunchState` 相同的 Web Lock 和 compare-and-swap，保存
+零抽批次标记、最后抽签的最小票数映射和原始 selected recommendation，以确保多 Popup
+和重开时结果一致。接受采用 `acceptancePending -> participation PUT -> accepted` 两阶段
+CAS，pending/accepted 不会因候选变化恢复重转；续期和清理按原上下文快照在锁内复验，
+reset/reconnect 后的迟到请求 fail-stale。同组正常 token 续期保留 wheel session。现有
+`lunchState`、Manifest、background、reminder runtime 和 Prisma schema 均未改变；Popup
+DOM 接线留在第 5 小节。
 
 ### 5. Popup UI 和可访问性
 
