@@ -45,15 +45,24 @@ predicate 再次 gate。
 
 - 0–8 候选验证；
 - equal 和 weighted 票数；
-- 同分相等、min/max 分档、rolling-7 降档、1–3 clamp；
+- 同分相等；非同分按
+  `1 + Math.round(2 * (score - min) / (max - min))` 分档，归一化 25%/75%
+  分别进入 2/3 张档；rolling-7 降档、1–3 clamp；
 - 概率和累计扇区；
 - 注入 `RandomSource` 的确定性选择；
 - 排除后重算；
 - 生产 crypto random source 的薄封装。
 
-测试覆盖 0、1、2、8、超过 8、同分、3:1、固定随机边界、排除和无随机分布断言。
+纯算法不排序或截断：调用者必须先提供最多 8 家的稳定有序候选，超过 8 家直接拒绝；
+确定性排序和截断由下一小节的 Server candidate service 负责。
+
+测试覆盖 0、1、2、8、超过 8、同分、阈值、负分、3:1、固定随机边界、排除、
+输入不变性、crypto 边界和无随机分布断言。
 
 第二提交：`feat: add wheel candidate and ticket calculation`。
+
+完成状态：shared 纯算法、导出和 25 个确定性单元测试已实现；没有 UI、Server route、
+storage 或持久化变化。
 
 ### 3. Server candidate API
 
@@ -88,11 +97,27 @@ predicate 再次 gate。
 
 ### 5. Popup UI 和可访问性
 
-- 在现有 popup 增加推荐/转盘切换，不修改 Manifest 或 background；
-- 票数比例扇区、编号图例、概率和中奖理由保持一致；
+- 在现有 popup 增加推荐/转盘切换，不修改 Manifest 或 background；保留现有
+  `PopupViewState`、连接/错误/缓存/QuickAdd 流程以及 design tokens；
+- `demo-design/popup.html` 仅作为视觉方向，不整体复制静态 `WHEEL_POOL`、`goView()`、
+  硬编码中奖结果、全局 CSS 或二次 `Math.random()`；
+- 入口两张卡可以复用，但必须移到动态内容上方并在 390–412 × 600 首屏可见；
+  不增加超出本阶段范围的「最近推荐」横条；吉祥物若使用则限制为约 100–120px
+  的装饰，否则本轮暂缓；
+- feature flag 关闭、未连接或只有 cached recommendation 时不暴露可发起新抽签的入口；
+  「给我推荐」切回已加载推荐，不隐式 refresh；
+- 扇区严格按票数比例绘制；盘内用清晰编号，盘下结构化列表显示编号、名称、签数和
+  概率，兼容 8 家候选；
+- 模式使用原生 `fieldset`/radio，文案说明是按推荐分轻度加权；第一次抽签后锁定；
 - 业务结果先决定，再将目标扇区中心交给约 3 秒动画；
-- reduced-motion 跳过长动画但复用相同结果；
-- 原生按钮/单选语义、明确 label、`aria-live`、结果焦点、非颜色信息；
+- reduced-motion 在 JS 中显式跳过长动画和纸屑但复用相同结果，不依赖
+  `transitionend` 完成业务状态；
+- wheel 图形可 `aria-hidden`，真实候选通过相邻列表表达；转动时使用 `aria-busy`
+  和可读状态；结果使用 `aria-live="polite"` 并把焦点移至结果标题；
+- 所有操作使用原生按钮/单选语义和明确 label，点击目标至少 40–44px，状态不只依赖颜色；
+- 结果页只显示 Server 候选提供的步行时间、推荐理由等真实字段，不使用设计稿的静态
+  距离、近期天数、图片或「群里喊人」承诺；
+- 重转文案显示剩余次数；排除只写「已从本次转盘移除」，不得暗示长期学习或永久屏蔽；
 - 0/1 候选、网络错误、次数耗尽和餐厅状态变化都有明确文案。
 
 Extension internal 版本提升到 `0.3.0`，稳定 ID、权限和生产 host 不变。
