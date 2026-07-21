@@ -15,7 +15,7 @@ pnpm --filter @lunch/extension build
 It produces `apps/extension/dist` with:
 
 - name `中午吃点啥（内部测试）`;
-- version `0.2.0`;
+- version `0.3.0`;
 - fixed service `https://lunchserver-production.up.railway.app`;
 - exact production host permission;
 - public manifest key and stable Extension ID
@@ -48,10 +48,10 @@ The supported unpacked install, upgrade and rollback procedure is documented in
 [Internal Extension Distribution](../../docs/extension-internal-distribution.md).
 Load a fixed extracted directory, not a temporary download directory.
 
-Adding the fixed public key changes the ID from earlier Stage 7B unpacked
-installations. The first `0.2.0` install reconnects through an existing identity
-connection code; automatic migration from the old Extension storage is not
-promised.
+The fixed public key keeps the Stage 7C Extension ID stable for the `0.3.0`
+upgrade. Installations from before the fixed-key Stage 7C candidate still need
+to reconnect through an existing identity connection code; automatic migration
+from those older Extension IDs is not promised.
 
 ## Use
 

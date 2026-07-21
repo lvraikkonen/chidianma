@@ -87,6 +87,9 @@ export interface LuckyWheelControllerDependencies {
   ) => Promise<PutParticipationTodayResponse>;
   randomSource: RandomSource;
   onStateChange?: ((state: LuckyWheelControllerState) => void) | undefined;
+  onAcceptanceUpdate?: (
+    (update: PutParticipationTodayResponse) => void
+  ) | undefined;
 }
 
 export interface LoadLuckyWheelInput {
@@ -1008,6 +1011,11 @@ export function createLuckyWheelController(
         }));
         return false;
       }
+      try {
+        dependencies.onAcceptanceUpdate?.(update);
+      } catch {
+        // UI observers must not turn a validated Server write into a failed accept.
+      }
 
       const acceptedSession: LuckyWheelSessionV1 = {
         ...claimedSession,
@@ -1105,6 +1113,9 @@ export function createLuckyWheelController(
 export function createExtensionLuckyWheelController(options: {
   randomSource?: RandomSource | undefined;
   onStateChange?: ((state: LuckyWheelControllerState) => void) | undefined;
+  onAcceptanceUpdate?: (
+    (update: PutParticipationTodayResponse) => void
+  ) | undefined;
 } = {}) {
   return createLuckyWheelController({
     loadStorage: getStorageState,
@@ -1114,6 +1125,9 @@ export function createExtensionLuckyWheelController(options: {
     clearSession: clearLuckyWheelSession,
     acceptDecision: putTodayParticipationForStorage,
     randomSource: options.randomSource ?? createCryptoRandomSource(),
-    ...(options.onStateChange ? { onStateChange: options.onStateChange } : {})
+    ...(options.onStateChange ? { onStateChange: options.onStateChange } : {}),
+    ...(options.onAcceptanceUpdate
+      ? { onAcceptanceUpdate: options.onAcceptanceUpdate }
+      : {})
   });
 }

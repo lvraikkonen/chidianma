@@ -130,7 +130,8 @@ function setup({
   loadCandidates,
   loadStorage,
   saveSession,
-  acceptDecision
+  acceptDecision,
+  onAcceptanceUpdate
 }: {
   count?: number;
   mode?: WheelMode;
@@ -140,6 +141,7 @@ function setup({
   loadStorage?: LuckyWheelControllerDependencies["loadStorage"];
   saveSession?: LuckyWheelControllerDependencies["saveSession"];
   acceptDecision?: LuckyWheelControllerDependencies["acceptDecision"];
+  onAcceptanceUpdate?: LuckyWheelControllerDependencies["onAcceptanceUpdate"];
 } = {}) {
   let persisted = session;
   const randomSource = vi.fn(() => randomValue);
@@ -161,7 +163,8 @@ function setup({
       participation(input.restaurantId!)
     )),
     randomSource,
-    onStateChange: vi.fn()
+    onStateChange: vi.fn(),
+    ...(onAcceptanceUpdate ? { onAcceptanceUpdate } : {})
   };
   const controller = createLuckyWheelController(dependencies);
   return {
@@ -820,7 +823,8 @@ describe("lucky wheel controller", () => {
   });
 
   it("accepts the selected restaurant through participation PUT and persists success", async () => {
-    const test = setup();
+    const onAcceptanceUpdate = vi.fn();
+    const test = setup({ onAcceptanceUpdate });
     await test.load();
     await test.controller.spin();
     test.controller.finishSpin();
@@ -834,6 +838,10 @@ describe("lucky wheel controller", () => {
         restaurantId: "restaurant-2",
         recommendationId: "recommendation-2"
       }
+    );
+    expect(onAcceptanceUpdate).toHaveBeenCalledOnce();
+    expect(onAcceptanceUpdate).toHaveBeenCalledWith(
+      participation("restaurant-2")
     );
     expect(test.controller.getState()).toMatchObject({
       kind: "result",
@@ -868,6 +876,28 @@ describe("lucky wheel controller", () => {
     });
     await expect(test.controller.spin()).resolves.toBe(false);
     await expect(test.controller.excludeSelected()).resolves.toBe(false);
+  });
+
+  it("keeps a validated acceptance successful if its UI observer throws", async () => {
+    const test = setup({
+      onAcceptanceUpdate: vi.fn(() => {
+        throw new Error("detached popup");
+      })
+    });
+    await test.load();
+    await test.controller.spin();
+    test.controller.finishSpin();
+
+    await expect(test.controller.acceptSelected()).resolves.toBe(true);
+    expect(test.controller.getState()).toMatchObject({
+      kind: "result",
+      accepted: true,
+      acceptancePending: false
+    });
+    expect(test.persisted()).toMatchObject({
+      accepted: true,
+      acceptancePending: false
+    });
   });
 
   it("persists the acceptance claim before calling the server", async () => {
@@ -959,8 +989,10 @@ describe("lucky wheel controller", () => {
 
   it("keeps a persisted pending claim when a late PUT succeeds after cancel", async () => {
     const request = deferred<PutParticipationTodayResponse>();
+    const onAcceptanceUpdate = vi.fn();
     const test = setup({
-      acceptDecision: vi.fn(() => request.promise)
+      acceptDecision: vi.fn(() => request.promise),
+      onAcceptanceUpdate
     });
     await test.load();
     await test.controller.spin();
@@ -979,6 +1011,7 @@ describe("lucky wheel controller", () => {
       accepted: false,
       acceptancePending: true
     });
+    expect(onAcceptanceUpdate).not.toHaveBeenCalled();
     const reopened = setup({ session: test.persisted() });
     await reopened.load();
     expect(reopened.controller.getState()).toMatchObject({
@@ -992,9 +1025,11 @@ describe("lucky wheel controller", () => {
   it("does not render old scoped data after the group changes during PUT", async () => {
     let currentStorage = connectedStorage();
     const request = deferred<PutParticipationTodayResponse>();
+    const onAcceptanceUpdate = vi.fn();
     const test = setup({
       loadStorage: vi.fn(async () => currentStorage),
-      acceptDecision: vi.fn(() => request.promise)
+      acceptDecision: vi.fn(() => request.promise),
+      onAcceptanceUpdate
     });
     await test.load();
     await test.controller.spin();
@@ -1013,13 +1048,15 @@ describe("lucky wheel controller", () => {
       code: "wheel_context_stale",
       retryable: false
     });
+    expect(onAcceptanceUpdate).not.toHaveBeenCalled();
   });
 
   it("rejects a mismatched participation response without marking accepted", async () => {
     const acceptDecision = vi.fn().mockResolvedValue(participation("restaurant-1", {
       groupId: "group-2"
     }));
-    const test = setup({ acceptDecision });
+    const onAcceptanceUpdate = vi.fn();
+    const test = setup({ acceptDecision, onAcceptanceUpdate });
     await test.load();
     await test.controller.spin();
     test.controller.finishSpin();
@@ -1031,6 +1068,7 @@ describe("lucky wheel controller", () => {
       acceptancePending: true,
       acceptError: "暂时无法确认这次选择，请重试。"
     });
+    expect(onAcceptanceUpdate).not.toHaveBeenCalled();
   });
 
   it("requires recommendation equality even when the candidate has no recommendation", async () => {

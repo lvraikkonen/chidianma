@@ -8,7 +8,7 @@ import { join, relative } from "node:path";
 
 export const INTERNAL_EXTENSION_NAME = "中午吃点啥（内部测试）";
 export const DEV_EXTENSION_NAME = "中午吃点啥（开发版）";
-export const INTERNAL_EXTENSION_VERSION = "0.2.0";
+export const INTERNAL_EXTENSION_VERSION = "0.3.0";
 export const PRODUCTION_API_ORIGIN =
   "https://lunchserver-production.up.railway.app";
 export const MINIMAL_EXTENSION_PERMISSIONS = [

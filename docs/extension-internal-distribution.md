@@ -1,8 +1,8 @@
 # Internal Extension Distribution
 
-Status: Stage 7C controlled unpacked candidate
+Status: Stage 7D controlled colleague beta candidate
 
-Version: `0.2.0`
+Version: `0.3.0`
 
 Extension ID: `bbkeaogleldgfnkgebdhdbiohlmonbkk`
 
@@ -11,8 +11,8 @@ Production service: `https://lunchserver-production.up.railway.app`
 ## Boundary
 
 This is a controlled unpacked build for internal validation. It is not a Chrome
-Web Store release and has no automatic update mechanism. Stage 7C produces and
-validates a candidate; broad colleague distribution begins only in Stage 7D.
+Web Store release and has no automatic update mechanism. Stage 7D keeps the
+candidate limited to the explicitly approved colleague beta cohort.
 
 The Extension requests only `alarms`, `notifications` and `storage`, plus access
 to the exact production service above. It does not request browsing-history or
@@ -30,9 +30,9 @@ The command creates:
 
 ```text
 artifacts/extension/
-  chidianma-extension-0.2.0-internal.zip
-  chidianma-extension-0.2.0-internal.sha256
-  chidianma-extension-0.2.0-internal.release.json
+  chidianma-extension-0.3.0-internal.zip
+  chidianma-extension-0.3.0-internal.sha256
+  chidianma-extension-0.3.0-internal.release.json
 ```
 
 The ZIP root contains `manifest.json`. The release JSON follows
@@ -55,13 +55,14 @@ remain outside the repository and is not needed to load this unpacked package.
 6. Select **Load unpacked** and choose the extracted directory.
 7. Confirm:
    - name is `中午吃点啥（内部测试）`;
-   - version is `0.2.0`;
+   - version is `0.3.0`;
    - ID is `bbkeaogleldgfnkgebdhdbiohlmonbkk`;
    - service shown in settings is the production URL above.
 8. Pin the Extension if desired.
-9. If replacing a Stage 7B build, create an identity connection code on an
-   existing connected device and reconnect this `0.2.0` installation. The new
-   fixed ID does not promise automatic migration of old Extension storage.
+9. If replacing a build from before the fixed-key Stage 7C candidate, create an
+   identity connection code on an existing connected device and reconnect this
+   `0.3.0` installation. The fixed ID does not promise automatic migration from
+   an older Extension ID.
 
 Do not load directly from Downloads or another directory that may be moved or
 cleaned automatically.

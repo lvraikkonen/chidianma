@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "中午吃点啥",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "为小团队提供 2–3 个有理由的午饭选择和适度提醒。",
   "permissions": ["alarms", "notifications", "storage"],
   "action": {

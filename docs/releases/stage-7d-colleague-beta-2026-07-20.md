@@ -1,6 +1,6 @@
 # Stage 7D Controlled Colleague Beta Baseline
 
-Status: `Stage 7D.0 complete; feature work not yet deployed`
+Status: `Stage 7D.0 complete; Stage 7D.1 implementation not yet deployed`
 
 Date: 2026-07-20
 
@@ -59,10 +59,14 @@ the docs-only baseline commit is the current production image.
 Stage 7D.0 introduces no Prisma migration or Chrome storage change. The later Stage 7D.1
 implementation adds only the versioned wheel session key above; Prisma remains unchanged.
 
+The current Stage 7D.1 source candidate raises the Extension version to `0.3.0` while retaining
+the same public key, Extension ID, permissions and exact production host. It has not yet been
+packaged or distributed to the colleague cohort.
+
 ## Feature flags at baseline
 
-All Stage 7D flags are currently absent from runtime and effectively disabled. Implementation will
-add the following Server-authoritative, group-allowlisted variables with false/empty defaults:
+At the frozen baseline the Stage 7D flags were absent. The current implementation adds the
+following Server-authoritative, group-allowlisted variables with false/empty defaults:
 
 ```text
 LUCKY_RESTAURANT_WHEEL_ENABLED=false
@@ -121,6 +125,9 @@ The repository has no lint script and no CI workflow; neither is reported as pas
   dietary restrictions and opening hours are not existing hard constraints.
 - The Extension uses controlled unpacked distribution without automatic updates.
 - The cohort has not started and no Stage 7D feature has completed real Chrome or production QA.
+- In the rare case where two open Popups accept the same persisted wheel result concurrently, the
+  second Popup can keep an older in-memory participation summary until it is reopened; the Server
+  decision and persisted wheel session remain authoritative and prevent another draw.
 - Amap Key type, stable outbound IP restriction, quota and contract boundary must be verified before
   enabling the real provider.
 - Existing office coordinates have no coordinate-system metadata; each allowlisted group must have
@@ -144,7 +151,8 @@ Detailed procedure: [rollback runbook](../runbooks/rollback.md).
 
 ## Next step
 
-Continue Stage 7D.1 on `feat/lucky-restaurant-wheel` with the Popup wheel UI and accessibility
-slice. Group-scoped capabilities, pure selection, the Server candidate API and the Extension
-controller/client/session storage are implemented after the frozen baseline but remain disabled by
-default; do not start POI implementation or enable a colleague cohort in this slice.
+Continue Stage 7D.1 on `feat/lucky-restaurant-wheel` with full wheel verification, documentation
+and controlled rollout preparation. Group-scoped capabilities, selection, the Server candidate
+API, Extension controller/session storage, Popup UI and accessibility wiring are implemented after
+the frozen baseline but remain disabled by default; do not start POI implementation or enable a
+colleague cohort before the Stage 7D.1 exit checks pass.
