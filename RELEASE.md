@@ -1,6 +1,6 @@
 # Internal Release Record
 
-Status: `Stage 7D.0 baseline frozen; Stage 7D.1 candidate NO-GO; cohort not started`
+Status: `Stage 7D.1 controlled rollout active for one approved group; production gates pass; manual interaction/accessibility QA remains`
 
 Date: 2026-07-20
 
@@ -11,20 +11,23 @@ Date: 2026-07-20
 - Stage 7D pushed annotated baseline tag: `v0.2.0-internal`.
 - Stage 7D baseline peeled commit: `072ce70abda268f2cdf4fea1a349c16a976e70b5`.
 - Remote tag object: `de578a58f3057966e6af7153fd92ae4e94185faf`.
-- Current Stage 7C runtime source commit:
-  `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`.
+- Current Stage 7D.1 runtime source commit:
+  `0caee3d8e9a973d1131590e73954966b16719016`.
 - Extension `0.2.0` candidate ID: `bbkeaogleldgfnkgebdhdbiohlmonbkk`.
 - Extension `0.3.0` Stage 7D.1 source candidate retains that ID, exact production host and
   permissions. Its strict validation package was built from
-  `395ccb0fda52c1a625c490e1ad5a5ca7036bc798`; it is not deployed or distributed.
+  `395ccb0fda52c1a625c490e1ad5a5ca7036bc798`; the operator loaded the unpacked
+  candidate for QA, but it has not been distributed to the colleague cohort.
 - Extension `0.3.0` validation ZIP SHA-256:
   `ab671c5703a92b5ac6942bd3b40b5435a887b9e8a5f69271085cef27d6219702`.
 - Stage 7C rollback Extension ZIP SHA-256:
   `4a1db2cf62c998b6759f88dff1e775f91e7c6455dc037558effd8f2e4e9d948c`.
 - Railway project/service: `remarkable-reverence / @lunch/server`.
-- Current Railway deployment: `03d744f6-a5bd-486c-ba65-3541dbfe9096` (`SUCCESS`).
+- Current Railway deployment: `93ba021a-596e-402d-bc61-39ab25a39a8e` (`SUCCESS`).
 - Current Railway image digest:
-  `sha256:66a975d5fd720cf85c143f1b1303ec37224955b8950aee833bbdd56b543d939c`.
+  `sha256:464ba4087f9a910ddb8d04d307295a22b7f26a68308ecdbe27b786e70d9bcffe`.
+- Verified Stage 7D.1 flags-off deployment:
+  `ce7eb120-824a-4e75-8cd4-9486ba62a71b`.
 - Skipped docs-only deployment for `072ce70`:
   `029815eb-e635-45d9-8254-289fb760e6ff`.
 - Immediate pre-Stage 7D application rollback deployment:
@@ -40,11 +43,10 @@ Date: 2026-07-20
 - Production URL: `https://lunchserver-production.up.railway.app`.
 - Runtime: Node `22.23.1`, pnpm `9.15.0`.
 
-The current deployment reports revision `e9912c9cc72e237b0baa1aa922b3f49c5473f66a` from
+The current deployment reports revision `0caee3d8e9a973d1131590e73954966b16719016` from
 `/api/ready`. Use the source commit, deployment ID and image digest above as the runtime artifact
-identity. Main commit `072ce70abda268f2cdf4fea1a349c16a976e70b5` only changed documentation, so Railway
-correctly skipped its deployment. `v0.2.0-internal` freezes the approved Stage 7D planning baseline;
-it does not assert that the docs-only commit is the current production runtime.
+identity. `v0.2.0-internal` remains the immutable Stage 7D planning baseline and is not moved by
+this runtime rollout.
 
 ## Database and migrations
 
@@ -64,13 +66,16 @@ approval.
 ## Rollback
 
 1. Stop promotion or pause beta expansion.
-2. Select the previously known-good Railway application deployment.
-3. Restore the Server database reference to the retained `Postgres` service using Railway's
-   secret/variable controls; do not copy credentials into commands or documents.
-4. Wait for `/api/ready` to report HTTP 200 and the expected revision.
-5. Verify `/`, `/api/health`, protected API 401 behavior and unknown API 404 behavior.
-6. Run the read-only database verifier and record sanitized results.
-7. Rebuild/reload the matching unpacked Extension if the client version changed.
+2. Disable the wheel global flag or remove the affected group from the allowlist, redeploy, and
+   wait for the old instance to drain.
+3. If application rollback is still required, restore Railway deployment
+   `03d744f6-a5bd-486c-ba65-3541dbfe9096`.
+4. Keep using active database `Postgres-W12K`; Stage 7D.1 has no migration to reverse. Switching
+   to the retained `Postgres` service requires a separate database-incident decision.
+5. Wait for `/api/ready` to report HTTP 200 and the expected revision.
+6. Verify `/`, `/api/health`, protected API 401 behavior and unknown API 404 behavior.
+7. Run the read-only database verifier and record sanitized results.
+8. Rebuild/reload the matching unpacked Extension if the client version changed.
 
 Detailed procedure: [rollback runbook](docs/runbooks/rollback.md).
 
@@ -116,13 +121,17 @@ decision before expanding Stage 7D beyond the first cohort.
   QuickAdd lost-response/uncertain paths are accepted through deterministic source/state mapping and
   automated coverage rather than risky production fault injection. Stage 7C is approved as the
   input to Stage 7D. The Stage 7D detailed plan is now approved and its baseline is frozen; actual
-  colleague distribution still requires explicit group allowlisting and cohort approval.
-- **Stage 7D.1 rollout NO-GO:** group-scoped capabilities, wheel selection, Server
-  candidates, Extension session/controller and accessible Popup wiring are implemented and remain
-  default off. All three source-review findings are regression-tested; the full 846-test suite,
-  typecheck/build, Railway build, Extension dev/internal builds, compatibility checks and strict
-  clean-worktree `0.3.0` package pass. Rollout remains blocked by real Chrome/keyboard/screen-reader/
-  reduced-motion QA, flags-off deployment verification and explicit cohort approval.
+  broader colleague distribution still requires the remaining browser/accessibility QA and
+  explicit expansion approval.
+- **Stage 7D.1 controlled Server rollout active:** group-scoped capabilities, wheel selection,
+  Server candidates, Extension session/controller and accessible Popup wiring are implemented.
+  A traceable flags-off deployment passed health, readiness, revision and all six database checks;
+  an explicit operator-approved group was then added to the exact-match allowlist and the enabled
+  deployment passed the same Server gates. The production predicate returns true for the target
+  group and false for a non-target value. All three source-review findings remain regression-tested,
+  and the full 846-test suite, typecheck/build, Railway build, Extension builds, compatibility
+  checks and strict `0.3.0` package pass. Browser UI, keyboard, screen-reader and reduced-motion
+  checks remain pending, so expansion beyond this single group remains blocked.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)
@@ -143,13 +152,12 @@ Evidence: [Stage 6 production QA](docs/archive/stages/stage-6/2026-07-15-deploy-
 [Stage 7 review triage](qa/2026-07-15-production-baseline-review-triage.md),
 [Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md) and
 [Stage 7C QA](qa/2026-07-16-internal-beta-productization-stage7c.md). Current Stage 7D.1 evidence is
-the [wheel QA record](qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md). The completed
-production execution source remains the
-[Stage 7C detailed plan](plans/2026-07-16-internal-beta-productization-stage7c.md).
+the [wheel QA record](qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md), governed by the
+[Stage 7D detailed plan](plans/2026-07-20-controlled-colleague-beta-stage7d.md).
 
 ## Next step
 
-Complete real Chrome, keyboard, screen reader and reduced-motion QA around the flags-off Server
-deployment. Verify health, readiness, revision and the database before requesting a separately
-approved cohort group ID. Until then production remains on the Stage 7C runtime, the `0.3.0`
-package remains a validation artifact and all Stage 7D flags remain off.
+Reload the unpacked `0.3.0` Extension and complete target-group Popup, keyboard, screen-reader and
+reduced-motion QA. Verify that the target group receives the wheel capability, a non-allowlisted
+group remains closed, and normal recommendations still work. Do not expand the cohort until those
+manual checks pass; the Stage 7C deployment remains the application rollback point.

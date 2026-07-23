@@ -1,19 +1,19 @@
 # Operations
 
-Status: current as of 2026-07-20.
+Status: current as of 2026-07-22.
 
 ## Production inventory
 
 - Railway project/service: `remarkable-reverence / @lunch/server`.
 - Production URL: `https://lunchserver-production.up.railway.app`.
-- Current Railway deployment: `03d744f6-a5bd-486c-ba65-3541dbfe9096`.
+- Current Railway deployment: `93ba021a-596e-402d-bc61-39ab25a39a8e`.
 - Current Railway image digest:
-  `sha256:66a975d5fd720cf85c143f1b1303ec37224955b8950aee833bbdd56b543d939c`.
-- Stage 7C source commit: `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`.
-- `/api/ready` reports revision `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`. Use the source
+  `sha256:464ba4087f9a910ddb8d04d307295a22b7f26a68308ecdbe27b786e70d9bcffe`.
+- Stage 7D.1 source commit: `0caee3d8e9a973d1131590e73954966b16719016`.
+- `/api/ready` reports revision `0caee3d8e9a973d1131590e73954966b16719016`. Use the source
   commit, deployment ID and image digest as the artifact identity.
-- Main commit `072ce70abda268f2cdf4fea1a349c16a976e70b5` only changed documentation; Railway
-  deployment `029815eb-e635-45d9-8254-289fb760e6ff` was skipped by watch-path evaluation.
+- Verified flags-off deployment `ce7eb120-824a-4e75-8cd4-9486ba62a71b` was superseded and
+  removed after the enabled redeployment completed successfully.
 - Immediate pre-Stage 7D application rollback deployment: `03d744f6-a5bd-486c-ba65-3541dbfe9096`.
 - Deeper Stage 7B rollback deployment: `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`.
 - Pre-Stage 7B variable-change rollback deployment: `2d3db6db-e1ab-41c2-86c0-edd2138dcc1a`.
@@ -57,22 +57,31 @@ The lucky-wheel capability is enabled only when both conditions are true:
 - `LUCKY_RESTAURANT_WHEEL_ENABLED=true`;
 - `LUCKY_RESTAURANT_WHEEL_GROUP_IDS` contains the exact group ID in its comma-separated list.
 
-Missing values resolve to `false` and an empty list. Wildcards are not supported. Keep both values
-off/empty until the matching Server and Extension builds pass beta QA; future wheel business routes
-must enforce the same Server predicate and must not trust UI visibility. POI capabilities remain
+Missing values resolve to `false` and an empty list. Wildcards are not supported. Wheel business
+routes enforce the same Server predicate and do not trust UI visibility. POI capabilities remain
 disabled in this Stage 7D.1 slice. No database or Chrome storage migration is involved.
+
+As of 2026-07-22, the global wheel flag is enabled and the allowlist contains exactly one
+operator-approved colleague group. The actual group ID remains only in Railway variables and must
+not be copied into repository documents or routine logs. The Server-side exact-match predicate was
+verified true for the target group and false for a non-target value. Browser confirmation and
+accessibility QA remain pending; do not add another group until those checks pass.
 
 ## Database verification
 
 The verifier checks unfinished migrations, cross-group relationships, duplicate current batches,
 legacy batch/item count deltas and groups without an active Admin. It is read-only and emits named
 checks/counts without connection details. It ran against fresh/legacy rehearsal databases and the
-live database during Stage 6.
+live database during Stage 6. Both the Stage 7D.1 flags-off deployment and the enabled single-group
+redeployment passed all six checks with zero violations.
 
 ## Rollback and retained database
 
-The forward Stage 6 migration is not reversed in place. Rollback restores the previous application
-deployment and its previous database reference. See [rollback runbook](runbooks/rollback.md).
+Stage 7D.1 has no database migration. Roll back the feature first by disabling the global flag or
+removing the group allowlist entry and redeploying. If application rollback is still required,
+restore deployment `03d744f6-a5bd-486c-ba65-3541dbfe9096` while keeping active database
+`Postgres-W12K`; switching to the retained `Postgres` service requires a separate database-incident
+decision. See [rollback runbook](runbooks/rollback.md).
 
 The `Postgres` rollback service remains until Stage 7D completion plus 14 days, reviewed on
 2026-08-15. It has no automatic deletion. Deleting it requires separate approval after backup/

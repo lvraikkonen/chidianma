@@ -1,6 +1,6 @@
 # Stage 7D 手动 QA
 
-Status: `Wheel pending; POI not started`
+Status: `Wheel controlled rollout active for one approved group; manual interaction/accessibility QA pending; POI not started`
 
 Date: 2026-07-22
 
@@ -22,9 +22,10 @@ Date: 2026-07-22
   `395ccb0fda52c1a625c490e1ad5a5ca7036bc798`，SHA-256 为
   `ab671c5703a92b5ac6942bd3b40b5435a887b9e8a5f69271085cef27d6219702`，stable ID 为
   `bbkeaogleldgfnkgebdhdbiohlmonbkk`。
-- [ ] Server 先以 `LUCKY_RESTAURANT_WHEEL_ENABLED=false` 和空 group allowlist 部署。
-- [ ] `/api/health`、`/api/ready`、runtime revision 和只读数据库 verifier 通过。
-- [ ] 选择一个明确批准的测试 group ID；当前没有批准值。
+- [x] Server 先以 `LUCKY_RESTAURANT_WHEEL_ENABLED=false` 和不匹配任何真实 group 的
+  禁用 allowlist 部署；deployment 为 `ce7eb120-824a-4e75-8cd4-9486ba62a71b`。
+- [x] `/api/health`、`/api/ready`、runtime revision 和只读数据库 verifier 通过。
+- [x] 操作者明确批准一个测试 group；实际 ID 只保存在 Railway variables。
 - [ ] 准备 0、1、2、8 和超过 8 家 active 候选的可恢复测试数据，不删除生产数据。
 
 ## 安装与 feature gate
@@ -38,6 +39,7 @@ Date: 2026-07-22
 - [ ] flag 全关时打开 Popup：不显示「转一下」，且 DevTools Network 中没有 wheel
   candidate 请求。
 - [ ] 全局 flag 开、allowlist 空时仍关闭；非 allowlisted group 仍关闭。
+- [x] 生产 Server predicate 已验证目标 group 为开启、非目标值为关闭；未记录实际 ID。
 - [ ] 只加入批准的 group ID 后 capability 与 wheel route 开启；切换到其他 group
   立即恢复关闭语义。
 - [ ] 无效、过期或被移除 membership 无法通过直接 route 调用读取候选。
@@ -95,7 +97,7 @@ Date: 2026-07-22
 ## 受控 rollout 与回滚
 
 - [ ] 在同一 candidate commit 保存自动化、构建、包校验、Chrome 版本和手工 QA 证据。
-- [ ] 只在上述条目通过且获得明确批准后设置一个 cohort group ID；不记录实际 ID。
+- [x] 已按操作者明确批准设置一个 cohort group ID；仓库未记录实际 ID。
 - [ ] 验证 allowlisted group 可用、非 allowlisted group 不可用，并观察 Server 4xx/5xx、
   接受失败、重转和排除反馈。
 - [ ] 先验证从 allowlist 移除 group 或关闭全局 flag 能立即停止新请求。

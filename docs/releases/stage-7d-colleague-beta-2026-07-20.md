@@ -1,6 +1,6 @@
 # Stage 7D Controlled Colleague Beta Baseline
 
-Status: `Stage 7D.0 complete; Stage 7D.1 candidate NO-GO and not deployed`
+Status: `Stage 7D.0 complete; Stage 7D.1 controlled rollout active for one approved group; manual QA remains`
 
 Date: 2026-07-20
 
@@ -24,16 +24,18 @@ Date: 2026-07-20
 
 - Production URL: `https://lunchserver-production.up.railway.app`.
 - Current successful Railway deployment:
-  `03d744f6-a5bd-486c-ba65-3541dbfe9096`.
-- Runtime source commit: `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`.
+  `93ba021a-596e-402d-bc61-39ab25a39a8e`.
+- Runtime source commit: `0caee3d8e9a973d1131590e73954966b16719016`.
 - Image digest:
-  `sha256:66a975d5fd720cf85c143f1b1303ec37224955b8950aee833bbdd56b543d939c`.
+  `sha256:464ba4087f9a910ddb8d04d307295a22b7f26a68308ecdbe27b786e70d9bcffe`.
 - `/api/ready` reports the same runtime source commit and a ready database.
+- Verified flags-off deployment `ce7eb120-824a-4e75-8cd4-9486ba62a71b` was superseded and
+  removed after the enabled redeployment completed.
 - Railway deployment `029815eb-e635-45d9-8254-289fb760e6ff` for baseline main commit
   `072ce70` was `SKIPPED` because that commit only changed files outside the runtime watch paths.
 
-The baseline tag therefore records the reviewed source/planning boundary; it does not claim that
-the docs-only baseline commit is the current production image.
+The baseline tag records the reviewed source/planning boundary and remains immutable; the current
+production image is the later Stage 7D.1 source commit above.
 
 ## Database and storage versions
 
@@ -65,7 +67,7 @@ Prisma remains unchanged.
 The current Stage 7D.1 source candidate raises the Extension version to `0.3.0` while retaining
 the same public key, Extension ID, permissions and exact production host. A strict validation
 package was built from `395ccb0fda52c1a625c490e1ad5a5ca7036bc798`; it has not been distributed
-to the colleague cohort.
+to the colleague cohort. The operator has loaded the unpacked candidate for manual QA.
 
 ## Feature flags at baseline
 
@@ -86,10 +88,10 @@ POI_OFFICE_COORDINATE_SYSTEMS=
 AMAP_WEB_SERVICE_KEY=<server secret, not set in source>
 ```
 
-No beta group has been enabled by Stage 7D.0.
-
-A sanitized production-variable inspection on 2026-07-22 found the Stage 7D values unset/empty,
-so wheel and POI behavior remain off. No cohort group ID has been approved.
+Stage 7D.0 enabled no beta group. On 2026-07-22 the operator explicitly approved one colleague
+group for the Stage 7D.1 wheel cohort. Production now has the wheel global flag enabled and exactly
+one allowlisted group; the actual ID is intentionally omitted and retained only in Railway
+variables. POI flags remain off.
 
 ## Baseline verification
 
@@ -135,16 +137,18 @@ The following focused checks passed on 2026-07-22 with Node `22.23.1`:
   `395ccb0fda52c1a625c490e1ad5a5ca7036bc798`, ZIP SHA-256
   `ab671c5703a92b5ac6942bd3b40b5435a887b9e8a5f69271085cef27d6219702`.
 
-Source, automation and package gates are complete, but this is not the Stage 7D.1 rollout exit
-gate. Real Chrome/keyboard/screen reader/reduced-motion QA, flags-off deployment, ready/verifier
-checks and cohort enablement remain pending. Chrome automation could not enter
-`chrome://extensions`, so unpacked installation requires operator assistance.
+Source, automation and package gates are complete. A GitHub-sourced flags-off deployment then
+passed health, ready revision and the read-only database verifier. After explicit approval, the
+single target group was allowlisted and the enabled redeployment passed the same gates; the
+Server-side predicate returned true for the target and false for a non-target value. Real Chrome
+target-group behavior, keyboard, screen reader and reduced-motion QA remain pending.
 
 Code review found three issues; all are fixed with regression tests. Normal recommendation ordering
 is isolated from wheel tie-breaking, pending acceptance retries the same selected result across
 same-day batch changes, and an additive authorization revision rejects stale responses after
 reset/reconnect. Final Standards and Spec reviews found no P0/P1 source blocker. The candidate
-remains rollout **NO-GO** until manual and deployment gates pass. Detailed evidence:
+is deployed for the single approved group, but cohort expansion remains blocked until manual gates
+pass. Detailed evidence:
 [Stage 7D.1 wheel QA](../../qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md).
 
 ## Approved Stage 7D scope
@@ -162,13 +166,14 @@ remains rollout **NO-GO** until manual and deployment gates pass. Detailed evide
 
 ## Known issues and risks
 
-- Production source commit differs from baseline main commit because the latter is docs-only.
+- The immutable Stage 7D baseline tag predates the deployed Stage 7D.1 source by design.
 - The current recommendation hard filter only knows active/paused/blocked status; distance, price,
   dietary restrictions and opening hours are not existing hard constraints.
 - The Extension uses controlled unpacked distribution without automatic updates.
-- The cohort has not started and no Stage 7D feature has completed real Chrome or production QA.
-- The Stage 7D.1 source candidate has no open P0/P1 source-review blocker; real Chrome, assistive
-  technology and production gates remain incomplete.
+- The Server cohort is enabled for one approved group, but the target-group Popup and assistive
+  technology checks have not yet completed.
+- The Stage 7D.1 source candidate has no open P0/P1 source-review blocker; real Chrome and
+  assistive-technology gates remain incomplete.
 - In the rare case where two open Popups accept the same persisted wheel result concurrently, the
   second Popup can keep an older in-memory participation summary until it is reopened; the Server
   decision and persisted wheel session remain authoritative and prevent another draw.
@@ -188,14 +193,15 @@ Stage 7D.0 changes no runtime or database behavior. For later Stage 7D slices:
 3. If application rollback is required, restore Railway deployment
    `03d744f6-a5bd-486c-ba65-3541dbfe9096`.
 4. Reload the matching Extension `0.2.0` unpacked build if the client changed.
-5. Run the read-only database verifier; do not reverse migrations or delete data without a separate
-   approved procedure.
+5. Keep using active database `Postgres-W12K`; Stage 7D.1 has no migration to reverse.
+6. Run the read-only database verifier; do not switch databases or delete data without a separate
+   approved incident procedure.
 
 Detailed procedure: [rollback runbook](../runbooks/rollback.md).
 
 ## Next step
 
-Continue Stage 7D.1 on `feat/lucky-restaurant-wheel`: complete real Chrome and accessibility QA
-around a flags-off Server deployment, then collect health/ready/verifier evidence. Cohort
-allowlisting still requires a separately approved group ID. Do not start POI implementation or
-enable a colleague cohort while rollout remains NO-GO.
+Complete real Chrome target-group and accessibility QA with the unpacked `0.3.0` Extension.
+Confirm the wheel entry/candidates for the approved group, closed behavior for a non-allowlisted
+group and unchanged normal recommendations. Do not expand the cohort until those checks pass, and
+do not mix this rollout with Stage 7D.2 POI implementation.
