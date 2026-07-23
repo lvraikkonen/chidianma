@@ -144,7 +144,9 @@ on `feat/lucky-restaurant-wheel` first. Keep Stage 7D.2 on the later independent
 - Fastify on Railway must listen with `host: "::"` and `port: Number(process.env.PORT ?? 3000)`.
 - Database is PostgreSQL through Prisma.
 - Database migrations must include tests or verification steps.
-- Recommendation API date boundaries use `OFFICE_TIMEZONE`, not server or user machine timezone.
+- Recommendation API date boundaries use persisted `group.officeTimezone`. Initial/default group
+  configuration may come from `OFFICE_TIMEZONE`; never derive boundaries from the server or user
+  machine timezone.
 - Group-scoped `GET /api/groups/:groupId/today-recommendations` reads the current batch and does not create one.
 - Group-scoped `POST /api/groups/:groupId/today-recommendations/refresh` creates a new current batch and keeps old batches for review.
 - Recommendation batch creation must use a transaction to avoid duplicate current batches around the lunch reminder time.

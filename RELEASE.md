@@ -1,6 +1,6 @@
 # Internal Release Record
 
-Status: `Stage 7D.0 baseline frozen; Stage 7D.1 ready, cohort not started`
+Status: `Stage 7D.0 baseline frozen; Stage 7D.1 candidate NO-GO; cohort not started`
 
 Date: 2026-07-20
 
@@ -14,7 +14,12 @@ Date: 2026-07-20
 - Current Stage 7C runtime source commit:
   `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`.
 - Extension `0.2.0` candidate ID: `bbkeaogleldgfnkgebdhdbiohlmonbkk`.
-- Extension ZIP SHA-256:
+- Extension `0.3.0` Stage 7D.1 source candidate retains that ID, exact production host and
+  permissions. Its strict validation package was built from
+  `395ccb0fda52c1a625c490e1ad5a5ca7036bc798`; it is not deployed or distributed.
+- Extension `0.3.0` validation ZIP SHA-256:
+  `ab671c5703a92b5ac6942bd3b40b5435a887b9e8a5f69271085cef27d6219702`.
+- Stage 7C rollback Extension ZIP SHA-256:
   `4a1db2cf62c998b6759f88dff1e775f91e7c6455dc037558effd8f2e4e9d948c`.
 - Railway project/service: `remarkable-reverence / @lunch/server`.
 - Current Railway deployment: `03d744f6-a5bd-486c-ba65-3541dbfe9096` (`SUCCESS`).
@@ -112,6 +117,12 @@ decision before expanding Stage 7D beyond the first cohort.
   automated coverage rather than risky production fault injection. Stage 7C is approved as the
   input to Stage 7D. The Stage 7D detailed plan is now approved and its baseline is frozen; actual
   colleague distribution still requires explicit group allowlisting and cohort approval.
+- **Stage 7D.1 rollout NO-GO:** group-scoped capabilities, wheel selection, Server
+  candidates, Extension session/controller and accessible Popup wiring are implemented and remain
+  default off. All three source-review findings are regression-tested; the full 846-test suite,
+  typecheck/build, Railway build, Extension dev/internal builds, compatibility checks and strict
+  clean-worktree `0.3.0` package pass. Rollout remains blocked by real Chrome/keyboard/screen-reader/
+  reduced-motion QA, flags-off deployment verification and explicit cohort approval.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)
@@ -131,5 +142,14 @@ decision before expanding Stage 7D beyond the first cohort.
 Evidence: [Stage 6 production QA](docs/archive/stages/stage-6/2026-07-15-deploy-hardening-stage6-qa.md),
 [Stage 7 review triage](qa/2026-07-15-production-baseline-review-triage.md),
 [Stage 7B QA](qa/2026-07-15-internal-beta-productization-stage7b.md) and
-[Stage 7C QA](qa/2026-07-16-internal-beta-productization-stage7c.md). The completed execution source
-is the [Stage 7C detailed plan](plans/2026-07-16-internal-beta-productization-stage7c.md).
+[Stage 7C QA](qa/2026-07-16-internal-beta-productization-stage7c.md). Current Stage 7D.1 evidence is
+the [wheel QA record](qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md). The completed
+production execution source remains the
+[Stage 7C detailed plan](plans/2026-07-16-internal-beta-productization-stage7c.md).
+
+## Next step
+
+Complete real Chrome, keyboard, screen reader and reduced-motion QA around the flags-off Server
+deployment. Verify health, readiness, revision and the database before requesting a separately
+approved cohort group ID. Until then production remains on the Stage 7C runtime, the `0.3.0`
+package remains a validation artifact and all Stage 7D flags remain off.

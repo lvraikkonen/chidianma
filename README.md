@@ -6,17 +6,18 @@
 ## 当前状态
 
 - 阶段：Stage 7 Internal Beta Productization；7A、7B、7C 已完成，7D.0 基线冻结已完成，
-  7D.1 正在实施。
+  7D.1 source candidate 正在退出验证，尚未部署或开放同事 cohort。
 - Admin 与 API 已部署在
   [Railway production](https://lunchserver-production.up.railway.app)，同源提供页面和 API。
 - Stage 6 审计基线：`v0.1.0-internal` →
   `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`。
 - Stage 7D 基线：已推送的 `v0.2.0-internal` →
   `072ce70abda268f2cdf4fea1a349c16a976e70b5`。
-- Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build；`0.2.0` 内部候选已通过
-  自动化、Railway 与真实 Chrome 退出门，带稳定 ID、固定生产服务、校验值和升级/回滚
-  说明。Stage 7D 详细计划已批准，实际同事 cohort 尚未启动；新功能实现后将按
-  group 白名单默认关闭并逐步验证。
+- Chrome 扩展目前仍使用 Developer Mode 加载 unpacked build；已验证的 Stage 7C
+  `0.2.0` 是回滚候选，当前默认 source build 已提升到 `0.3.0`。`0.3.0` 保留稳定 ID、
+  固定生产服务和最小权限，源码、全仓自动化与严格打包门禁已通过；真实 Chrome、
+  辅助技术与部署门禁尚未完成。Stage 7D 实际同事 cohort 尚未启动；新功能按 group
+  白名单默认关闭并逐步验证。
 - 当前是轻量身份：显示名不是可验证账号。已有有效设备可生成 10 分钟单次身份连接码
   连接另一端；所有 Token 都丢失后仍需创建新身份并重新加入。
 
@@ -49,10 +50,10 @@ pnpm --filter @lunch/extension build
 ```
 
 在 `chrome://extensions` 开启 Developer mode，选择 **Load unpacked** 并加载
-`apps/extension/dist`。默认 build 是 `0.2.0` 内部测试 profile，固定生产 Railway
-服务、准确 host permission 和稳定 Extension ID；进入设置后创建身份/连接已有身份并
-加入小组。开发版使用 `pnpm --filter @lunch/extension build:dev`，可连接 localhost。
-完整安装、升级和回滚见
+`apps/extension/dist`。默认 build 是 `0.3.0` 内部 source candidate profile，固定生产
+Railway 服务、准确 host permission 和稳定 Extension ID；它在 Stage 7D.1 退出门通过前
+不得分发给同事 cohort。进入设置后创建身份/连接已有身份并加入小组。开发版使用
+`pnpm --filter @lunch/extension build:dev`，可连接 localhost。完整安装、升级和回滚见
 [内部 Extension 分发说明](docs/extension-internal-distribution.md)。
 
 ## 本地开发
@@ -154,11 +155,12 @@ Railway 使用 `railway.json`：
 - Stage 7C 已完成生产候选 rollout；线上制品、变量和回滚点以 `RELEASE.md` 为准。
 - Chrome 扩展采用受控 unpacked 分发，没有自动升级机制。
 - Stage 7C 候选 ZIP、Railway smoke、真实 Chrome 视觉与安装/升级 QA 已完成。
-- Stage 7D.0 基线已冻结；大转盘进入独立分支实施，同事 cohort 尚未启动。
+- Stage 7D.0 基线已冻结；大转盘 source review、全仓自动化和严格打包已通过，真实
+  Chrome、辅助技术与部署退出门仍阻塞 rollout，同事 cohort 尚未启动。
 - 生产保留明确命名的 Stage 6 Demo/QA fixture 和旧 rollback database；都禁止无审批删除。
 
 ## Roadmap
 
-Stage 1–6 与 7A–7C 已完成，7D.0 基线已冻结，7D.1 正按独立分支推进；尚未启动
-同事内测。详见
+Stage 1–6 与 7A–7C 已完成，7D.0 基线已冻结，7D.1 正按独立分支进行退出验证；尚未
+启动同事内测。详见
 [roadmap.md](roadmap.md)。

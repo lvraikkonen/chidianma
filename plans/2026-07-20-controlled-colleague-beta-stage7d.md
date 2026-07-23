@@ -98,6 +98,12 @@ service 和 group-scoped gated route 已实现；refresh 仍显式 `limit=3`，w
   context marker；
 - group/API origin/identity/membership 变化时清理；batch/算法变化以 CAS 切换 marker，
   同日 pending acceptance 保留并阻止覆盖；
+- 为 `lunchState` 增加 migrate-on-read 的单调 `authorizationRevision`；新身份连接、
+  reset、disconnect 或 API replacement 递增，普通 token 续期保持不变。wheel session
+  绑定该授权世代，确保 reset/reconnect 前的迟到请求 fail-stale；
+- 最后结果只额外持久化被选中的单个 normalized candidate 展示快照；原始 ticket map
+  继续是概率真相，不保存完整候选响应。这样 pending acceptance 在 batch/候选变化后
+  仍能恢复同一结果并重试，而不会重新开放抽签或排除；
 - 第一次抽签后锁定模式，最多两次抽签；
 - 排除只影响本轮，不调用 feedback 或餐厅写 API；
 - 「就这家」复用 participation PUT。
@@ -110,12 +116,13 @@ service 和 group-scoped gated route 已实现；refresh 仍显式 `limit=3`，w
 controller 已实现 `loading / ready / spinning / result / insufficient / error`、默认
 weighted、首次抽签后锁定模式、最多两抽、会话内排除和 participation 接受。独立
 `luckyWheelSession.v1` 使用与 `lunchState` 相同的 Web Lock 和 compare-and-swap，保存
-零抽批次标记、最后抽签的最小票数映射和原始 selected recommendation，以确保多 Popup
-和重开时结果一致。接受采用 `acceptancePending -> participation PUT -> accepted` 两阶段
-CAS，pending/accepted 不会因候选变化恢复重转；续期和清理按原上下文快照在锁内复验，
-reset/reconnect 后的迟到请求 fail-stale。同组正常 token 续期保留 wheel session。现有
-`lunchState`、Manifest、background、reminder runtime 和 Prisma schema 均未改变；Popup
-DOM 接线留在第 5 小节。
+零抽批次标记、最后抽签的最小票数映射、原始 selected recommendation 和单个 selected
+candidate 展示快照，以确保多 Popup、重开及 pending 跨 batch 变化时结果一致。接受采用
+`acceptancePending -> participation PUT -> accepted` 两阶段 CAS，pending/accepted 不会
+因候选变化恢复重转；`lunchState` 新增 migrate-on-read 的 `authorizationRevision`，
+续期和清理按原上下文授权世代在锁内复验，reset/reconnect 后的迟到请求 fail-stale，
+同组正常 token 续期保留 wheel session。Manifest、background、reminder runtime 和
+Prisma schema 均未改变；Popup DOM 接线留在第 5 小节。
 
 ### 5. Popup UI 和可访问性
 
@@ -179,6 +186,15 @@ Server 先以 flag 全关部署并通过 health/ready/verifier，再只为明确
 `docs/manual-qa/stage-7d.md` 的 wheel QA 部分。
 
 文档提交：`docs: document lucky restaurant wheel and beta qa`。
+
+进行状态（2026-07-22）：三项 source review 问题均已修复并有回归测试；full root
+test/typecheck/build 共通过 846 tests，Railway、Extension dev/internal `0.3.0`、
+docs/artifact/secret/release checks 均通过。严格 clean-worktree 包已从
+`395ccb0fda52c1a625c490e1ad5a5ca7036bc798` 生成并验证，SHA-256 为
+`ab671c5703a92b5ac6942bd3b40b5435a887b9e8a5f69271085cef27d6219702`。
+源码与包门禁已完成；真实 Chrome/keyboard/screen reader/reduced-motion QA、flags 全关
+部署、ready/verifier 和 cohort allowlist 仍未完成，因此 rollout 仍为 **NO-GO**。
+生产 Stage 7D 变量仍为空/未设置，没有批准的 cohort group ID。
 
 ## Stage 7D.2 — POI reference search spike
 
@@ -253,7 +269,8 @@ Server 先以 flag 全关部署并通过 health/ready/verifier，再只为明确
 
 - Prisma：无 migration；
 - Admin storage：继续 `lunchAdminSessionState.v2`；
-- Extension：现有 `lunchState` 保持兼容；仅增加 versioned wheel session key；
+- Extension：现有 `lunchState` 保持兼容并新增 migrate-on-read 的
+  `authorizationRevision`；另增加 versioned wheel session key；
 - Manifest：权限种类和 host permission 不变；
 - 新 public interfaces：group capabilities、wheel candidates、POI geocode/search 和 shared
   normalized provider types；

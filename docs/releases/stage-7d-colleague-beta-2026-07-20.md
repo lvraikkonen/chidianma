@@ -1,6 +1,6 @@
 # Stage 7D Controlled Colleague Beta Baseline
 
-Status: `Stage 7D.0 complete; Stage 7D.1 implementation not yet deployed`
+Status: `Stage 7D.0 complete; Stage 7D.1 candidate NO-GO and not deployed`
 
 Date: 2026-07-20
 
@@ -44,24 +44,28 @@ the docs-only baseline commit is the current production image.
 - Production read-only database verifier: all six checks returned zero violations.
 - Active database service: `Postgres-W12K`.
 - Retained rollback database: `Postgres`; deletion remains separately approved and destructive.
-- Extension version: `0.2.0`.
+- Deployed/verified rollback Extension version: `0.2.0`.
 - Extension ID: `bbkeaogleldgfnkgebdhdbiohlmonbkk`.
 - Extension `lunchState`: additive, migrate-on-read and not assigned a global schema version.
 - Stage 7D.1 wheel session key: `luckyWheelSession.v1`; it is independent from `lunchState`,
   contains no bearer token or raw candidate response, and stores a zero-spin batch marker plus the
-  minimal last-result ticket/recommendation binding. Active group, membership, identity and API
-  origin mutations clear it; batch changes replace it with a CAS-protected marker, except that a
-  same-day pending acceptance remains terminal until reconciled instead of silently reopening a
-  reroll.
+  minimal last-result ticket/recommendation binding and one selected-candidate display snapshot.
+  `lunchState` adds only an additive, migrate-on-read `authorizationRevision`. Active group,
+  membership, identity and API origin mutations clear the wheel key and authorization replacements
+  advance that revision; batch changes replace non-terminal state with a CAS-protected marker,
+  except that a same-day pending/accepted result remains terminal until reconciled instead of
+  silently reopening a reroll.
 - Admin localStorage key: `lunchAdminSessionState.v2`.
 - Build metadata schema: `1.0`.
 
 Stage 7D.0 introduces no Prisma migration or Chrome storage change. The later Stage 7D.1
-implementation adds only the versioned wheel session key above; Prisma remains unchanged.
+implementation adds the versioned wheel session key and additive authorization revision above;
+Prisma remains unchanged.
 
 The current Stage 7D.1 source candidate raises the Extension version to `0.3.0` while retaining
-the same public key, Extension ID, permissions and exact production host. It has not yet been
-packaged or distributed to the colleague cohort.
+the same public key, Extension ID, permissions and exact production host. A strict validation
+package was built from `395ccb0fda52c1a625c490e1ad5a5ca7036bc798`; it has not been distributed
+to the colleague cohort.
 
 ## Feature flags at baseline
 
@@ -84,6 +88,9 @@ AMAP_WEB_SERVICE_KEY=<server secret, not set in source>
 
 No beta group has been enabled by Stage 7D.0.
 
+A sanitized production-variable inspection on 2026-07-22 found the Stage 7D values unset/empty,
+so wheel and POI behavior remain off. No cohort group ID has been approved.
+
 ## Baseline verification
 
 Executed with Node `22.23.1`:
@@ -105,6 +112,41 @@ values.
 
 The repository has no lint script and no CI workflow; neither is reported as passed.
 
+## Stage 7D.1 candidate verification
+
+The following focused checks passed on 2026-07-22 with Node `22.23.1`:
+
+- Shared tests: 58 passed.
+- Server tests: 306 passed after the normal-recommendation tie-order regression fix.
+- Server typecheck: passed.
+- Admin tests: 85 passed.
+- Extension tests: 397 passed.
+- Full root `pnpm test`: 846 passed; root `pnpm typecheck` and `pnpm build` passed.
+- `pnpm build:railway`: passed.
+- Extension dev and internal source builds: passed at `0.3.0`.
+- `pnpm check:docs`: passed with 66 Markdown files and 165 local links after adding Stage 7D.1
+  feature/manual-QA/QA documents.
+- Artifact checks: passed with 4 Admin files, 23 Extension files, 3 permissions, no legacy
+  residue and valid Railway configuration.
+- Secret check: passed with 88 files scanned and zero supplied secret values.
+- `STAGE7C_REQUIRE_ARTIFACTS=0 pnpm check:stage7c-release`: passed with stable Extension ID,
+  exact production host and 23 Extension files.
+- Strict clean-worktree `0.3.0` package and artifact-required release check: passed for source
+  `395ccb0fda52c1a625c490e1ad5a5ca7036bc798`, ZIP SHA-256
+  `ab671c5703a92b5ac6942bd3b40b5435a887b9e8a5f69271085cef27d6219702`.
+
+Source, automation and package gates are complete, but this is not the Stage 7D.1 rollout exit
+gate. Real Chrome/keyboard/screen reader/reduced-motion QA, flags-off deployment, ready/verifier
+checks and cohort enablement remain pending. Chrome automation could not enter
+`chrome://extensions`, so unpacked installation requires operator assistance.
+
+Code review found three issues; all are fixed with regression tests. Normal recommendation ordering
+is isolated from wheel tie-breaking, pending acceptance retries the same selected result across
+same-day batch changes, and an additive authorization revision rejects stale responses after
+reset/reconnect. Final Standards and Spec reviews found no P0/P1 source blocker. The candidate
+remains rollout **NO-GO** until manual and deployment gates pass. Detailed evidence:
+[Stage 7D.1 wheel QA](../../qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md).
+
 ## Approved Stage 7D scope
 
 - Stage 7D.1: lucky restaurant wheel, default off and group allowlisted.
@@ -125,6 +167,8 @@ The repository has no lint script and no CI workflow; neither is reported as pas
   dietary restrictions and opening hours are not existing hard constraints.
 - The Extension uses controlled unpacked distribution without automatic updates.
 - The cohort has not started and no Stage 7D feature has completed real Chrome or production QA.
+- The Stage 7D.1 source candidate has no open P0/P1 source-review blocker; real Chrome, assistive
+  technology and production gates remain incomplete.
 - In the rare case where two open Popups accept the same persisted wheel result concurrently, the
   second Popup can keep an older in-memory participation summary until it is reopened; the Server
   decision and persisted wheel session remain authoritative and prevent another draw.
@@ -151,8 +195,7 @@ Detailed procedure: [rollback runbook](../runbooks/rollback.md).
 
 ## Next step
 
-Continue Stage 7D.1 on `feat/lucky-restaurant-wheel` with full wheel verification, documentation
-and controlled rollout preparation. Group-scoped capabilities, selection, the Server candidate
-API, Extension controller/session storage, Popup UI and accessibility wiring are implemented after
-the frozen baseline but remain disabled by default; do not start POI implementation or enable a
-colleague cohort before the Stage 7D.1 exit checks pass.
+Continue Stage 7D.1 on `feat/lucky-restaurant-wheel`: complete real Chrome and accessibility QA
+around a flags-off Server deployment, then collect health/ready/verifier evidence. Cohort
+allowlisting still requires a separately approved group ID. Do not start POI implementation or
+enable a colleague cohort while rollout remains NO-GO.

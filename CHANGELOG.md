@@ -2,6 +2,33 @@
 
 All notable user-facing changes to the internal product are recorded here.
 
+## Stage 7D.1 candidate — 2026-07-22
+
+Status: `Unreleased; default off; NO-GO`
+
+### Lucky restaurant wheel
+
+- Added a Server-authoritative, group-session and exact-allowlist capability gate that fails closed.
+- Added an equal or lightly weighted 1–3 ticket draw over at most 8 current recommendation
+  candidates; the shared business layer decides the result before animation.
+- Added a Popup recommendation/wheel switch, one reroll, per-session exclusion and explicit
+  participation acceptance while preserving the existing recommendation, cache and QuickAdd flows.
+- Added `luckyWheelSession.v1` for group/date/batch-scoped recovery without bearer tokens or full
+  candidate payloads.
+- Added proportional numbered sectors, structured ticket/probability details, keyboard semantics,
+  live result announcement and a reduced-motion path.
+- Raised the Extension source candidate to `0.3.0` without changing its stable ID, Manifest
+  permissions or exact production host.
+
+### Release boundary
+
+- No Prisma migration, event table, production deployment or colleague cohort enablement.
+- All three source-review findings are regression-tested; the full 846-test workspace suite,
+  typecheck/build, Railway build and strict clean-worktree `0.3.0` package gate pass.
+- Real Chrome/keyboard/screen-reader/reduced-motion QA, flags-off deployment verification and
+  explicit cohort approval remain open. The candidate must stay disabled until the
+  [Stage 7D.1 QA record](qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md) reaches GO.
+
 ## Stage 7B — 2026-07-16
 
 ### Identity and safety
