@@ -131,6 +131,10 @@ a new draw. This passes the UI-observed candidate-load, initial-spin and selecte
 checks. It does not pass candidate-count boundaries, reroll exhaustion, exclusion, acceptance,
 non-target group behavior or assistive-technology checks.
 
+The operator used the single allowed reroll, observed a normal second result and then confirmed
+that no further reroll was available and the UI presented the exhausted state. This passes the
+one-reroll limit without implying that mode locking, exclusion or acceptance has been tested.
+
 ## Exit checks not completed
 
 - [x] All three source findings are reviewed and their regression tests pass.
@@ -144,6 +148,7 @@ non-target group behavior or assistive-technology checks.
 - [x] Target-group Popup displays the wheel entry in real Chrome.
 - [x] Target-group wheel renders normal candidates and completes an initial spin.
 - [x] Re-entering through the wheel entry restores the previous selected result without a new draw.
+- [x] Exactly one reroll produces a second result and then exposes the exhausted state.
 - [ ] Non-allowlisted real group closed behavior in real Chrome, if a second active group is
   available without creating production test data.
 

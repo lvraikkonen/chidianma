@@ -142,8 +142,9 @@ passed health, ready revision and the read-only database verifier. After explici
 single target group was allowlisted and the enabled redeployment passed the same gates; the
 Server-side predicate returned true for the target and false for a non-target value. The operator
 then confirmed that the target-group Popup shows the wheel entry, renders normal candidates,
-completes one spin and restores the selected result when re-entered. Reroll, exclusion, acceptance,
-non-target UI behavior, keyboard, screen reader and reduced-motion QA remain pending.
+completes one spin and restores the selected result when re-entered. One reroll produces a normal
+second result and then reaches the exhausted state. Mode locking, exclusion, acceptance, non-target
+UI behavior, keyboard, screen reader and reduced-motion QA remain pending.
 
 Code review found three issues; all are fixed with regression tests. Normal recommendation ordering
 is isolated from wheel tie-breaking, pending acceptance retries the same selected result across
@@ -173,8 +174,8 @@ pass. Detailed evidence:
   dietary restrictions and opening hours are not existing hard constraints.
 - The Extension uses controlled unpacked distribution without automatic updates.
 - The Server cohort is enabled for one approved group; its Popup entry, candidate rendering, initial
-  spin and selected-result restoration are verified, but the remaining wheel interactions and
-  assistive-technology checks have not yet completed.
+  spin, selected-result restoration and one-reroll limit are verified, but the remaining wheel
+  interactions and assistive-technology checks have not yet completed.
 - The Stage 7D.1 source candidate has no open P0/P1 source-review blocker; real Chrome and
   assistive-technology gates remain incomplete.
 - In the rare case where two open Popups accept the same persisted wheel result concurrently, the
@@ -204,7 +205,7 @@ Detailed procedure: [rollback runbook](../runbooks/rollback.md).
 
 ## Next step
 
-Complete reroll/exhaustion, exclusion, acceptance and accessibility QA with the unpacked `0.3.0`
+Complete mode-locking, exclusion, acceptance and accessibility QA with the unpacked `0.3.0`
 Extension. Confirm closed behavior for a non-allowlisted group and unchanged normal
 recommendations. Do not expand the cohort until those checks pass, and do not mix this rollout with
 Stage 7D.2 POI implementation.

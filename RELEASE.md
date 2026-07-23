@@ -132,7 +132,8 @@ decision before expanding Stage 7D beyond the first cohort.
   and the full 846-test suite, typecheck/build, Railway build, Extension builds, compatibility
   checks and strict `0.3.0` package pass. The operator has now confirmed that the target-group Popup
   shows the wheel entry, renders normal candidates, completes one spin and restores that selected
-  result when re-entered. Reroll/exclusion/acceptance, non-target UI behavior, keyboard,
+  result when re-entered. The single reroll produces a second result and then reaches an explicit
+  exhausted state. Mode locking, exclusion/acceptance, non-target UI behavior, keyboard,
   screen-reader and reduced-motion checks remain pending, so expansion beyond this single group
   remains blocked.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
@@ -160,7 +161,7 @@ the [wheel QA record](qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md),
 
 ## Next step
 
-Verify the single allowed reroll and exhausted state, then exclusion, acceptance, keyboard,
-screen-reader and reduced-motion behavior. Also confirm that a non-allowlisted group remains closed
-and normal recommendations still work. Do not expand the cohort until those manual checks pass;
-the Stage 7C deployment remains the application rollback point.
+Verify mode locking, exclusion, acceptance, keyboard, screen-reader and reduced-motion behavior.
+Also confirm that a non-allowlisted group remains closed and normal recommendations still work.
+Do not expand the cohort until those manual checks pass; the Stage 7C deployment remains the
+application rollback point.
