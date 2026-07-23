@@ -137,6 +137,12 @@ were no longer shown on that exhausted result page. This passes the one-reroll l
 presentation without implying that the mode became locked immediately after the first spin or that
 exclusion or acceptance has been tested.
 
+The operator then excluded the selected restaurant. The current-round candidate disappeared,
+remaining probabilities were recalculated and the exhausted spin count did not reopen. The
+controller path stores only the local wheel session, and a post-action production read confirmed
+that the approved group still had three active restaurants. This passes session-only exclusion and
+no-permanent-delete behavior without implying that acceptance has been tested.
+
 ## Exit checks not completed
 
 - [x] All three source findings are reviewed and their regression tests pass.
@@ -151,6 +157,8 @@ exclusion or acceptance has been tested.
 - [x] Target-group wheel renders normal candidates and completes an initial spin.
 - [x] Re-entering through the wheel entry restores the previous selected result without a new draw.
 - [x] Exactly one reroll produces a second result and then exposes the exhausted state.
+- [x] Exclusion removes only the current-round candidate, recalculates the remaining pool and does
+  not restore a spent spin or permanently delete a restaurant.
 - [ ] Non-allowlisted real group closed behavior in real Chrome, if a second active group is
   available without creating production test data.
 
