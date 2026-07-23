@@ -32,6 +32,7 @@ function session(overrides: Partial<LuckyWheelSessionV1> = {}): LuckyWheelSessio
     apiBaseUrl: "https://lunch.example",
     groupId: "group-1",
     membershipId: "membership-1",
+    authorizationRevision: 0,
     officeDate: "2026-07-20",
     batchId: "batch-1",
     algorithmVersion: "explainable-v1",
@@ -44,7 +45,18 @@ function session(overrides: Partial<LuckyWheelSessionV1> = {}): LuckyWheelSessio
       candidateTickets: [
         { restaurantId: "restaurant-1", tickets: 1 },
         { restaurantId: "restaurant-2", tickets: 3 }
-      ]
+      ],
+      selectedCandidateSnapshot: {
+        restaurantId: "restaurant-2",
+        recommendationId: "recommendation-2",
+        name: "餐厅 2",
+        dish: "招牌菜 2",
+        reason: "推荐理由 2",
+        distanceMinutes: 7,
+        tags: ["近"],
+        recommendationScore: 32,
+        selectedWithinLast7Days: false
+      }
     },
     accepted: false,
     acceptancePending: false,
@@ -140,11 +152,27 @@ describe("lucky wheel session storage", () => {
     await expect(loadLuckyWheelSession()).resolves.toEqual(pending);
   });
 
+  it("migrates a legacy session without authorization revision to revision zero", async () => {
+    const value = session();
+    const {
+      authorizationRevision: _authorizationRevision,
+      ...legacy
+    } = value;
+    stubStorage(legacy);
+
+    await expect(loadLuckyWheelSession()).resolves.toEqual(value);
+  });
+
   it("preserves an explicitly absent recommendation on the selected result", async () => {
+    const {
+      recommendationId: _recommendationId,
+      ...selectedCandidateSnapshot
+    } = session().lastSpin!.selectedCandidateSnapshot!;
     const withoutRecommendation = session({
       lastSpin: {
         ...session().lastSpin!,
-        selectedRecommendationId: null
+        selectedRecommendationId: null,
+        selectedCandidateSnapshot
       }
     });
     stubStorage(withoutRecommendation);
@@ -196,6 +224,15 @@ describe("lucky wheel session storage", () => {
     const { values } = stubStorage();
     const state = values[STORAGE_KEYS.state] as ReturnType<typeof getDefaultStorageState>;
     state.activeGroupId = "group-2";
+
+    await expect(saveLuckyWheelSession(session(), null)).resolves.toBe(false);
+    expect(values).not.toHaveProperty(STORAGE_KEYS.luckyWheelSession);
+  });
+
+  it("rejects stale writes after the authorization revision changes", async () => {
+    const { values } = stubStorage();
+    const state = values[STORAGE_KEYS.state] as ReturnType<typeof getDefaultStorageState>;
+    state.authorizationRevision = 1;
 
     await expect(saveLuckyWheelSession(session(), null)).resolves.toBe(false);
     expect(values).not.toHaveProperty(STORAGE_KEYS.luckyWheelSession);

@@ -113,6 +113,7 @@ function clearedConnectionStorage(
     lastRecommendationsByGroupId: {},
     localReminderOverridesByGroupId: {},
     groupSettingsCacheByGroupId: {},
+    authorizationRevision: storage.authorizationRevision + 1,
     reminderRevision: storage.reminderRevision + 1
   };
 }

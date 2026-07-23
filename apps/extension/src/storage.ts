@@ -32,6 +32,7 @@ export interface IdentityStorageGuard {
   apiBaseUrl: string;
   identityId?: string | undefined;
   identityToken: string;
+  authorizationRevision: number;
 }
 
 export interface GroupSessionStorageGuard extends IdentityStorageGuard {
@@ -77,6 +78,7 @@ export interface ExtensionStorageShape extends ExtensionSettings {
   identityDisplayName?: string | undefined;
   identityToken?: string | undefined;
   identityTokenExpiresAt?: string | undefined;
+  authorizationRevision: number;
   sessionsByGroupId: Record<string, GroupSessionStorage>;
   groupSummariesById: Record<string, GroupSummary>;
   lastRecommendationsByGroupId: Record<string, GroupTodayRecommendationsResponse>;
@@ -98,6 +100,7 @@ export function getDefaultStorageState(): ExtensionStorageShape {
     apiBaseUrl: DEFAULT_API_BASE_URL,
     reminderTime: "11:30",
     enabled: true,
+    authorizationRevision: 0,
     sessionsByGroupId: {},
     groupSummariesById: {},
     lastRecommendationsByGroupId: {},
@@ -125,6 +128,19 @@ export async function getStorageState(): Promise<ExtensionStorageShape> {
   } as ExtensionStorageShape & { readToken?: unknown };
   const { readToken: _legacyReadToken, ...withoutReadToken } = merged;
   const normalized = withoutReadToken as ExtensionStorageShape;
+  const storedState = data[STORAGE_KEYS.state] as
+    | Partial<ExtensionStorageShape>
+    | undefined;
+  const storedAuthorizationRevision = storedState?.authorizationRevision;
+  const migratedAuthorizationRevision = storedState !== undefined
+    && (
+      !Number.isInteger(storedAuthorizationRevision)
+      || (storedAuthorizationRevision as number) < 0
+    );
+  normalized.authorizationRevision = Number.isInteger(storedAuthorizationRevision)
+    && (storedAuthorizationRevision as number) >= 0
+    ? storedAuthorizationRevision as number
+    : 0;
   const profileAdjusted = IS_INTERNAL_BUILD
     && normalized.apiBaseUrl !== PRODUCTION_API_ORIGIN;
   if (profileAdjusted) normalized.apiBaseUrl = PRODUCTION_API_ORIGIN;
@@ -136,6 +152,7 @@ export async function getStorageState(): Promise<ExtensionStorageShape> {
     || data[STORAGE_KEYS.settings] !== undefined
     || data.lunchLastRecommendation !== undefined
     || profileAdjusted
+    || migratedAuthorizationRevision
   ) {
     await chrome.storage.local.set({ [STORAGE_KEYS.state]: normalized });
     await chrome.storage.local.remove([
@@ -200,10 +217,16 @@ export async function getSettings(): Promise<ExtensionSettings> {
 }
 
 export async function saveSettings(settings: ExtensionSettings): Promise<void> {
-  await mutateStorageState((state) => invalidateReminderContext({
-    ...state,
-    ...settings
-  }), (current, next) => current.apiBaseUrl !== next.apiBaseUrl);
+  await mutateStorageState((state) => {
+    const apiBaseUrlChanged = state.apiBaseUrl !== settings.apiBaseUrl;
+    return invalidateReminderContext({
+      ...state,
+      ...settings,
+      authorizationRevision: apiBaseUrlChanged
+        ? state.authorizationRevision + 1
+        : state.authorizationRevision
+    });
+  }, (current, next) => current.apiBaseUrl !== next.apiBaseUrl);
   await chrome.runtime.sendMessage({ type: "settingsChanged" }).catch(() => undefined);
 }
 
@@ -217,6 +240,7 @@ export async function saveIdentityConnection(
       identityDisplayName: response.displayName.trim(),
       identityToken: response.identityToken,
       identityTokenExpiresAt: response.identityTokenExpiresAt,
+      authorizationRevision: state.authorizationRevision + 1,
       sessionsByGroupId: {},
       groupSummariesById: {},
       lastRecommendationsByGroupId: {},
@@ -254,6 +278,7 @@ export async function saveResetIdentityConnection(
       identityDisplayName: response.displayName.trim(),
       identityToken: response.identityToken,
       identityTokenExpiresAt: response.identityTokenExpiresAt,
+      authorizationRevision: state.authorizationRevision + 1,
       sessionsByGroupId: {},
       reminderRevision: state.reminderRevision + 1
     };
@@ -271,7 +296,8 @@ function identityGuardMatches(
 ): boolean {
   return state.apiBaseUrl === guard.apiBaseUrl
     && state.identityId === guard.identityId
-    && state.identityToken === guard.identityToken;
+    && state.identityToken === guard.identityToken
+    && state.authorizationRevision === guard.authorizationRevision;
 }
 
 function groupSessionGuardMatches(
@@ -316,6 +342,7 @@ export function groupSummariesStorageGuardFor(
     apiBaseUrl: state.apiBaseUrl,
     identityId: state.identityId,
     identityToken: state.identityToken,
+    authorizationRevision: state.authorizationRevision,
     groupContextFingerprint: groupContextFingerprint(state)
   };
 }
@@ -502,6 +529,7 @@ async function disconnectIdentityWithGuard(
       lastRecommendationsByGroupId: {},
       localReminderOverridesByGroupId: {},
       groupSettingsCacheByGroupId: {},
+      authorizationRevision: state.authorizationRevision + 1,
       reminderRevision: state.reminderRevision + 1
     };
     delete next.identityToken;
@@ -538,6 +566,7 @@ export async function replaceApiBaseUrl(apiBaseUrl: string): Promise<void> {
     lastRecommendationsByGroupId: {},
     localReminderOverridesByGroupId: {},
     groupSettingsCacheByGroupId: {},
+    authorizationRevision: state.authorizationRevision + 1,
     reminderRevision: state.reminderRevision + 1
   }), () => true);
   await notifyReminderContextChanged();

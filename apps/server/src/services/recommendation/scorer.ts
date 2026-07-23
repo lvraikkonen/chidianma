@@ -28,6 +28,7 @@ export function rankRestaurantCandidates(input: {
   candidates: Candidate[];
   limit: number;
   weights?: ScoringWeightsSnapshot | undefined;
+  tieBreakEqualScoresById?: boolean | undefined;
 }): RankedRecommendation[] {
   const ranked = input.candidates
     .map((candidate) => {
@@ -55,7 +56,9 @@ export function rankRestaurantCandidates(input: {
     })
     .sort((left, right) => {
       const scoreDifference = right.score - left.score;
-      if (scoreDifference !== 0) return scoreDifference;
+      if (scoreDifference !== 0 || !input.tieBreakEqualScoresById) {
+        return scoreDifference;
+      }
       const restaurantDifference = compareIds(
         left.restaurantId,
         right.restaurantId

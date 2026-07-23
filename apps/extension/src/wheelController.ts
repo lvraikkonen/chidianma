@@ -15,7 +15,6 @@ import { putTodayParticipationForStorage } from "./recommendationClient";
 import { getStorageState, type ExtensionStorageShape } from "./storage";
 import { fetchGroupWheelCandidatesForStorage } from "./wheelClient";
 import {
-  clearLuckyWheelSession,
   loadLuckyWheelSession,
   saveLuckyWheelSession,
   type LuckyWheelSessionTicket,
@@ -80,7 +79,6 @@ export interface LuckyWheelControllerDependencies {
     next: LuckyWheelSessionV1,
     expected: LuckyWheelSessionV1 | null
   ) => Promise<boolean>;
-  clearSession: (expected?: LuckyWheelSessionV1) => Promise<boolean>;
   acceptDecision: (
     storage: ExtensionStorageShape,
     input: PutParticipationTodayRequest
@@ -102,8 +100,10 @@ export interface LoadLuckyWheelInput {
 interface LuckyWheelContext {
   storage: ExtensionStorageShape;
   apiBaseUrl: string;
+  identityId?: string | undefined;
   groupId: string;
   membershipId: string;
+  authorizationRevision: number;
 }
 
 interface ActionToken {
@@ -114,7 +114,6 @@ interface ActionToken {
 
 type ReconciledSession =
   | { kind: "session"; session: LuckyWheelSessionV1 }
-  | { kind: "pending-conflict" }
   | { kind: "stale" }
   | { kind: "aborted" };
 
@@ -126,8 +125,10 @@ function wheelContext(storage: ExtensionStorageShape): LuckyWheelContext | null 
   return {
     storage,
     apiBaseUrl: storage.apiBaseUrl,
+    identityId: storage.identityId,
     groupId,
-    membershipId
+    membershipId,
+    authorizationRevision: storage.authorizationRevision
   };
 }
 
@@ -136,6 +137,8 @@ function contextMatches(
   storage: ExtensionStorageShape
 ): boolean {
   return storage.apiBaseUrl === context.apiBaseUrl
+    && storage.identityId === context.identityId
+    && storage.authorizationRevision === context.authorizationRevision
     && storage.activeGroupId === context.groupId
     && Boolean(storage.sessionsByGroupId[context.groupId]?.token)
     && storage.groupSummariesById[context.groupId]?.membershipId
@@ -150,6 +153,7 @@ function sessionMatches(
   return session.apiBaseUrl === context.apiBaseUrl
     && session.groupId === context.groupId
     && session.membershipId === context.membershipId
+    && session.authorizationRevision === context.authorizationRevision
     && session.officeDate === response.officeDate
     && session.batchId === response.batchId
     && session.algorithmVersion === response.algorithmVersion;
@@ -165,15 +169,16 @@ function responseScopeMatches(
     && left.algorithmVersion === right.algorithmVersion;
 }
 
-function pendingBlocksReplacement(
+function terminalSurvivesReplacement(
   existing: LuckyWheelSessionV1,
   context: LuckyWheelContext,
   response: GroupWheelCandidatesResponse
 ): boolean {
-  return existing.acceptancePending
+  return (existing.accepted || existing.acceptancePending)
     && existing.apiBaseUrl === context.apiBaseUrl
     && existing.groupId === context.groupId
     && existing.membershipId === context.membershipId
+    && existing.authorizationRevision === context.authorizationRevision
     && existing.officeDate === response.officeDate;
 }
 
@@ -187,6 +192,7 @@ function markerSession(
     apiBaseUrl: context.apiBaseUrl,
     groupId: context.groupId,
     membershipId: context.membershipId,
+    authorizationRevision: context.authorizationRevision,
     officeDate: response.officeDate,
     batchId: response.batchId,
     algorithmVersion: response.algorithmVersion,
@@ -241,6 +247,94 @@ function restoreDisplayCandidates(
   });
 }
 
+function snapshotCandidate(
+  candidate: GroupWheelCandidate
+): GroupWheelCandidate {
+  return {
+    restaurantId: candidate.restaurantId,
+    ...(candidate.recommendationId
+      ? { recommendationId: candidate.recommendationId }
+      : {}),
+    name: candidate.name,
+    ...(candidate.dish ? { dish: candidate.dish } : {}),
+    reason: candidate.reason,
+    ...(candidate.distanceMinutes === undefined
+      ? {}
+      : { distanceMinutes: candidate.distanceMinutes }),
+    tags: [...candidate.tags],
+    recommendationScore: candidate.recommendationScore,
+    selectedWithinLast7Days: candidate.selectedWithinLast7Days
+  };
+}
+
+function terminalRecoverySeeds(
+  liveSeeds: readonly GroupWheelCandidate[],
+  session: LuckyWheelSessionV1
+): GroupWheelCandidate[] | null {
+  const lastSpin = session.lastSpin;
+  const selectedSnapshot = lastSpin?.selectedCandidateSnapshot;
+  if (!lastSpin || !selectedSnapshot) return null;
+  const liveById = new Map(
+    liveSeeds.map((candidate) => [candidate.restaurantId, candidate])
+  );
+  return lastSpin.candidateTickets.map(({ restaurantId }, index) => {
+    if (restaurantId === lastSpin.selectedRestaurantId) {
+      return selectedSnapshot;
+    }
+    return liveById.get(restaurantId) ?? {
+      restaurantId,
+      name: `原候选餐厅 ${index + 1}`,
+      reason: "本次抽签的原始候选；当前推荐批次已变化。",
+      tags: ["原抽签候选"],
+      recommendationScore: 0,
+      selectedWithinLast7Days: false
+    };
+  });
+}
+
+function restoreSessionResult(
+  liveSeeds: readonly GroupWheelCandidate[],
+  session: LuckyWheelSessionV1
+): {
+  candidates: LuckyWheelDisplayCandidate[];
+  selected: LuckyWheelDisplayCandidate;
+  selectedStillCurrent: boolean;
+} | null {
+  const lastSpin = session.lastSpin;
+  if (!lastSpin) return null;
+  const terminal = session.accepted || session.acceptancePending;
+  const recoverySeeds = terminal
+    ? terminalRecoverySeeds(liveSeeds, session)
+    : null;
+  const candidates = restoreDisplayCandidates(
+    recoverySeeds ?? liveSeeds,
+    lastSpin.candidateTickets
+  );
+  const selected = candidates?.find(
+    ({ restaurantId }) => restaurantId === lastSpin.selectedRestaurantId
+  );
+  if (
+    !candidates
+    || !selected
+    || (selected.recommendationId ?? null)
+      !== lastSpin.selectedRecommendationId
+  ) {
+    return null;
+  }
+  const liveSelected = liveSeeds.find(
+    ({ restaurantId }) => restaurantId === lastSpin.selectedRestaurantId
+  );
+  return {
+    candidates,
+    selected,
+    selectedStillCurrent: Boolean(
+      liveSelected
+      && (liveSelected.recommendationId ?? null)
+        === lastSpin.selectedRecommendationId
+    )
+  };
+}
+
 function withoutLastSpin(session: LuckyWheelSessionV1): LuckyWheelSessionV1 {
   const { lastSpin: _lastSpin, ...rest } = session;
   return {
@@ -257,6 +351,7 @@ function samePersistedResult(
   return left.apiBaseUrl === right.apiBaseUrl
     && left.groupId === right.groupId
     && left.membershipId === right.membershipId
+    && left.authorizationRevision === right.authorizationRevision
     && left.officeDate === right.officeDate
     && left.batchId === right.batchId
     && left.algorithmVersion === right.algorithmVersion
@@ -313,15 +408,6 @@ function terminalResultChangedState(): LuckyWheelControllerState {
     kind: "error",
     code: "wheel_terminal_result_changed",
     message: "已提交或待确认的转盘结果对应候选已变化，不能继续重转。",
-    retryable: false
-  };
-}
-
-function pendingContextChangedState(): LuckyWheelControllerState {
-  return {
-    kind: "error",
-    code: "wheel_acceptance_pending_context_changed",
-    message: "上一次选择仍待确认，当前批次已变化，暂不能继续重转。",
     retryable: false
   };
 }
@@ -427,30 +513,25 @@ export function createLuckyWheelController(
       commitAvailablePool(notice);
       return;
     }
-    const restored = restoreDisplayCandidates(
-      availableSeeds(),
-      session.lastSpin.candidateTickets
-    );
-    const selected = restored?.find(
-      ({ restaurantId }) => restaurantId === session!.lastSpin!.selectedRestaurantId
-    );
-    if (
-      restored
-      && selected
-      && (selected.recommendationId ?? null)
-        === session.lastSpin.selectedRecommendationId
-    ) {
+    const restored = restoreSessionResult(availableSeeds(), session);
+    if (restored) {
       commit({
         kind: "result",
-        ...poolState(session.mode, session.spinNumber, restored),
+        ...poolState(session.mode, session.spinNumber, restored.candidates),
         source: "restored",
-        selected,
+        selected: restored.selected,
         accepted: session.accepted,
         acceptancePending: session.acceptancePending,
         accepting: false,
         canReroll: !session.accepted
           && !session.acceptancePending
-          && session.spinNumber < 2
+          && session.spinNumber < 2,
+        ...(session.acceptancePending && !restored.selectedStillCurrent
+          ? {
+            acceptError:
+              "当前候选已变化；只能重试确认原选择，不能重转或排除。"
+          }
+          : {})
       });
       return;
     }
@@ -481,8 +562,8 @@ export function createLuckyWheelController(
     if (loaded && sessionMatches(loaded, expectedContext, liveResponse)) {
       return { kind: "session", session: loaded };
     }
-    if (loaded && pendingBlocksReplacement(loaded, expectedContext, liveResponse)) {
-      return { kind: "pending-conflict" };
+    if (loaded && terminalSurvivesReplacement(loaded, expectedContext, liveResponse)) {
+      return { kind: "session", session: loaded };
     }
 
     let expected = loaded;
@@ -497,8 +578,12 @@ export function createLuckyWheelController(
       if (expected && sessionMatches(expected, expectedContext, liveResponse)) {
         return { kind: "session", session: expected };
       }
-      if (expected && pendingBlocksReplacement(expected, expectedContext, liveResponse)) {
-        return { kind: "pending-conflict" };
+      if (expected && terminalSurvivesReplacement(
+        expected,
+        expectedContext,
+        liveResponse
+      )) {
+        return { kind: "session", session: expected };
       }
     }
     return { kind: "stale" };
@@ -571,9 +656,6 @@ export function createLuckyWheelController(
         loadIsCurrent
       );
       if (!loadIsCurrent() || reconciled.kind === "aborted") return state;
-      if (reconciled.kind === "pending-conflict") {
-        return commit(pendingContextChangedState());
-      }
       if (reconciled.kind === "stale") return commit(staleContextState());
 
       context = currentContext;
@@ -581,30 +663,25 @@ export function createLuckyWheelController(
       session = reconciled.session;
       const seeds = availableSeeds();
       if (session.lastSpin) {
-        const restored = restoreDisplayCandidates(
-          seeds,
-          session.lastSpin.candidateTickets
-        );
-        const selected = restored?.find(
-          ({ restaurantId }) => restaurantId === session!.lastSpin!.selectedRestaurantId
-        );
-        if (
-          restored
-          && selected
-          && (selected.recommendationId ?? null)
-            === session.lastSpin.selectedRecommendationId
-        ) {
+        const restored = restoreSessionResult(seeds, session);
+        if (restored) {
           return commit({
             kind: "result",
-            ...poolState(session.mode, session.spinNumber, restored),
+            ...poolState(session.mode, session.spinNumber, restored.candidates),
             source: "restored",
-            selected,
+            selected: restored.selected,
             accepted: session.accepted,
             acceptancePending: session.acceptancePending,
             accepting: false,
             canReroll: !session.accepted
               && !session.acceptancePending
-              && session.spinNumber < 2
+              && session.spinNumber < 2,
+            ...(session.acceptancePending && !restored.selectedStillCurrent
+              ? {
+                acceptError:
+                  "当前候选已变化；只能重试确认原选择，不能重转或排除。"
+              }
+              : {})
           });
         }
         if (session.accepted || session.acceptancePending) {
@@ -689,9 +766,16 @@ export function createLuckyWheelController(
       response = fresh;
       return "current";
     }
-    if (session?.acceptancePending) {
-      commit(pendingContextChangedState());
-      return "failed";
+    if (
+      session
+      && terminalSurvivesReplacement(session, currentContext, fresh)
+    ) {
+      response = fresh;
+      await renderReconciledSession(
+        token,
+        "推荐批次已更新，已恢复待确认的原转盘结果。"
+      );
+      return actionIsCurrent(token) ? "current" : "failed";
     }
 
     const reconciled = await reconcileSession(
@@ -702,10 +786,6 @@ export function createLuckyWheelController(
       () => actionIsCurrent(token)
     );
     if (!actionIsCurrent(token) || reconciled.kind === "aborted") return "failed";
-    if (reconciled.kind === "pending-conflict") {
-      commit(pendingContextChangedState());
-      return "failed";
-    }
     if (reconciled.kind === "stale") {
       commit(staleContextState());
       return "failed";
@@ -763,6 +843,7 @@ export function createLuckyWheelController(
         apiBaseUrl: context!.apiBaseUrl,
         groupId: context!.groupId,
         membershipId: context!.membershipId,
+        authorizationRevision: context!.authorizationRevision,
         officeDate: response!.officeDate,
         batchId: response!.batchId,
         algorithmVersion: response!.algorithmVersion,
@@ -775,7 +856,8 @@ export function createLuckyWheelController(
           candidateTickets: drawCandidates.map(({ restaurantId, tickets }) => ({
             restaurantId,
             tickets
-          }))
+          })),
+          selectedCandidateSnapshot: snapshotCandidate(selected)
         },
         accepted: false,
         acceptancePending: false
@@ -878,10 +960,10 @@ export function createLuckyWheelController(
     update: PutParticipationTodayResponse,
     selected: LuckyWheelDisplayCandidate,
     expectedContext: LuckyWheelContext,
-    expectedResponse: GroupWheelCandidatesResponse
+    expectedOfficeDate: string
   ): boolean {
     return update.groupId === expectedContext.groupId
-      && update.officeDate === expectedResponse.officeDate
+      && update.officeDate === expectedOfficeDate
       && update.participation.membershipId === expectedContext.membershipId
       && update.participation.status === "decided"
       && update.participation.restaurantId === selected.restaurantId
@@ -928,8 +1010,12 @@ export function createLuckyWheelController(
         ({ restaurantId }) => restaurantId === resultState.selected.restaurantId
       );
       if (
-        !currentSelected
-        || currentSelected.recommendationId !== resultState.selected.recommendationId
+        !originalSession.acceptancePending
+        && (
+          !currentSelected
+          || currentSelected.recommendationId
+            !== resultState.selected.recommendationId
+        )
       ) {
         commit({
           ...resultState,
@@ -1002,7 +1088,7 @@ export function createLuckyWheelController(
           update,
           resultState.selected,
           currentContext,
-          freshResponse
+          originalSession.officeDate
         )
       ) {
         commit(pendingResultState(resultState, {
@@ -1122,7 +1208,6 @@ export function createExtensionLuckyWheelController(options: {
     loadCandidates: fetchGroupWheelCandidatesForStorage,
     loadSession: loadLuckyWheelSession,
     saveSession: saveLuckyWheelSession,
-    clearSession: clearLuckyWheelSession,
     acceptDecision: putTodayParticipationForStorage,
     randomSource: options.randomSource ?? createCryptoRandomSource(),
     ...(options.onStateChange ? { onStateChange: options.onStateChange } : {}),

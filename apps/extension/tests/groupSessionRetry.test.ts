@@ -199,7 +199,8 @@ describe("extension group session retry", () => {
         apiBaseUrl: "https://lunch.example",
         identityId: "identity-1",
         identityToken: "identity-token",
-        membershipId: "membership-1"
+        membershipId: "membership-1",
+        authorizationRevision: 0
       }
     )).rejects.toMatchObject({
       kind: "invalid-response",

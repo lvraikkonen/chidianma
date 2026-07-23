@@ -13,6 +13,7 @@ export async function buildRankedRecommendationCandidates(input: {
   weights: ScoringWeightsSnapshot;
   limit: number;
   hardExcludedMembershipId?: string | undefined;
+  tieBreakEqualScoresById?: boolean | undefined;
 }) {
   const [restaurants, recentRecommendations, hardExcludedFeedback] =
     await Promise.all([
@@ -62,6 +63,7 @@ export async function buildRankedRecommendationCandidates(input: {
   return rankRestaurantCandidates({
     limit: input.limit,
     weights: input.weights,
+    tieBreakEqualScoresById: input.tieBreakEqualScoresById,
     candidates: restaurants
       .filter(
         (restaurant) => !hardExcludedRestaurantIds.has(restaurant.id)

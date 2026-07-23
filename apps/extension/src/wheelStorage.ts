@@ -1,4 +1,8 @@
-import type { WheelMode, WheelTicketCount } from "@lunch/shared";
+import type {
+  GroupWheelCandidate,
+  WheelMode,
+  WheelTicketCount
+} from "@lunch/shared";
 import { STORAGE_KEYS, STORAGE_STATE_LOCK_NAME } from "./config";
 
 export interface LuckyWheelSessionTicket {
@@ -11,6 +15,7 @@ export interface LuckyWheelSessionV1 {
   apiBaseUrl: string;
   groupId: string;
   membershipId: string;
+  authorizationRevision: number;
   officeDate: string;
   batchId: string;
   algorithmVersion: string;
@@ -21,6 +26,7 @@ export interface LuckyWheelSessionV1 {
     selectedRestaurantId: string;
     selectedRecommendationId: string | null;
     candidateTickets: LuckyWheelSessionTicket[];
+    selectedCandidateSnapshot?: GroupWheelCandidate | undefined;
   } | undefined;
   accepted: boolean;
   acceptancePending: boolean;
@@ -74,6 +80,53 @@ function parseTickets(value: unknown): LuckyWheelSessionTicket[] | null {
     : null;
 }
 
+function optionalNonEmptyString(value: unknown): string | undefined | null {
+  if (value === undefined) return undefined;
+  return nonEmptyString(value) ? value : null;
+}
+
+function parseSelectedCandidateSnapshot(
+  value: unknown
+): GroupWheelCandidate | null {
+  if (
+    !isRecord(value)
+    || !nonEmptyString(value.restaurantId)
+    || !nonEmptyString(value.name)
+    || !nonEmptyString(value.reason)
+    || typeof value.recommendationScore !== "number"
+    || !Number.isFinite(value.recommendationScore)
+    || typeof value.selectedWithinLast7Days !== "boolean"
+    || !Array.isArray(value.tags)
+    || value.tags.some((tag) => typeof tag !== "string")
+    || (
+      value.distanceMinutes !== undefined
+      && (
+        typeof value.distanceMinutes !== "number"
+        || !Number.isFinite(value.distanceMinutes)
+        || value.distanceMinutes < 0
+      )
+    )
+  ) {
+    return null;
+  }
+  const recommendationId = optionalNonEmptyString(value.recommendationId);
+  const dish = optionalNonEmptyString(value.dish);
+  if (recommendationId === null || dish === null) return null;
+  return {
+    restaurantId: value.restaurantId,
+    ...(recommendationId === undefined ? {} : { recommendationId }),
+    name: value.name,
+    ...(dish === undefined ? {} : { dish }),
+    reason: value.reason,
+    ...(value.distanceMinutes === undefined
+      ? {}
+      : { distanceMinutes: value.distanceMinutes }),
+    tags: [...value.tags] as string[],
+    recommendationScore: value.recommendationScore,
+    selectedWithinLast7Days: value.selectedWithinLast7Days
+  };
+}
+
 function parseLuckyWheelSession(value: unknown): LuckyWheelSessionV1 | null {
   if (
     !isRecord(value)
@@ -89,6 +142,15 @@ function parseLuckyWheelSession(value: unknown): LuckyWheelSessionV1 | null {
     || !uniqueNonEmptyStrings(value.excludedRestaurantIds)
     || typeof value.accepted !== "boolean"
     || typeof value.acceptancePending !== "boolean"
+  ) {
+    return null;
+  }
+  const authorizationRevision = value.authorizationRevision === undefined
+    ? 0
+    : value.authorizationRevision;
+  if (
+    !Number.isInteger(authorizationRevision)
+    || (authorizationRevision as number) < 0
   ) {
     return null;
   }
@@ -109,6 +171,9 @@ function parseLuckyWheelSession(value: unknown): LuckyWheelSessionV1 | null {
     const selectedRestaurantId = rawLastSpin.selectedRestaurantId;
     const selectedRecommendationId = rawLastSpin.selectedRecommendationId as string | null;
     const candidateTickets = parseTickets(rawLastSpin.candidateTickets);
+    const selectedCandidateSnapshot = rawLastSpin.selectedCandidateSnapshot === undefined
+      ? undefined
+      : parseSelectedCandidateSnapshot(rawLastSpin.selectedCandidateSnapshot);
     if (
       !candidateTickets
       || !candidateTickets.some(
@@ -117,13 +182,25 @@ function parseLuckyWheelSession(value: unknown): LuckyWheelSessionV1 | null {
       || candidateTickets.some(({ restaurantId }) => (
         (value.excludedRestaurantIds as string[]).includes(restaurantId)
       ))
+      || selectedCandidateSnapshot === null
+      || (
+        selectedCandidateSnapshot !== undefined
+        && (
+          selectedCandidateSnapshot.restaurantId !== selectedRestaurantId
+          || (selectedCandidateSnapshot.recommendationId ?? null)
+            !== selectedRecommendationId
+        )
+      )
     ) {
       return null;
     }
     lastSpin = {
       selectedRestaurantId,
       selectedRecommendationId,
-      candidateTickets
+      candidateTickets,
+      ...(selectedCandidateSnapshot === undefined
+        ? {}
+        : { selectedCandidateSnapshot })
     };
   }
   if (
@@ -140,6 +217,7 @@ function parseLuckyWheelSession(value: unknown): LuckyWheelSessionV1 | null {
     apiBaseUrl: value.apiBaseUrl,
     groupId: value.groupId,
     membershipId: value.membershipId,
+    authorizationRevision: authorizationRevision as number,
     officeDate: value.officeDate,
     batchId: value.batchId,
     algorithmVersion: value.algorithmVersion,
@@ -169,12 +247,18 @@ function activeContextMatches(
   if (!isRecord(sessions) || !isRecord(groups)) return false;
   const activeSession = sessions[session.groupId];
   const activeGroup = groups[session.groupId];
+  const authorizationRevision = rawState.authorizationRevision === undefined
+    ? 0
+    : rawState.authorizationRevision;
   return rawState.apiBaseUrl === session.apiBaseUrl
     && rawState.activeGroupId === session.groupId
     && isRecord(activeSession)
     && nonEmptyString(activeSession.token)
     && isRecord(activeGroup)
-    && activeGroup.membershipId === session.membershipId;
+    && activeGroup.membershipId === session.membershipId
+    && Number.isInteger(authorizationRevision)
+    && (authorizationRevision as number) >= 0
+    && authorizationRevision === session.authorizationRevision;
 }
 
 function lockManager(): LockManager {

@@ -27,6 +27,7 @@ export interface GroupSessionRetrySnapshot {
   identityId?: string | undefined;
   identityToken: string;
   membershipId: string;
+  authorizationRevision: number;
 }
 
 const refreshFlights = new Map<string, Promise<RenewedGroupSession>>();
@@ -55,6 +56,7 @@ function groupGuardFor(
     apiBaseUrl: storage.apiBaseUrl,
     identityId: storage.identityId,
     identityToken: storage.identityToken,
+    authorizationRevision: storage.authorizationRevision,
     groupId,
     membershipId: group.membershipId,
     groupSessionToken
@@ -66,7 +68,8 @@ function identityGuardFor(storage: ExtensionStorageShape): IdentityStorageGuard 
   return {
     apiBaseUrl: storage.apiBaseUrl,
     identityId: storage.identityId,
-    identityToken: storage.identityToken
+    identityToken: storage.identityToken,
+    authorizationRevision: storage.authorizationRevision
   };
 }
 
@@ -78,6 +81,7 @@ function retrySnapshotMatches(
   return storage.apiBaseUrl === snapshot.apiBaseUrl
     && storage.identityId === snapshot.identityId
     && storage.identityToken === snapshot.identityToken
+    && storage.authorizationRevision === snapshot.authorizationRevision
     && storage.activeGroupId === groupId
     && storage.groupSummariesById[groupId]?.membershipId
       === snapshot.membershipId;
@@ -94,7 +98,8 @@ export function groupSessionRetrySnapshotForStorage(
     apiBaseUrl: storage.apiBaseUrl,
     identityId: storage.identityId,
     identityToken,
-    membershipId
+    membershipId,
+    authorizationRevision: storage.authorizationRevision
   };
 }
 
@@ -161,6 +166,7 @@ async function renewGroupSession(
     guard.apiBaseUrl,
     guard.identityId ?? "unknown",
     guard.identityToken,
+    guard.authorizationRevision,
     guard.groupId,
     guard.membershipId,
     guard.groupSessionToken

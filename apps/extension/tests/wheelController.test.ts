@@ -12,12 +12,26 @@ import {
 } from "../src/wheelController";
 import type { LuckyWheelSessionV1 } from "../src/wheelStorage";
 
-function connectedStorage(groupId = "group-1") {
+function connectedStorage(
+  groupId = "group-1",
+  overrides: {
+    authorizationRevision?: number;
+    identityToken?: string;
+    groupSessionToken?: string;
+  } = {}
+) {
   return {
     ...getDefaultStorageState(),
     apiBaseUrl: "https://lunch.example",
+    authorizationRevision: overrides.authorizationRevision ?? 0,
+    identityId: "identity-1",
+    identityToken: overrides.identityToken ?? "identity-token",
     activeGroupId: groupId,
-    sessionsByGroupId: { [groupId]: { token: `${groupId}-token` } },
+    sessionsByGroupId: {
+      [groupId]: {
+        token: overrides.groupSessionToken ?? `${groupId}-token`
+      }
+    },
     groupSummariesById: {
       [groupId]: {
         groupId,
@@ -102,6 +116,7 @@ function storedSession(
     apiBaseUrl: "https://lunch.example",
     groupId: "group-1",
     membershipId: "group-1-membership",
+    authorizationRevision: 0,
     officeDate: "2026-07-20",
     batchId: "batch-1",
     algorithmVersion: "explainable-v1",
@@ -114,7 +129,8 @@ function storedSession(
       candidateTickets: [
         { restaurantId: "restaurant-1", tickets: 1 },
         { restaurantId: "restaurant-2", tickets: 3 }
-      ]
+      ],
+      selectedCandidateSnapshot: candidate(2)
     },
     accepted: false,
     acceptancePending: false,
@@ -152,11 +168,6 @@ function setup({
     saveSession: saveSession ?? vi.fn(async (next, expected) => {
       if (persisted !== expected) return false;
       persisted = next;
-      return true;
-    }),
-    clearSession: vi.fn(async (expected) => {
-      if (expected && persisted !== expected) return false;
-      persisted = null;
       return true;
     }),
     acceptDecision: acceptDecision ?? vi.fn(async (_storage, input) => (
@@ -435,7 +446,7 @@ describe("lucky wheel controller", () => {
     expect(test.persisted()).not.toHaveProperty("lastSpin");
   });
 
-  it("keeps an accepted result terminal when its candidate set changes", async () => {
+  it("restores an accepted result from its selected snapshot when candidates change", async () => {
     const accepted = storedSession({ accepted: true });
     const changedResponse = {
       ...response(2),
@@ -449,9 +460,16 @@ describe("lucky wheel controller", () => {
     await test.load();
 
     expect(test.controller.getState()).toMatchObject({
-      kind: "error",
-      code: "wheel_terminal_result_changed",
-      retryable: false
+      kind: "result",
+      source: "restored",
+      accepted: true,
+      acceptancePending: false,
+      canReroll: false,
+      selected: {
+        restaurantId: "restaurant-2",
+        recommendationId: "recommendation-2",
+        name: "餐厅 2"
+      }
     });
     expect(test.persisted()).toEqual(accepted);
   });
@@ -459,7 +477,7 @@ describe("lucky wheel controller", () => {
   it.each([
     { accepted: true, acceptancePending: false },
     { accepted: false, acceptancePending: true }
-  ])("keeps a terminal result bound to its original recommendation", async (terminal) => {
+  ])("restores a terminal result bound to its original recommendation", async (terminal) => {
     const original = storedSession(terminal);
     const changedRecommendation = response();
     changedRecommendation.candidates = changedRecommendation.candidates.map((item) => (
@@ -475,9 +493,15 @@ describe("lucky wheel controller", () => {
     await test.load();
 
     expect(test.controller.getState()).toMatchObject({
-      kind: "error",
-      code: "wheel_terminal_result_changed",
-      retryable: false
+      kind: "result",
+      source: "restored",
+      accepted: terminal.accepted,
+      acceptancePending: terminal.acceptancePending,
+      canReroll: false,
+      selected: {
+        restaurantId: "restaurant-2",
+        recommendationId: "recommendation-2"
+      }
     });
     expect(test.persisted()).toEqual(original);
   });
@@ -499,22 +523,58 @@ describe("lucky wheel controller", () => {
     });
   });
 
-  it("does not replace a same-day pending acceptance when the batch changes", async () => {
+  it("restores and retries the original pending result after batch, algorithm, and candidates change", async () => {
     const pending = storedSession({
       batchId: "batch-old",
+      algorithmVersion: "explainable-old",
       acceptancePending: true
     });
-    const test = setup({ session: pending });
+    const changed = responseForBatch("batch-new", [candidate(3), candidate(4)]);
+    changed.algorithmVersion = "explainable-v2";
+    const test = setup({
+      session: pending,
+      loadCandidates: vi.fn().mockResolvedValue(changed)
+    });
 
     await test.load();
 
     expect(test.controller.getState()).toMatchObject({
-      kind: "error",
-      code: "wheel_acceptance_pending_context_changed",
-      retryable: false
+      kind: "result",
+      source: "restored",
+      acceptancePending: true,
+      canReroll: false,
+      selected: {
+        restaurantId: "restaurant-2",
+        recommendationId: "recommendation-2"
+      },
+      candidates: [
+        { restaurantId: "restaurant-1", tickets: 1, probability: 0.25 },
+        { restaurantId: "restaurant-2", tickets: 3, probability: 0.75 }
+      ],
+      response: {
+        batchId: "batch-new",
+        algorithmVersion: "explainable-v2"
+      }
     });
     expect(test.persisted()).toEqual(pending);
     expect(test.dependencies.saveSession).not.toHaveBeenCalled();
+
+    await expect(test.controller.acceptSelected()).resolves.toBe(true);
+
+    expect(test.dependencies.acceptDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ authorizationRevision: 0 }),
+      {
+        status: "decided",
+        restaurantId: "restaurant-2",
+        recommendationId: "recommendation-2"
+      }
+    );
+    expect(test.persisted()).toMatchObject({
+      batchId: "batch-old",
+      algorithmVersion: "explainable-old",
+      accepted: true,
+      acceptancePending: false
+    });
   });
 
   it("refreshes the authoritative batch before drawing and never randomizes the old batch", async () => {
@@ -638,6 +698,89 @@ describe("lucky wheel controller", () => {
     });
   });
 
+  it("drops a late load after identity reset reconnects the same membership", async () => {
+    const candidates = deferred<GroupWheelCandidatesResponse>();
+    let currentStorage = connectedStorage();
+    const test = setup({
+      loadCandidates: vi.fn(() => candidates.promise),
+      loadStorage: vi.fn(async () => currentStorage)
+    });
+    const loading = test.load();
+    await vi.waitFor(() => {
+      expect(test.dependencies.loadCandidates).toHaveBeenCalledOnce();
+    });
+
+    currentStorage = connectedStorage("group-1", {
+      authorizationRevision: 1,
+      identityToken: "reset-identity-token",
+      groupSessionToken: "reconnected-group-token"
+    });
+    candidates.resolve(response());
+    await loading;
+
+    expect(test.controller.getState()).toMatchObject({
+      kind: "error",
+      code: "wheel_context_stale",
+      retryable: false
+    });
+    expect(test.dependencies.saveSession).not.toHaveBeenCalled();
+  });
+
+  it("drops a late spin refresh after identity reset reconnects the same membership", async () => {
+    const refresh = deferred<GroupWheelCandidatesResponse>();
+    let currentStorage = connectedStorage();
+    const loadCandidates = vi.fn()
+      .mockResolvedValueOnce(response())
+      .mockImplementationOnce(() => refresh.promise);
+    const test = setup({
+      loadCandidates,
+      loadStorage: vi.fn(async () => currentStorage)
+    });
+    await test.load();
+    const saveCountBeforeSpin = vi.mocked(test.dependencies.saveSession).mock.calls.length;
+    const spinning = test.controller.spin();
+    await vi.waitFor(() => {
+      expect(loadCandidates).toHaveBeenCalledTimes(2);
+    });
+
+    currentStorage = connectedStorage("group-1", {
+      authorizationRevision: 1,
+      identityToken: "reset-identity-token",
+      groupSessionToken: "reconnected-group-token"
+    });
+    refresh.resolve(response());
+    await expect(spinning).resolves.toBe(false);
+
+    expect(test.controller.getState()).toMatchObject({
+      kind: "error",
+      code: "wheel_context_stale",
+      retryable: false
+    });
+    expect(test.randomSource).not.toHaveBeenCalled();
+    expect(test.dependencies.saveSession).toHaveBeenCalledTimes(saveCountBeforeSpin);
+  });
+
+  it("allows token renewal within the same authorization revision", async () => {
+    const renewedStorage = connectedStorage("group-1", {
+      identityToken: "renewed-identity-token",
+      groupSessionToken: "renewed-group-token"
+    });
+    const test = setup({
+      loadStorage: vi.fn().mockResolvedValue(renewedStorage)
+    });
+
+    await test.load();
+
+    expect(test.controller.getState()).toMatchObject({
+      kind: "ready",
+      response: { batchId: "batch-1" }
+    });
+    expect(test.persisted()).toMatchObject({
+      authorizationRevision: 0,
+      batchId: "batch-1"
+    });
+  });
+
   it("does not let an old spin continuation overwrite a newer load", async () => {
     const oldSpinCandidates = deferred<GroupWheelCandidatesResponse>();
     const loadCandidates = vi.fn()
@@ -691,7 +834,6 @@ describe("lucky wheel controller", () => {
       loadCandidates: vi.fn().mockResolvedValue(response()),
       loadSession,
       saveSession,
-      clearSession: vi.fn().mockResolvedValue(true),
       acceptDecision: vi.fn(async (_storage, input) => participation(input.restaurantId!)),
       randomSource: vi.fn(() => randomValue)
     });
@@ -755,7 +897,6 @@ describe("lucky wheel controller", () => {
       loadCandidates: vi.fn().mockResolvedValue(response()),
       loadSession,
       saveSession,
-      clearSession: vi.fn().mockResolvedValue(true),
       acceptDecision: vi.fn(() => request.promise),
       randomSource: vi.fn(() => 0.99)
     });
@@ -765,7 +906,6 @@ describe("lucky wheel controller", () => {
       loadCandidates: vi.fn().mockResolvedValue(response()),
       loadSession,
       saveSession,
-      clearSession: vi.fn().mockResolvedValue(true),
       acceptDecision: vi.fn(async (_storage, input) => participation(input.restaurantId!)),
       randomSource: rerollRandom
     });
@@ -1047,6 +1187,44 @@ describe("lucky wheel controller", () => {
       kind: "error",
       code: "wheel_context_stale",
       retryable: false
+    });
+    expect(onAcceptanceUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not apply a late acceptance after identity reset reconnects the same membership", async () => {
+    let currentStorage = connectedStorage();
+    const request = deferred<PutParticipationTodayResponse>();
+    const onAcceptanceUpdate = vi.fn();
+    const test = setup({
+      loadStorage: vi.fn(async () => currentStorage),
+      acceptDecision: vi.fn(() => request.promise),
+      onAcceptanceUpdate
+    });
+    await test.load();
+    await test.controller.spin();
+    test.controller.finishSpin();
+    const accepting = test.controller.acceptSelected();
+    await vi.waitFor(() => {
+      expect(test.dependencies.acceptDecision).toHaveBeenCalledOnce();
+    });
+
+    currentStorage = connectedStorage("group-1", {
+      authorizationRevision: 1,
+      identityToken: "reset-identity-token",
+      groupSessionToken: "reconnected-group-token"
+    });
+    request.resolve(participation("restaurant-2"));
+    await expect(accepting).resolves.toBe(false);
+
+    expect(test.controller.getState()).toMatchObject({
+      kind: "error",
+      code: "wheel_context_stale",
+      retryable: false
+    });
+    expect(test.persisted()).toMatchObject({
+      accepted: false,
+      acceptancePending: true,
+      authorizationRevision: 0
     });
     expect(onAcceptanceUpdate).not.toHaveBeenCalled();
   });

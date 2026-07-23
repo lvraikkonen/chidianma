@@ -20,6 +20,7 @@ import {
   saveGroupConnectionIfCurrent,
   saveGroupRecommendationCache,
   saveIdentityConnection,
+  saveRenewedIdentityConnection,
   saveResetIdentityConnection,
   saveSettings,
   saveStorageState,
@@ -141,6 +142,7 @@ describe("grouped extension storage", () => {
       lastRecommendationsByGroupId: {},
       localReminderOverridesByGroupId: {},
       groupSettingsCacheByGroupId: {},
+      authorizationRevision: 0,
       reminderRevision: 0
     });
   });
@@ -240,6 +242,7 @@ describe("grouped extension storage", () => {
       lastRecommendationsByGroupId: {},
       localReminderOverridesByGroupId: {},
       groupSettingsCacheByGroupId: {},
+      authorizationRevision: 1,
       reminderRevision: 1
     });
     expect(readStoredState().activeGroupId).toBeUndefined();
@@ -248,9 +251,10 @@ describe("grouped extension storage", () => {
     expectExclusiveStorageLock(locks);
   });
 
-  it("clears the wheel session when identity sessions are reset", async () => {
-    const { readStoredWheelSession } = stubMutableStorage({
+  it("clears the wheel session and advances authorization revision when identity sessions are reset", async () => {
+    const { readStoredState, readStoredWheelSession } = stubMutableStorage({
       ...getDefaultStorageState(),
+      authorizationRevision: 4,
       identityId: "identity-1",
       identityToken: "old-token",
       activeGroupId: "group-1",
@@ -265,6 +269,28 @@ describe("grouped extension storage", () => {
     });
 
     expect(readStoredWheelSession()).toBeUndefined();
+    expect(readStoredState().authorizationRevision).toBe(5);
+  });
+
+  it("preserves authorization revision for a normal identity token renewal", async () => {
+    const { readStoredState } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      authorizationRevision: 4,
+      identityId: "identity-1",
+      identityToken: "old-token"
+    });
+
+    await saveRenewedIdentityConnection({
+      identityId: "identity-1",
+      displayName: "小林",
+      identityToken: "renewed-token",
+      identityTokenExpiresAt: "2026-10-20T00:00:00.000Z"
+    });
+
+    expect(readStoredState()).toMatchObject({
+      authorizationRevision: 4,
+      identityToken: "renewed-token"
+    });
   });
 
   it("commits a group session and active group in one locked mutation", async () => {
@@ -396,6 +422,7 @@ describe("grouped extension storage", () => {
       apiBaseUrl: "https://lunch.example",
       identityId: "identity-1",
       identityToken: "identity-token",
+      authorizationRevision: 0,
       groupId: "group-1",
       membershipId: "membership-1",
       groupSessionToken: "old-group-token"
@@ -428,6 +455,7 @@ describe("grouped extension storage", () => {
       apiBaseUrl: "https://lunch.example",
       identityId: "identity-old",
       identityToken: "identity-token-old",
+      authorizationRevision: 0,
       groupId: "group-1",
       membershipId: "membership-1",
       groupSessionToken: "group-token-old"
@@ -467,6 +495,7 @@ describe("grouped extension storage", () => {
       apiBaseUrl: "https://lunch.example",
       identityId: "identity-old",
       identityToken: "identity-token-old",
+      authorizationRevision: 0,
       groupContextFingerprint: "stale-context"
     })).resolves.toBe(false);
 
@@ -665,11 +694,33 @@ describe("grouped extension storage", () => {
       lastRecommendationsByGroupId: {},
       localReminderOverridesByGroupId: {},
       groupSettingsCacheByGroupId: {},
+      authorizationRevision: 1,
       reminderRevision: 1
     });
     expect(readStoredWheelSession()).toBeUndefined();
     expect(sendMessage).toHaveBeenCalledWith({ type: "reminderContextChanged" });
     expectExclusiveStorageLock(locks);
+  });
+
+  it("keeps authorization revisions monotonic across disconnect and reconnect", async () => {
+    const { readStoredState } = stubMutableStorage({
+      ...getDefaultStorageState(),
+      authorizationRevision: 7,
+      identityId: "identity-old",
+      identityToken: "identity-token-old"
+    });
+
+    await disconnectIdentity();
+    expect(readStoredState().authorizationRevision).toBe(8);
+
+    await saveIdentityConnection({
+      identityId: "identity-new",
+      displayName: "小林",
+      identityToken: "identity-token-new",
+      identityTokenExpiresAt: "2026-10-20T00:00:00.000Z"
+    });
+
+    expect(readStoredState().authorizationRevision).toBe(9);
   });
 
   it("replaces the API host without carrying credentials or group cache", async () => {
@@ -714,6 +765,7 @@ describe("grouped extension storage", () => {
       lastRecommendationsByGroupId: {},
       localReminderOverridesByGroupId: {},
       groupSettingsCacheByGroupId: {},
+      authorizationRevision: 1,
       reminderRevision: 1
     });
     expect(readStoredWheelSession()).toBeUndefined();

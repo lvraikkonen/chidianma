@@ -70,7 +70,8 @@ export async function getGroupWheelCandidates(input: {
     weights:
       batch.scoringWeightsSnapshot as unknown as ScoringWeightsSnapshot,
     limit: 8,
-    hardExcludedMembershipId: input.membership.membershipId
+    hardExcludedMembershipId: input.membership.membershipId,
+    tieBreakEqualScoresById: true
   });
   const recentlySelectedRestaurantIds = new Set(
     recentDecisions.flatMap((decision) =>

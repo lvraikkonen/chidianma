@@ -29,7 +29,38 @@ describe("rankRestaurantCandidates", () => {
     expect(ranked[0]?.reason).toContain("适合今天");
   });
 
-  it("sorts equal scores by ids, deduplicates restaurants, then applies the limit", () => {
+  it("preserves input order for equal scores by default", () => {
+    const base = {
+      name: "同分餐厅",
+      distanceMinutes: 8,
+      tags: [] as string[],
+      weekdayMatch: 0 as const,
+      weatherMatch: 0 as const,
+      teammateRecommendationCount: 1,
+      recentlyRecommended: false,
+      negativeFeedbackCount: 0
+    };
+    const ranked = rankRestaurantCandidates({
+      candidates: [
+        { ...base, restaurantId: "restaurant-03", recommendationId: "rec-03" },
+        { ...base, restaurantId: "restaurant-01", recommendationId: "rec-z" },
+        { ...base, restaurantId: "restaurant-02", recommendationId: "rec-02" },
+        { ...base, restaurantId: "restaurant-01", recommendationId: "rec-a" }
+      ],
+      limit: 3
+    });
+
+    expect(ranked.map((item) => [
+      item.restaurantId,
+      item.recommendationId
+    ])).toEqual([
+      ["restaurant-03", "rec-03"],
+      ["restaurant-01", "rec-z"],
+      ["restaurant-02", "rec-02"]
+    ]);
+  });
+
+  it("sorts equal scores by ids when explicitly enabled", () => {
     const base = {
       name: "同分餐厅",
       distanceMinutes: 8,
@@ -48,7 +79,8 @@ describe("rankRestaurantCandidates", () => {
         { ...base, restaurantId: "restaurant-01", recommendationId: "rec-a" },
         { ...base, restaurantId: "restaurant-04", recommendationId: "rec-04" }
       ],
-      limit: 3
+      limit: 3,
+      tieBreakEqualScoresById: true
     });
 
     expect(ranked.map((item) => [

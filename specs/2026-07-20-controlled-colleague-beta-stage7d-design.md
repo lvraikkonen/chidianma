@@ -155,18 +155,26 @@ type RandomSource = () => number;
 - 使用 `luckyWheelSession.v1` 按 `groupId + officeDate + batchId` 保存最小会话，防止
   关闭 Popup 绕过次数；首次候选加载即以 `spinNumber=0` 原子写入当前批次标记，避免
   多个 Popup 让旧批次重新占有会话；group/API origin 变化时清理；
-- 会话额外保存当前 membership、算法版本、锁定模式、已用抽数、临时排除，以及最后
-  一次抽签的 `restaurantId + selectedRecommendationId(null 表示原本为空) + tickets`；
-  不保存 bearer token、完整候选响应或随机数；
+- 会话额外保存当前 membership、当前授权世代 `authorizationRevision`、算法版本、
+  锁定模式、已用抽数、临时排除，以及最后一次抽签的
+  `restaurantId + selectedRecommendationId(null 表示原本为空) + tickets`。为使同日
+  `acceptancePending` 在 batch/算法/候选变化后仍能显示并重试，只额外保存被选中的
+  单个 normalized candidate 展示快照；不保存 bearer token、完整候选响应、全部候选
+  详情或随机数；
 - 抽签先由 shared 算法确定唯一结果并成功写入会话，再进入瞬时 `spinning` 状态；Popup
   在动画中关闭后重新打开时直接恢复同一结果和真实票数，不再次随机；
-- 同组 session token 自动续期保留会话；续期、清理和 group summaries resync 都在共享
-  storage lock 内按原 API/identity/group/membership/token 快照复验，迟到的旧上下文请求
-  fail-stale，不复用 reset/reconnect 后的新 token；
+- `lunchState` 以 additive、migrate-on-read 的 `authorizationRevision` 区分身份授权
+  世代：新身份连接、identity reset、disconnect 或 API origin replacement 时递增，
+  普通 identity/group-session token 续期不递增。同组正常续期保留会话；续期、清理和
+  group summaries resync 都在共享 storage lock 内按原
+  API/identity/group/membership/authorization revision 快照复验，迟到的旧上下文请求
+  fail-stale，不复用 reset/reconnect 后的新授权上下文；
 - group、membership 或 API origin 的 storage mutation 会清理会话；office date、batch 或
   算法版本变化时以 compare-and-swap 切换到新的零抽批次标记。同一 office date 若已有
   `acceptancePending`，不得以新 batch 覆盖该未决结果；候选或 recommendation 变化时，
-  普通未接受结果丢弃但保留已消耗抽数，`accepted`/`acceptancePending` 结果保持终态；
+  普通未接受结果丢弃但保留已消耗抽数，`accepted`/`acceptancePending` 使用已保存的
+  selected snapshot 和原 ticket binding 保持终态，允许对同一选择安全重试但不开放
+  重转或排除；
 - 排除当前结果只修改 versioned wheel session 并重算剩余候选，不调用 feedback 或餐厅
   写 API。接受先以 CAS 将当前结果标记为 `acceptancePending`，再发送幂等 participation
   PUT；pending 时禁止重转和排除，失败或最终本地确认失败时保留原结果供重试。只有 PUT
