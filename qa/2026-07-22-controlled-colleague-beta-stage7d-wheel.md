@@ -90,6 +90,13 @@ exposed for automated visual or interaction inspection. Therefore this evidence 
 load/reload and launch. It does not yet pass version/permission-card inspection, default-off UI and
 network behavior, keyboard navigation, screen-reader announcement, reduced motion or visual QA.
 
+After the operator reported that no wheel entry was visible, production `/api/ready` still reported
+Stage 7C revision `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`. An unauthenticated read of the
+new capabilities path returned route-level 404 (`Route GET:.../capabilities not found`), confirming
+that the current production Server does not yet contain Stage 7D routes. The Extension correctly
+maps that capability failure to all-disabled features, so the missing entry is expected fail-closed
+compatibility behavior. It is not evidence for the later Stage 7D flags-off deployment gate.
+
 ## Exit checks not completed
 
 - [x] All three source findings are reviewed and their regression tests pass.

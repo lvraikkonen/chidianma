@@ -31,6 +31,8 @@ Date: 2026-07-22
 
 - [x] 操作者已加载 unpacked candidate、点击 **Reload** 并成功打开一次 Popup；Chrome
   可见的设置页 URL 确认 Extension ID 为 `bbkeaogleldgfnkgebdhdbiohlmonbkk`。
+- [x] 当前 Stage 7C 生产 Server 不包含 capabilities route 时，Popup fail closed 且不
+  显示大转盘入口。该结果只验证旧 Server 兼容性，不替代 Stage 7D flags-off 部署验证。
 - [ ] 在 `chrome://extensions` 开启 Developer mode，以 **Load unpacked** 加载
   `apps/extension/dist`，确认名称、`0.3.0` 和权限。ID 已按上一条确认。
 - [ ] flag 全关时打开 Popup：不显示「转一下」，且 DevTools Network 中没有 wheel
