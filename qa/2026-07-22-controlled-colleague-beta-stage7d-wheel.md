@@ -132,8 +132,10 @@ checks. It does not pass candidate-count boundaries, reroll exhaustion, exclusio
 non-target group behavior or assistive-technology checks.
 
 The operator used the single allowed reroll, observed a normal second result and then confirmed
-that no further reroll was available and the UI presented the exhausted state. This passes the
-one-reroll limit without implying that mode locking, exclusion or acceptance has been tested.
+that no further reroll was available, the UI presented the exhausted state and the mode controls
+were no longer shown on that exhausted result page. This passes the one-reroll limit and exhausted
+presentation without implying that the mode became locked immediately after the first spin or that
+exclusion or acceptance has been tested.
 
 ## Exit checks not completed
 
