@@ -78,6 +78,18 @@ The final Standards and Spec reviews found no P0/P1 source blocker. Both reporte
 release documentation, corrected by this record; the duplicated restored-result state assembly is
 a non-blocking P3 refactoring opportunity.
 
+## Partial real Chrome evidence
+
+On 2026-07-22 the operator reported loading the unpacked candidate, clicking **Reload** and opening
+the Popup once. Chrome's visible open-tab metadata confirmed an Extension options page titled
+`中午吃点啥 · Chrome 扩展设置` at Extension ID
+`bbkeaogleldgfnkgebdhdbiohlmonbkk`.
+
+The Popup is transient and Chrome's protected `chrome://` / `chrome-extension://` surfaces are not
+exposed for automated visual or interaction inspection. Therefore this evidence confirms only
+load/reload and launch. It does not yet pass version/permission-card inspection, default-off UI and
+network behavior, keyboard navigation, screen-reader announcement, reduced motion or visual QA.
+
 ## Exit checks not completed
 
 - [x] All three source findings are reviewed and their regression tests pass.

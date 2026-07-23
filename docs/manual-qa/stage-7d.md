@@ -29,8 +29,10 @@ Date: 2026-07-22
 
 ## 安装与 feature gate
 
+- [x] 操作者已加载 unpacked candidate、点击 **Reload** 并成功打开一次 Popup；Chrome
+  可见的设置页 URL 确认 Extension ID 为 `bbkeaogleldgfnkgebdhdbiohlmonbkk`。
 - [ ] 在 `chrome://extensions` 开启 Developer mode，以 **Load unpacked** 加载
-  `apps/extension/dist`，确认名称、`0.3.0`、stable ID 和权限。
+  `apps/extension/dist`，确认名称、`0.3.0` 和权限。ID 已按上一条确认。
 - [ ] flag 全关时打开 Popup：不显示「转一下」，且 DevTools Network 中没有 wheel
   candidate 请求。
 - [ ] 全局 flag 开、allowlist 空时仍关闭；非 allowlisted group 仍关闭。
