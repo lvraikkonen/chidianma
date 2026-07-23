@@ -125,6 +125,12 @@ and confirmed that the `转一下／幸运大转盘` entry was visible. This pas
 capability-to-entry visibility gate only; the candidate request, wheel interaction, non-target
 group UI behavior and accessibility checks were not inferred from that observation.
 
+The operator then opened the entry, observed a normally rendered candidate wheel and completed one
+spin. Entering through `转一下` again restored the previously selected result instead of starting
+a new draw. This passes the UI-observed candidate-load, initial-spin and selected-result restoration
+checks. It does not pass candidate-count boundaries, reroll exhaustion, exclusion, acceptance,
+non-target group behavior or assistive-technology checks.
+
 ## Exit checks not completed
 
 - [x] All three source findings are reviewed and their regression tests pass.
@@ -136,7 +142,8 @@ group UI behavior and accessibility checks were not inferred from that observati
 - [x] Deployed `/api/health`, `/api/ready`, exact revision and read-only database verifier.
 - [x] Explicit single-group approval and sanitized Server predicate allowlist test.
 - [x] Target-group Popup displays the wheel entry in real Chrome.
-- [ ] Open the wheel entry and verify the target-group candidate request and response.
+- [x] Target-group wheel renders normal candidates and completes an initial spin.
+- [x] Re-entering through the wheel entry restores the previous selected result without a new draw.
 - [ ] Non-allowlisted real group closed behavior in real Chrome, if a second active group is
   available without creating production test data.
 
