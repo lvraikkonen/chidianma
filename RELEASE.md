@@ -130,8 +130,9 @@ decision before expanding Stage 7D beyond the first cohort.
   deployment passed the same Server gates. The production predicate returns true for the target
   group and false for a non-target value. All three source-review findings remain regression-tested,
   and the full 846-test suite, typecheck/build, Railway build, Extension builds, compatibility
-  checks and strict `0.3.0` package pass. Browser UI, keyboard, screen-reader and reduced-motion
-  checks remain pending, so expansion beyond this single group remains blocked.
+  checks and strict `0.3.0` package pass. The operator has now confirmed that the target-group Popup
+  shows the wheel entry. Candidate interaction, non-target UI behavior, keyboard, screen-reader and
+  reduced-motion checks remain pending, so expansion beyond this single group remains blocked.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
 - **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)
@@ -157,7 +158,7 @@ the [wheel QA record](qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md),
 
 ## Next step
 
-Reload the unpacked `0.3.0` Extension and complete target-group Popup, keyboard, screen-reader and
-reduced-motion QA. Verify that the target group receives the wheel capability, a non-allowlisted
-group remains closed, and normal recommendations still work. Do not expand the cohort until those
-manual checks pass; the Stage 7C deployment remains the application rollback point.
+Open the now-visible wheel entry and complete target-group candidate/interaction, keyboard,
+screen-reader and reduced-motion QA. Verify that a non-allowlisted group remains closed and normal
+recommendations still work. Do not expand the cohort until those manual checks pass; the Stage 7C
+deployment remains the application rollback point.

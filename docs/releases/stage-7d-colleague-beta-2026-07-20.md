@@ -140,8 +140,9 @@ The following focused checks passed on 2026-07-22 with Node `22.23.1`:
 Source, automation and package gates are complete. A GitHub-sourced flags-off deployment then
 passed health, ready revision and the read-only database verifier. After explicit approval, the
 single target group was allowlisted and the enabled redeployment passed the same gates; the
-Server-side predicate returned true for the target and false for a non-target value. Real Chrome
-target-group behavior, keyboard, screen reader and reduced-motion QA remain pending.
+Server-side predicate returned true for the target and false for a non-target value. The operator
+then confirmed that the target-group Popup shows the wheel entry. Candidate interaction,
+non-target UI behavior, keyboard, screen reader and reduced-motion QA remain pending.
 
 Code review found three issues; all are fixed with regression tests. Normal recommendation ordering
 is isolated from wheel tie-breaking, pending acceptance retries the same selected result across
@@ -170,8 +171,8 @@ pass. Detailed evidence:
 - The current recommendation hard filter only knows active/paused/blocked status; distance, price,
   dietary restrictions and opening hours are not existing hard constraints.
 - The Extension uses controlled unpacked distribution without automatic updates.
-- The Server cohort is enabled for one approved group, but the target-group Popup and assistive
-  technology checks have not yet completed.
+- The Server cohort is enabled for one approved group and its Popup entry is visible, but the full
+  wheel interaction and assistive-technology checks have not yet completed.
 - The Stage 7D.1 source candidate has no open P0/P1 source-review blocker; real Chrome and
   assistive-technology gates remain incomplete.
 - In the rare case where two open Popups accept the same persisted wheel result concurrently, the
@@ -201,7 +202,7 @@ Detailed procedure: [rollback runbook](../runbooks/rollback.md).
 
 ## Next step
 
-Complete real Chrome target-group and accessibility QA with the unpacked `0.3.0` Extension.
-Confirm the wheel entry/candidates for the approved group, closed behavior for a non-allowlisted
-group and unchanged normal recommendations. Do not expand the cohort until those checks pass, and
-do not mix this rollout with Stage 7D.2 POI implementation.
+Open the confirmed wheel entry and complete candidate, interaction and accessibility QA with the
+unpacked `0.3.0` Extension. Confirm closed behavior for a non-allowlisted group and unchanged normal
+recommendations. Do not expand the cohort until those checks pass, and do not mix this rollout with
+Stage 7D.2 POI implementation.

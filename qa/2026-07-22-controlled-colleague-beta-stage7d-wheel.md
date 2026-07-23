@@ -120,6 +120,11 @@ not yet contain Stage 7D routes. The Extension correctly mapped that capability 
 all-disabled features. This is historical fail-closed compatibility evidence, not the later
 Stage 7D flags-off deployment result.
 
+After the enabled single-group deployment, the operator reopened the Popup in the approved group
+and confirmed that the `转一下／幸运大转盘` entry was visible. This passes the authenticated
+capability-to-entry visibility gate only; the candidate request, wheel interaction, non-target
+group UI behavior and accessibility checks were not inferred from that observation.
+
 ## Exit checks not completed
 
 - [x] All three source findings are reviewed and their regression tests pass.
@@ -130,7 +135,8 @@ Stage 7D flags-off deployment result.
 - [x] Server flags-off deployment.
 - [x] Deployed `/api/health`, `/api/ready`, exact revision and read-only database verifier.
 - [x] Explicit single-group approval and sanitized Server predicate allowlist test.
-- [ ] Target-group Popup capability, entry and candidate request in real Chrome.
+- [x] Target-group Popup displays the wheel entry in real Chrome.
+- [ ] Open the wheel entry and verify the target-group candidate request and response.
 - [ ] Non-allowlisted real group closed behavior in real Chrome, if a second active group is
   available without creating production test data.
 

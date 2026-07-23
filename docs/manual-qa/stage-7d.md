@@ -40,6 +40,8 @@ Date: 2026-07-22
   candidate 请求。
 - [ ] 全局 flag 开、allowlist 空时仍关闭；非 allowlisted group 仍关闭。
 - [x] 生产 Server predicate 已验证目标 group 为开启、非目标值为关闭；未记录实际 ID。
+- [x] 启用部署后，操作者在获批 group 打开 Popup，确认出现「转一下／幸运大转盘」
+  入口；该条仅验证 capability 到入口显隐链路。
 - [ ] 只加入批准的 group ID 后 capability 与 wheel route 开启；切换到其他 group
   立即恢复关闭语义。
 - [ ] 无效、过期或被移除 membership 无法通过直接 route 调用读取候选。
