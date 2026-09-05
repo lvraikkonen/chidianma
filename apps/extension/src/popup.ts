@@ -8,7 +8,8 @@ import type {
   WeekdayTag
 } from "@lunch/shared";
 import {
-  adminOnboardingLinks,
+  availableAdminOnboardingActions,
+  openAdminOnboardingLink,
   type AdminOnboardingMode
 } from "./adminOnboardingLinks";
 import { fetchGroupCapabilitiesForStorage } from "./capabilitiesClient";
@@ -1263,15 +1264,11 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
 function createAdminOnboardingLinks(
   hostState: QuickAddHostState
 ): HTMLElement | null {
-  const features = hostState.capabilities.features;
-  const modes: Array<{ mode: AdminOnboardingMode; label: string }> = [];
-  if (features.restaurantBulkImport === true) {
-    modes.push({ mode: "bulk", label: "批量粘贴" });
-  }
-  if (features.poiReferenceSearch === true) {
-    modes.push({ mode: "nearby", label: "搜索附近餐厅" });
-  }
-  if (modes.length === 0) return null;
+  const actions = availableAdminOnboardingActions({
+    group: hostState.group,
+    features: hostState.capabilities.features
+  });
+  if (actions.length === 0) return null;
 
   const nav = document.createElement("nav");
   nav.className = "quick-add-import-links";
@@ -1279,7 +1276,7 @@ function createAdminOnboardingLinks(
   const hint = document.createElement("span");
   hint.textContent = "一次添加多家？";
   nav.appendChild(hint);
-  for (const item of modes) {
+  for (const item of actions) {
     const button = createButton(item.label, "button ghost");
     button.addEventListener("click", () => {
       runExclusive(() => openAdminOnboarding(hostState, item.mode));
@@ -1293,23 +1290,26 @@ async function openAdminOnboarding(
   hostState: QuickAddHostState,
   mode: AdminOnboardingMode
 ): Promise<void> {
-  const storage = await getStorageState();
-  if (!popupActionContextMatches(hostState, storage)) {
-    await reloadPopup(storage);
+  const result = await openAdminOnboardingLink({
+    group: hostState.group,
+    features: hostState.capabilities.features,
+    mode
+  }, {
+    loadStorage: getStorageState,
+    contextMatches: (storage) => popupActionContextMatches(hostState, storage),
+    reloadPopup: async (storage) => {
+      await reloadPopup(storage);
+    },
+    openTab: (url) => chrome.tabs.create({ url })
+  });
+  if (result === "stale") {
     setStatus("当前小组已切换，已加载当前小组内容，请重新操作。");
     return;
   }
-  const link = adminOnboardingLinks({
-    apiBaseUrl: storage.apiBaseUrl,
-    group: hostState.group,
-    features: hostState.capabilities.features
-  }).find((candidate) => candidate.mode === mode);
-  if (!link) {
+  if (result === "unavailable") {
     renderPopup(hostState);
     setStatus("当前小组暂未开启这个添加方式。");
-    return;
   }
-  await chrome.tabs.create({ url: link.url });
 }
 
 function createQuickAddForStorage(
