@@ -190,6 +190,9 @@ background、alarm 或 reminder runtime。
 
 ## Stage 7D.2：POI 候选搜索与辅助录入
 
+> Superseded on 2026-09-04 by the user-approved [restaurant onboarding design](2026-09-04-restaurant-onboarding-design.md).
+> The new first release includes minimal entry, bulk lists and Amap search plus explicit selected-result persistence for the existing three colleague groups, additive migrations, and the `feat/restaurant-onboarding` branch. Provider authorization confirmation is a later follow-up. The text below remains the historical Stage 7D.2 proposal, not the execution boundary for that release.
+
 ### Provider 策略
 
 本轮只实现 Mock + 高德，OSM/Overpass 延后，美团保持 forbidden。

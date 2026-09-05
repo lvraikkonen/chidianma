@@ -78,6 +78,15 @@ Historical or superseded Stage documents must not override a later current spec,
 
 ## Current Stage Documents
 
+Current user-approved execution (2026-09-04):
+`specs/2026-09-04-restaurant-onboarding-design.md` and
+`plans/2026-09-04-restaurant-onboarding.md` supersede the older Stage 7D.2
+search-only/save-disabled, standalone-spike and no-migration boundaries for this release.
+Work on `feat/restaurant-onboarding` after the wheel fast-forward into main. Implement minimal
+entry, pasted lists and real Amap search/selected-result persistence for the existing three colleague
+groups; provider authorization confirmation is a later follow-up. Keep existing wheel scope and
+outstanding manual QA. Historical stage status statements below are not newer execution instructions.
+
 - specs/2026-07-15-internal-beta-productization-stage7-design.md
 - specs/2026-07-20-controlled-colleague-beta-stage7d-design.md
 - plans/2026-07-15-internal-beta-productization-stage7a.md

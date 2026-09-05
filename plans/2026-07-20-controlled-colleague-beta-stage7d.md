@@ -198,6 +198,8 @@ docs/artifact/secret/release checks 均通过。严格 clean-worktree 包已从
 
 ## Stage 7D.2 — POI reference search spike
 
+> Superseded by the user-approved [restaurant onboarding implementation plan](2026-09-04-restaurant-onboarding.md) on 2026-09-04; its real search/save trial and migration/branch scope govern the new work.
+
 7D.1 合入 main 后创建 `spike/poi-reference-search`，不得从未合入的 wheel feature branch
 直接继续开发。
 
