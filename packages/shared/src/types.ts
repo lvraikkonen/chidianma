@@ -18,6 +18,7 @@ export type PoiProviderId = "mock" | "amap";
 export interface GroupCapabilitiesResponse {
   groupId: string;
   features: {
+    restaurantBulkImport?: boolean;
     luckyRestaurantWheel: boolean;
     poiReferenceSearch: boolean;
     poiReferenceDraft: boolean;
@@ -491,6 +492,7 @@ export interface GroupInviteMetadata {
 }
 
 export interface GroupSettingsResponse {
+  searchCenter?: import("./onboarding.js").PoiSearchCenter | null;
   groupId: string;
   group: GroupProfileSettings;
   reminder: GroupReminderSettings;
@@ -499,6 +501,7 @@ export interface GroupSettingsResponse {
 }
 
 export interface PatchGroupSettingsRequest {
+  searchCenter?: import("./onboarding.js").PoiSearchCenter | null;
   group?: {
     name?: string | undefined;
     subtitle?: string | null | undefined;
