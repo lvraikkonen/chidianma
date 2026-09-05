@@ -1,8 +1,12 @@
 # Internal Release Record
 
-Status: `Stage 7D.1 controlled rollout active for one approved group; production gates pass; manual interaction/accessibility QA remains`
+Status: `Restaurant onboarding 0.4.0 locally verified; final package/review/rollout pending. Wheel remains enabled for one approved group with manual QA open.`
 
-Date: 2026-07-20
+Date: 2026-09-05
+
+Current release work: [0.4.0 record](docs/releases/restaurant-onboarding-0.4.0-2026-09-05.md)
+and [QA evidence](qa/2026-09-05-restaurant-onboarding.md). The runtime identifiers below still
+describe the verified pre-onboarding deployment until rollout is completed.
 
 ## Version and deployment
 
@@ -143,15 +147,14 @@ decision before expanding Stage 7D beyond the first cohort.
   Mode locking, acceptance, non-target UI behavior, keyboard, screen-reader and reduced-motion
   checks remain pending, so expansion beyond this single group remains blocked.
 - **Operated beta (7D):** error alerting and privacy-bounded reminder delivery observation.
-- **Dependency audit:** OSV-Scanner `v2.4.0` (official SHA-256
+- **Dependency audit (0.4.0 source):** OSV-Scanner `v2.4.0` (official SHA-256
   `088119325156321c34c456ac3703d6013538fd71cbac82b891ab34db491e4d66`)
-  found no critical/high/medium/low findings across the 122-package current production tree.
-  The deployed candidate resolves `@fastify/static` to `9.3.0`, above the `9.1.1` fix floor for both
-  registered advisories.
-- **Development dependencies:** the full lockfile scan also reports one critical
-  Vitest, one high plus two medium Vite, and one medium esbuild finding; none are
-  present in `pnpm --filter @lunch/server list --prod`. Upgrade them in a
-  separately tested maintenance slice before the next distributable build.
+  rescanned 327 packages after the reviewed maintenance slice and returned no findings. The
+  unchanged production classifier found zero findings across 111 package versions. The old
+  lockfile's 11 high/3 medium production findings and development findings have been resolved in
+  the candidate, with Fastify 5/Prisma 6 architecture retained. The current old runtime does not
+  acquire these patches until the new deployment. See the QA record for exact versions, override
+  rationale and full regression evidence.
 - **Git repository:** approximately 14,507 loose objects / 159 MiB with unreachable-object and
   `.git/gc.log` warnings. A verified bundle recovery point exists at
   `/private/tmp/chidianma-stage7a-pre-maintenance-2026-07-15.bundle`; destructive prune is deferred.

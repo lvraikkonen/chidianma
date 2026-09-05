@@ -1,6 +1,6 @@
 # Testing and Release
 
-Status: current as of 2026-07-20.
+Status: current as of 2026-09-05.
 
 ## Automated gates
 
@@ -33,6 +33,17 @@ Package-level checks are preferred during development; full monorepo checks are 
 release-affecting handoff. Behavior changes add tests before implementation when practical.
 
 ## Database gates
+
+For restaurant onboarding, run its opt-in real PostgreSQL tests against an explicit disposable
+loopback database; the guard refuses production endpoints and unapproved database names:
+
+```bash
+ONBOARDING_TEST_DATABASE_URL=postgresql://onboarding_test@127.0.0.1:55432/lunch_onboarding_backend_test pnpm --filter @lunch/server test
+```
+
+The [0.4.0 QA record](../qa/2026-09-05-restaurant-onboarding.md) documents the native PostgreSQL
+legacy-upgrade, concurrent import, receipt replay and atomic rollback rehearsal. It is separate
+from the historical Docker wrapper below.
 
 ```bash
 pnpm --filter @lunch/server migration:rehearse

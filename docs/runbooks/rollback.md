@@ -5,8 +5,11 @@ Stage 7D stop condition.
 
 1. Stop rollout/beta expansion and record time, observed revision and user impact without secrets.
 2. Select the previously known-good Railway application deployment.
-3. If the change included forward-only migrations, restore the previous Server database reference
-   to retained `Postgres`; do not assume application rollback reverses schema/data.
+3. Check the release's migration compatibility before changing database references. The restaurant
+   onboarding migration is additive: keep active `Postgres-W12K` when disabling its flags or rolling
+   back the application, preserving imported restaurants and history. Application rollback does
+   not reverse schema/data. A database restore requires a separately verified incident decision;
+   never automatically switch to the retained, potentially stale `Postgres` snapshot.
 4. Wait for `/api/ready` HTTP 200 with the expected revision.
 5. Verify `/`, `/api/health`, protected API 401 and unknown `/api/*` JSON 404.
 6. Run `pnpm --filter @lunch/server db:verify` inside an approved Railway context and record only
