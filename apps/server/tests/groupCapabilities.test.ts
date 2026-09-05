@@ -100,7 +100,7 @@ describe("group beta capabilities", () => {
     }
   );
 
-  it("keeps all POI capabilities disabled in the wheel slice", () => {
+  it("keeps onboarding capabilities disabled without their own flags", () => {
     const parsed = loadEnv({
       ...env,
       LUCKY_RESTAURANT_WHEEL_ENABLED: "true",
@@ -111,6 +111,7 @@ describe("group beta capabilities", () => {
       groupId: "group-1",
       features: {
         luckyRestaurantWheel: true,
+        restaurantBulkImport: false,
         poiReferenceSearch: false,
         poiReferenceDraft: false,
         poiOfficePreset: false,
@@ -182,6 +183,7 @@ describe("group beta capabilities", () => {
       groupId: "group-1",
       features: {
         luckyRestaurantWheel: false,
+        restaurantBulkImport: false,
         poiReferenceSearch: false,
         poiReferenceDraft: false,
         poiOfficePreset: false,

@@ -88,6 +88,10 @@ model LunchGroup {
   memberships          GroupMembership[]
   settings             GroupSettings?
   scoringWeights       ScoringWeights?
+  importReceipts       RestaurantImportReceipt[]
+  searchCenterLabel    String?                    @map("search_center_label")
+  searchCenterLatitude Float?                     @map("search_center_latitude")
+  searchCenterLongitude Float?                    @map("search_center_longitude")
   restaurants          Restaurant[]
   recommendations      Recommendation[]
   dailyRecommendations DailyRecommendation[]
@@ -110,6 +114,7 @@ model GroupMembership {
   removedAt              DateTime?                  @map("removed_at")
   group                  LunchGroup                 @relation(fields: [groupId], references: [id])
   identity               Identity                   @relation(fields: [identityId], references: [id])
+  importReceipts         RestaurantImportReceipt[]
   createdRestaurants     Restaurant[]
   createdRecommendations Recommendation[]
   participation          DailyParticipation[]
@@ -165,6 +170,13 @@ model Restaurant {
   id                       String                    @id @default(cuid())
   groupId                  String                    @map("group_id")
   name                     String
+  sourceProvider           String?                   @map("source_provider")
+  sourcePlaceId            String?                   @map("source_place_id")
+  sourceCategory           String?                   @map("source_category")
+  sourceLatitude           Float?                    @map("source_latitude")
+  sourceLongitude          Float?                    @map("source_longitude")
+  sourceCoordinateSystem   String?                   @map("source_coordinate_system")
+  sourceImportedAt         DateTime?                 @map("source_imported_at")
   area                     String?
   address                  String?
   distanceMinutes          Int?                      @map("distance_minutes")
@@ -185,6 +197,7 @@ model Restaurant {
   dailyRecommendationItems DailyRecommendationItem[]
   feedback                 Feedback[]
 
+  @@unique([groupId, sourceProvider, sourcePlaceId])
   @@index([groupId, name, area])
   @@map("restaurants")
 }
@@ -329,4 +342,19 @@ model DailyRecommendationItem {
   @@unique([batchId, rank])
   @@index([batchId])
   @@map("daily_recommendation_items")
+}
+
+model RestaurantImportReceipt {
+  id           String          @id @default(cuid())
+  groupId      String          @map("group_id")
+  membershipId String          @map("membership_id")
+  requestId    String          @map("request_id")
+  requestHash  String          @map("request_hash")
+  result       Json
+  createdAt    DateTime        @default(now()) @map("created_at")
+  group        LunchGroup      @relation(fields: [groupId], references: [id])
+  membership   GroupMembership @relation(fields: [membershipId], references: [id])
+
+  @@unique([groupId, membershipId, requestId])
+  @@map("restaurant_import_receipts")
 }

@@ -23,6 +23,15 @@ const EnvSchema = z.object({
   ALLOW_PUBLIC_GROUP_CREATION: StrictBooleanSchema.default("true"),
   LUCKY_RESTAURANT_WHEEL_ENABLED: StrictBooleanSchema.default("false"),
   LUCKY_RESTAURANT_WHEEL_GROUP_IDS: GroupIdAllowlistSchema,
+  RESTAURANT_BULK_IMPORT_ENABLED: StrictBooleanSchema.default("false"),
+  RESTAURANT_BULK_IMPORT_GROUP_IDS: GroupIdAllowlistSchema,
+  POI_SEARCH_ENABLED: StrictBooleanSchema.default("false"),
+  POI_SEARCH_GROUP_IDS: GroupIdAllowlistSchema,
+  POI_SAVE_ENABLED: StrictBooleanSchema.default("false"),
+  POI_SAVE_GROUP_IDS: GroupIdAllowlistSchema,
+  POI_PROVIDER: z.enum(["mock", "amap"]).default("mock"),
+  POI_TICKET_SECRET: z.string().min(32).optional(),
+  AMAP_WEB_SERVICE_KEY: z.string().min(1).optional(),
   IDENTITY_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
   GROUP_SESSION_TTL_DAYS: z.coerce.number().int().positive().default(14),
   WEATHER_API_BASE_URL: z.string().url().default("https://api.open-meteo.com/v1"),
@@ -35,6 +44,14 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000)
 }).superRefine((env, context) => {
+  if (env.POI_SEARCH_ENABLED || env.POI_SAVE_ENABLED) {
+    if (!env.POI_TICKET_SECRET || env.POI_TICKET_SECRET === env.SESSION_SECRET) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["POI_TICKET_SECRET"], message: "POI requires an independent signing secret of at least 32 characters" });
+    }
+  }
+  if (env.POI_SEARCH_ENABLED && env.POI_PROVIDER === "amap" && !env.AMAP_WEB_SERVICE_KEY) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["AMAP_WEB_SERVICE_KEY"], message: "Amap search requires a server-side key" });
+  }
   if (env.NODE_ENV !== "production") {
     return;
   }

@@ -22,6 +22,7 @@ describe("group settings", () => {
   it("returns defaults without requiring persisted settings or weights", () => {
     expect(buildGroupSettingsResponse({ group, settings: null, weights: null })).toEqual({
       groupId: "group-1",
+      searchCenter: null,
       group: {
         name: "Dev Team",
         subtitle: "Lunch",

@@ -6,6 +6,7 @@ import { registerAdminStaticRoutes } from "./routes/adminStatic.js";
 import { registerGroupCapabilitiesRoutes } from "./routes/groupCapabilities.js";
 import { registerGroupDashboardRoutes } from "./routes/groupDashboard.js";
 import { registerGroupHistoryRoutes } from "./routes/groupHistory.js";
+import { registerGroupOnboardingRoutes } from "./routes/groupOnboarding.js";
 import { registerGroupOperationsRoutes } from "./routes/groupOperations.js";
 import { registerGroupKnowledgeRoutes } from "./routes/groupKnowledge.js";
 import { registerGroupParticipationRoutes } from "./routes/groupParticipation.js";
@@ -119,6 +120,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await registerGroupDashboardRoutes(app, env);
   await registerGroupHistoryRoutes(app, env);
   await registerGroupOperationsRoutes(app, env);
+  await registerGroupOnboardingRoutes(app, env);
   await registerGroupTodayRoutes(app, env);
   await registerGroupParticipationRoutes(app, env);
   await registerGroupKnowledgeRoutes(app, env);

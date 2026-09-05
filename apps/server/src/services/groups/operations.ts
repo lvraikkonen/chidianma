@@ -31,6 +31,9 @@ export class GroupSettingsValidationError extends Error {
 
 interface SettingsGroupRecord {
   id: string;
+  searchCenterLabel?: string | null;
+  searchCenterLatitude?: number | null;
+  searchCenterLongitude?: number | null;
   name: string;
   subtitle: string | null;
   officeTimezone: string;
@@ -58,6 +61,9 @@ export function buildGroupSettingsResponse(input: {
 }): GroupSettingsResponse {
   return {
     groupId: input.group.id,
+    searchCenter: input.group.searchCenterLabel && input.group.searchCenterLatitude != null && input.group.searchCenterLongitude != null
+      ? { label: input.group.searchCenterLabel, latitude: input.group.searchCenterLatitude, longitude: input.group.searchCenterLongitude, coordinateSystem: "GCJ02" }
+      : null,
     group: {
       name: input.group.name,
       ...(input.group.subtitle ? { subtitle: input.group.subtitle } : {}),
@@ -98,11 +104,22 @@ export function buildGroupSettingsResponse(input: {
 
 export function parseGroupSettingsPatch(body: unknown): PatchGroupSettingsRequest {
   const root = requireRecord(body, "Settings request must be an object");
-  rejectUnknownFields(root, ["group", "reminder", "scoringWeights"]);
-  if (!("group" in root) && !("reminder" in root) && !("scoringWeights" in root)) {
+  rejectUnknownFields(root, ["group", "reminder", "scoringWeights", "searchCenter"]);
+  if (!("group" in root) && !("reminder" in root) && !("scoringWeights" in root) && !("searchCenter" in root)) {
     invalid("Settings request must include at least one section");
   }
   const result: PatchGroupSettingsRequest = {};
+  if ("searchCenter" in root) {
+    if (root.searchCenter === null) result.searchCenter = null;
+    else {
+      const center = requireRecord(root.searchCenter, "searchCenter must be an object or null");
+      rejectUnknownFields(center, ["label", "latitude", "longitude", "coordinateSystem"]);
+      if (center.coordinateSystem !== "GCJ02") invalid("searchCenter must use GCJ02");
+      const label = nonEmptyString(center.label, "label");
+      if (label.length > 500) invalid("searchCenter label is too long");
+      result.searchCenter = { label, latitude: boundedNumber(center.latitude, -90, 90, "latitude"), longitude: boundedNumber(center.longitude, -180, 180, "longitude"), coordinateSystem: "GCJ02" };
+    }
+  }
   if ("group" in root) result.group = parseGroupPatch(root.group);
   if ("reminder" in root) result.reminder = parseReminderPatch(root.reminder);
   if ("scoringWeights" in root) result.scoringWeights = parseWeightsPatch(root.scoringWeights);
@@ -216,6 +233,13 @@ export async function patchGroupSettings(input: {
   return input.prisma.$transaction(async (tx) => {
     const existingGroup = await tx.lunchGroup.findUnique({ where: { id: input.groupId } });
     if (!existingGroup) throw new GroupOperationsNotFoundError(input.groupId);
+    if ("searchCenter" in input.patch) {
+      await tx.lunchGroup.update({ where: { id: input.groupId }, data: {
+        searchCenterLabel: input.patch.searchCenter?.label ?? null,
+        searchCenterLatitude: input.patch.searchCenter?.latitude ?? null,
+        searchCenterLongitude: input.patch.searchCenter?.longitude ?? null
+      } });
+    }
     if (input.patch.group) {
       const groupData = input.patch.group as Prisma.LunchGroupUpdateInput;
       await tx.lunchGroup.update({ where: { id: input.groupId }, data: groupData });
