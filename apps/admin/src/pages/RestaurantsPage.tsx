@@ -10,7 +10,7 @@ import type {
   WeatherTag,
   WeekdayTag
 } from "@lunch/shared";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Modal } from "../components/Modal";
 import {
   filterRestaurants,
@@ -39,6 +39,7 @@ interface RestaurantsPageProps {
   loadError?: string | undefined;
   operationError?: string | undefined;
   entryState: RestaurantEntryState;
+  onboarding?: ReactNode | undefined;
   onRetryLoad: () => void | Promise<void>;
   onOpenToday: () => void;
   onCreateEntry: (
@@ -163,6 +164,8 @@ export function RestaurantsPage(props: RestaurantsPageProps) {
           </button>
         </div>
       ) : null}
+
+      {props.onboarding}
 
       <div className="toolbar" aria-label="筛选餐厅">
         <label className="search-field">
@@ -331,7 +334,7 @@ function RestaurantTable(props: {
                 </td>
                 <td data-label="团队推荐">
                   <div className="recommendation-list">
-                    {restaurant.recommendations.length === 0 ? <small>还没有具体推荐</small> : null}
+                    {restaurant.recommendations.length === 0 ? <small>新收录，尚无同事推荐</small> : null}
                     {restaurant.recommendations.map((recommendation) => (
                       <div className="recommendation-row" key={recommendation.id}>
                         <div>

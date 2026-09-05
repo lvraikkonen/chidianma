@@ -173,6 +173,14 @@ describe("restaurant page markup", () => {
     expect(html).toContain("新增餐厅");
   });
 
+  it("labels a listed restaurant without teammate recommendations accurately", () => {
+    const html = renderToStaticMarkup(
+      <RestaurantsPage {...pageProps({ restaurants: [restaurant({ recommendations: [] })] })} />
+    );
+
+    expect(html).toContain("新收录，尚无同事推荐");
+  });
+
   it("renders partial-success recovery without losing the saved restaurant", () => {
     const html = renderToStaticMarkup(
       <RestaurantsPage {...pageProps({

@@ -44,6 +44,7 @@ import {
   type CreateRestaurantEntryInput,
   type RestaurantEntryState
 } from "../features/restaurants/restaurantModel";
+import { RestaurantOnboardingPanel } from "../features/restaurants/RestaurantOnboardingPanel";
 import {
   loadTodayView,
   refreshTodayView,
@@ -68,7 +69,10 @@ import {
 import { createRequestGate } from "./requestGate";
 import {
   navigate,
+  navigateRestaurants,
   parseAdminRoute,
+  parseRestaurantRouteIntent,
+  resolveRestaurantDestination,
   subscribeRoute,
   type AdminRoute
 } from "./router";
@@ -77,6 +81,9 @@ export function App() {
   const [authState, setAuthState] = useState<AuthViewState>({ kind: "loading" });
   const [route, setRoute] = useState<AdminRoute>(() => (
     parseAdminRoute(window.location.hash)
+  ));
+  const [restaurantIntent, setRestaurantIntent] = useState(() => (
+    parseRestaurantRouteIntent(window.location.hash)
   ));
   const [groupEntryOpen, setGroupEntryOpen] = useState(false);
   const [todayState, setTodayState] = useState<TodayViewState>({ kind: "loading" });
@@ -116,7 +123,10 @@ export function App() {
   }), []);
 
   useEffect(() => {
-    const unsubscribe = subscribeRoute(setRoute);
+    const unsubscribe = subscribeRoute((nextRoute) => {
+      setRoute(nextRoute);
+      setRestaurantIntent(parseRestaurantRouteIntent(window.location.hash));
+    });
     void authController.load();
     return unsubscribe;
   }, [authController]);
@@ -126,10 +136,10 @@ export function App() {
       navigate("today");
     }
     if ((authState.kind === "identity-entry" || authState.kind === "group-entry")
-      && route !== "login") {
+      && route !== "login" && !restaurantIntent) {
       navigate("login");
     }
-  }, [authState.kind, route]);
+  }, [authState.kind, route, restaurantIntent]);
 
   useEffect(() => {
     if (route === "today") {
@@ -165,6 +175,25 @@ export function App() {
   const activeGroup = activeGroupId
     ? connectedState?.groups.find((group) => group.groupId === activeGroupId)
     : undefined;
+  const restaurantDestination = connectedState
+    ? resolveRestaurantDestination(restaurantIntent, connectedState.groups, activeGroupId)
+    : { kind: "none" as const };
+  const restaurantDestinationUnauthorized = route === "restaurants"
+    && restaurantDestination.kind === "unauthorized";
+  const restaurantDestinationPending = route === "restaurants"
+    && restaurantDestination.kind === "switch";
+
+  useEffect(() => {
+    if (authState.kind !== "authenticated" && authState.kind !== "group-entry") return;
+    const destination = resolveRestaurantDestination(
+      restaurantIntent,
+      authState.groups,
+      authState.session.activeGroupId
+    );
+    if (destination.kind === "switch") {
+      void authController.switchGroup(destination.groupId);
+    }
+  }, [authController, authState.kind, restaurantIntent?.groupId, activeGroupId]);
 
   useEffect(() => {
     if (route !== "today" || !groupContext) return;
@@ -199,7 +228,8 @@ export function App() {
   }, [authController, groupContext?.groupId, todayState.kind]);
 
   useEffect(() => {
-    if (route !== "restaurants" || !groupContext) return;
+    if (route !== "restaurants" || !groupContext
+      || restaurantDestinationUnauthorized || restaurantDestinationPending) return;
     const context = { ...groupContext };
     const request = requestGate.current.begin();
     const changedGroup = restaurantGroupId.current !== context.groupId;
@@ -222,7 +252,7 @@ export function App() {
       if (requestGate.current.isCurrent(request)) setRestaurantsLoading(false);
     });
     return () => requestGate.current.invalidate();
-  }, [route, groupContext?.groupId, groupContext?.token, restaurantReload]);
+  }, [route, groupContext?.groupId, groupContext?.token, restaurantReload, restaurantDestinationUnauthorized, restaurantDestinationPending]);
 
   async function runActiveGroupMutation(operation: () => Promise<void>) {
     const before = readAdminSession();
@@ -268,6 +298,9 @@ export function App() {
   }
 
   async function handleSwitchGroup(groupId: string) {
+    if (route === "restaurants") {
+      navigateRestaurants({ groupId, ...(restaurantIntent?.mode ? { mode: restaurantIntent.mode } : {}) });
+    }
     await runActiveGroupMutation(() => authController.switchGroup(groupId));
   }
 
@@ -580,7 +613,11 @@ export function App() {
         </div>
       ) : undefined}
     >
-      {route === "restaurants" ? activeGroup ? (
+      {route === "restaurants" ? restaurantDestinationUnauthorized ? (
+        <StatusPanel title="无法打开这个小组" message="当前身份不是目标小组的有效成员。请切换到已有小组，或使用正确的身份连接后再试。" />
+      ) : restaurantDestinationPending ? (
+        <StatusPanel title="正在切换小组" message="正在验证目标小组成员身份，请稍候。" />
+      ) : activeGroup && groupContext ? (
         <RestaurantsPage
           group={activeGroup}
           restaurants={restaurants}
@@ -588,6 +625,18 @@ export function App() {
           loadError={restaurantLoadError}
           operationError={restaurantOperationError}
           entryState={restaurantEntryState}
+          onboarding={(
+            <RestaurantOnboardingPanel
+              key={activeGroup.groupId}
+              context={groupContext}
+              group={activeGroup}
+              restaurants={restaurants}
+              initialMode={restaurantIntent?.mode}
+              onMembershipInvalid={handleStage5MembershipError}
+              onImported={() => setRestaurantReload((value) => value + 1)}
+              onOpenToday={() => navigate("today")}
+            />
+          )}
           onOpenToday={() => navigate("today")}
           onRetryLoad={() => setRestaurantReload((value) => value + 1)}
           onCreateEntry={handleCreateRestaurantEntry}
