@@ -36,4 +36,18 @@ The required dependency gate found new advisories in the existing lockfile on 20
 
 ## Later branches
 
+### Production verification follow-up — 2026-09-05
+
+The first deployment passed migration, readiness and flags-off checks. Enabled production smoke
+then observed intermittent `ETIMEDOUT` before an Amap HTTP response, including IPv4 connection
+timeouts with unavailable IPv6 fallbacks. A diagnostic-only increase of Node's connection-family
+attempt timeout did not resolve it and was not applied to the service. Temporarily disable POI
+search/save while retaining bulk import and the existing wheel scope. Complete a separate bounded
+provider-transport task per the updated design: at most two retries of recognized transient GET
+transport errors, short abortable backoff, one unchanged eight-second overall deadline, no retry
+of explicit HTTP/provider/data failures, and tests before code. Independently review it, rerun the
+affected/full release gates, repackage at the new source commit and repeat production verification
+before restoring the exact three-group POI allowlists. This is remediation of observed release-gate
+failures, not another pass over the closed five Admin review findings.
+
 Cross-group selected lists → daily conditions → actual meal/revisit/queue experience → freshness/facade photos → ZIP update notification. Scope each after this release; do not pre-create data structures now.

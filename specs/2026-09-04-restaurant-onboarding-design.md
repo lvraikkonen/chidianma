@@ -33,6 +33,11 @@ Shared contracts live in `packages/shared`. Add group-scoped POST endpoints `/po
 
 - Add `restaurantBulkImport` to capabilities and implement existing `poiReferenceSearch`, `poiReferenceDraft`, `poiOfficePreset`, `poiProvider` semantics for this trial. Older clients remain compatible.
 - Environment flags independently gate bulk import, POI search and POI save with precise group allowlists and false/empty defaults. Amap key is server-only. Use Mock for deterministic development/tests and Amap v3 geocode/around (`types=050000`, `extensions=base`, `sortrule=distance`, `offset=20`) for live verification.
+- Production verification found intermittent upstream connection failures. Amap's idempotent GET
+  transport may retry at most twice for recognized transient connection failures, with short
+  bounded backoff inside one eight-second total deadline. Cancellation stops further attempts.
+  HTTP/provider rejection, rate limits and invalid response data are not transport retries. Do not
+  log the Key, request URL or full response, or alter Node's global connection settings.
 - POI results have normalized necessary fields and a short-lived signed import ticket bound to group, membership and identity authorization version. Use an independent signing key/domain from bearer sessions. Validate type, expiry, signature and active membership; tokens are not authorization substitutes. Tickets expire after 30 minutes. Do not accept client-fabricated provider identity/coordinates.
 - Save only selected normalized name/address and optional source platform/place ID/category/GCJ02 coordinates/import time. No full response persistence or raw provider logging. Old restaurant provenance remains null. Enforce uniqueness of `(groupId, sourceProvider, sourcePlaceId)` for sourced restaurants.
 - Persist each import receipt with group, membership, caller request ID, canonical request hash and per-row result. Replaying the same request returns its original result after current authorization/capability checks, including after a response loss or restart; different content with the same ID returns conflict. Return stored successful receipts before rejecting now-expired tickets for that same request.
