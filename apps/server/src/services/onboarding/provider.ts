@@ -88,14 +88,16 @@ export class MockPoiProvider implements PoiProvider {
   async geocode(input: PoiGeocodeRequest, signal?: AbortSignal): Promise<PoiSearchCenter[]> {
     if (signal?.aborted) throw requestCancelled();
     const parsed = GeocodeRequestSchema.parse(input);
-    return [{ label: `模拟地址：${parsed.address}`, latitude: 31.2304, longitude: 121.4737, coordinateSystem: 'GCJ02' }];
+    return [{ label: `模拟地址：${parsed.address}`.slice(0, 500), latitude: 31.2304, longitude: 121.4737, coordinateSystem: 'GCJ02' }];
   }
   async search(input: PoiSearchRequest, signal?: AbortSignal): Promise<{ candidates: ProviderCandidate[]; hasMore: boolean }> {
     if (signal?.aborted) throw requestCancelled();
     const parsed = SearchRequestSchema.parse(input);
     return { candidates: Array.from({ length: 20 }, (_, index) => {
       const number = (parsed.page - 1) * 20 + index + 1;
-      return { provider: 'mock', placeId: `mock-${parsed.center.longitude}-${parsed.center.latitude}-${number}`, name: `模拟餐馆${number}`, address: `${parsed.center.label}附近${number}号`, category: '模拟餐饮', latitude: parsed.center.latitude, longitude: parsed.center.longitude, coordinateSystem: 'GCJ02', distanceMeters: number * 40 };
+      const suffix = `附近${number}号`;
+      const address = `${parsed.center.label.slice(0, 500 - suffix.length)}${suffix}`;
+      return { provider: 'mock', placeId: `mock-${parsed.center.longitude}-${parsed.center.latitude}-${number}`, name: `模拟餐馆${number}`, address, category: '模拟餐饮', latitude: parsed.center.latitude, longitude: parsed.center.longitude, coordinateSystem: 'GCJ02', distanceMeters: number * 40 };
     }), hasMore: parsed.page < 3 };
   }
 }

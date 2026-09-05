@@ -41,6 +41,20 @@ describe('POI provider normalization', () => {
     await expect(pending).rejects.toMatchObject({ code: 'poi_request_cancelled' });
     await expect(provider.search({ center, radius: 3000, page: 1 })).rejects.toMatchObject({ code: 'poi_provider_unavailable' });
   });
+  it('keeps a maximum-length mock geocode result usable as a search center', async () => {
+    const provider = new MockPoiProvider();
+    const centers = await provider.geocode({ address: '园'.repeat(500) });
+    expect(centers[0]?.label).toMatch(/^模拟地址：/);
+    await expect(provider.search({ center: centers[0]!, page: 1 })).resolves.toMatchObject({ hasMore: true });
+  });
+  it('keeps maximum-length mock center addresses valid for import ticket signing', async () => {
+    const provider = new MockPoiProvider();
+    const result = await provider.search({ center: { ...center, label: '园'.repeat(500) }, page: 3 });
+    const last = result.candidates[19]!;
+    expect(last.address).toMatch(/附近60号$/);
+    expect(() => signPoiTicket(last, subject, secret, 1000)).not.toThrow();
+    expect(verifyPoiTicket(signPoiTicket(last, subject, secret, 1000), subject, secret, 1001)).toEqual(last);
+  });
   it('provides deterministic mock pages capped at the third page', async () => {
     const provider = new MockPoiProvider();
     const first = await provider.search({ center, radius: 3000, page: 1 });
