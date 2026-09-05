@@ -7,6 +7,10 @@ import type {
   WeatherTag,
   WeekdayTag
 } from "@lunch/shared";
+import {
+  adminOnboardingLinks,
+  type AdminOnboardingMode
+} from "./adminOnboardingLinks";
 import { fetchGroupCapabilitiesForStorage } from "./capabilitiesClient";
 import {
   createGroupRecommendation,
@@ -1043,6 +1047,8 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
   form.className = "quick-add-form";
   form.noValidate = true;
 
+  const onboardingLinks = createAdminOnboardingLinks(hostState);
+
   const name = createQuickAddInput("店名", "name", {
     required: true,
     placeholder: "例如：老王炒饭店"
@@ -1153,7 +1159,9 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
     partialSuccess,
     submitButton
   );
-  popupContent.append(header, form);
+  popupContent.append(header);
+  if (onboardingLinks) popupContent.append(onboardingLinks);
+  popupContent.append(form);
 
   const updateControls = (state: QuickAddState): void => {
     applyQuickAddControls(state, {
@@ -1250,6 +1258,58 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
       );
     });
   });
+}
+
+function createAdminOnboardingLinks(
+  hostState: QuickAddHostState
+): HTMLElement | null {
+  const features = hostState.capabilities.features;
+  const modes: Array<{ mode: AdminOnboardingMode; label: string }> = [];
+  if (features.restaurantBulkImport === true) {
+    modes.push({ mode: "bulk", label: "批量粘贴" });
+  }
+  if (features.poiReferenceSearch === true) {
+    modes.push({ mode: "nearby", label: "搜索附近餐厅" });
+  }
+  if (modes.length === 0) return null;
+
+  const nav = document.createElement("nav");
+  nav.className = "quick-add-import-links";
+  nav.setAttribute("aria-label", "在管理端添加多家餐厅");
+  const hint = document.createElement("span");
+  hint.textContent = "一次添加多家？";
+  nav.appendChild(hint);
+  for (const item of modes) {
+    const button = createButton(item.label, "button ghost");
+    button.addEventListener("click", () => {
+      runExclusive(() => openAdminOnboarding(hostState, item.mode));
+    });
+    nav.appendChild(button);
+  }
+  return nav;
+}
+
+async function openAdminOnboarding(
+  hostState: QuickAddHostState,
+  mode: AdminOnboardingMode
+): Promise<void> {
+  const storage = await getStorageState();
+  if (!popupActionContextMatches(hostState, storage)) {
+    await reloadPopup(storage);
+    setStatus("当前小组已切换，已加载当前小组内容，请重新操作。");
+    return;
+  }
+  const link = adminOnboardingLinks({
+    apiBaseUrl: storage.apiBaseUrl,
+    group: hostState.group,
+    features: hostState.capabilities.features
+  }).find((candidate) => candidate.mode === mode);
+  if (!link) {
+    renderPopup(hostState);
+    setStatus("当前小组暂未开启这个添加方式。");
+    return;
+  }
+  await chrome.tabs.create({ url: link.url });
 }
 
 function createQuickAddForStorage(

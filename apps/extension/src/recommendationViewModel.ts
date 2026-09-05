@@ -24,7 +24,7 @@ export interface ScoreRow {
 }
 
 function priceLabel(cents?: number): string {
-  if (cents === undefined) return "";
+  if (cents === undefined) return "人均价格未知";
   const yuan = cents / 100;
   return `人均 ¥${Number.isInteger(yuan) ? yuan.toFixed(0) : yuan.toFixed(1)}`;
 }
@@ -51,7 +51,7 @@ export function toRecommendationCardModel(
     dish: item.dish ?? "",
     reason: item.reason,
     distanceLabel: item.distanceMinutes === undefined
-      ? ""
+      ? "步行时间未知"
       : `步行 ${item.distanceMinutes} 分钟`,
     priceLabel: priceLabel(item.averagePriceCents),
     modeLabel: modeLabel(item),

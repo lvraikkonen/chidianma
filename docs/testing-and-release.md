@@ -89,6 +89,8 @@ For the controlled install/upgrade/rollback flow, use
   passed automated, Railway and real Chrome exit gates.
 - Stage 7D.0 freezes the approved planning baseline. Stage 7D feature flags and explicit cohort
   approval still control colleague rollout.
+- Extension `0.4.0` is the restaurant-onboarding source candidate. It retains the fixed ID and
+  permissions; packaging and deployment evidence must be added before it is called released.
 - `CHANGELOG.md` records user-facing capability; `RELEASE.md` records deployment/database/rollback
   state and known issues.
 

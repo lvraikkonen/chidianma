@@ -1,8 +1,8 @@
 # Internal Extension Distribution
 
-Status: Stage 7D controlled colleague beta candidate
+Status: Restaurant onboarding source candidate; not deployed or distributed
 
-Version: `0.3.0`
+Version: `0.4.0`
 
 Extension ID: `bbkeaogleldgfnkgebdhdbiohlmonbkk`
 
@@ -11,8 +11,9 @@ Production service: `https://lunchserver-production.up.railway.app`
 ## Boundary
 
 This is a controlled unpacked build for internal validation. It is not a Chrome
-Web Store release and has no automatic update mechanism. Stage 7D keeps the
-candidate limited to the explicitly approved colleague beta cohort.
+Web Store release and has no automatic update mechanism. The onboarding runtime
+has not been deployed, and its bulk, nearby-search and POI-save production flags
+remain off until the release operator completes the approved rollout gates.
 
 The Extension requests only `alarms`, `notifications` and `storage`, plus access
 to the exact production service above. It does not request browsing-history or
@@ -30,9 +31,9 @@ The command creates:
 
 ```text
 artifacts/extension/
-  chidianma-extension-0.3.0-internal.zip
-  chidianma-extension-0.3.0-internal.sha256
-  chidianma-extension-0.3.0-internal.release.json
+  chidianma-extension-0.4.0-internal.zip
+  chidianma-extension-0.4.0-internal.sha256
+  chidianma-extension-0.4.0-internal.release.json
 ```
 
 The ZIP root contains `manifest.json`. The release JSON follows
@@ -55,19 +56,23 @@ remain outside the repository and is not needed to load this unpacked package.
 6. Select **Load unpacked** and choose the extracted directory.
 7. Confirm:
    - name is `中午吃点啥（内部测试）`;
-   - version is `0.3.0`;
+   - version is `0.4.0`;
    - ID is `bbkeaogleldgfnkgebdhdbiohlmonbkk`;
    - service shown in settings is the production URL above.
 8. Pin the Extension if desired.
 9. If replacing a build from before the fixed-key Stage 7C candidate, create an
    identity connection code on an existing connected device and reconnect this
-   `0.3.0` installation. The fixed ID does not promise automatic migration from
+   `0.4.0` installation. The fixed ID does not promise automatic migration from
    an older Extension ID.
 
 Do not load directly from Downloads or another directory that may be moved or
 cleaned automatically.
 
 ## Upgrade
+
+Use this same-directory flow to upgrade an existing `0.2.0` or `0.3.0`
+fixed-ID installation while preserving its local identity, current group,
+reminder settings and recommendation cache.
 
 1. Keep the current extracted directory and previous ZIP as the rollback point.
 2. Verify the new candidate checksum and release JSON.
@@ -78,7 +83,10 @@ cleaned automatically.
 6. Select **Reload** on the Extension card.
 7. Confirm the same Extension ID, expected version, active identity/group,
    reminder settings and cached recommendation state.
-8. Smoke test popup, detail, feedback, notification click and offline cache.
+8. Smoke test popup, minimal name-only restaurant entry, Admin bulk/nearby links,
+   detail, feedback, notification click and offline cache. The Admin links must
+   contain only the URL-encoded current group ID and requested mode; Admin still
+   verifies the signed-in identity and membership.
 
 Changing the files under the same fixed-key Extension keeps the Extension ID.
 Do not remove the existing installation during a normal upgrade, because remove

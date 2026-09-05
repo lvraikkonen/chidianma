@@ -255,6 +255,16 @@ function validateArtifacts(manifest) {
     schema.properties?.schema?.const === "extension-internal-release/1.0",
     "release_schema_contract_invalid"
   );
+  const escapedVersion = INTERNAL_EXTENSION_VERSION.replaceAll(".", "\\.");
+  assertRelease(
+    schema.properties?.version?.pattern === `^${escapedVersion}$`,
+    "release_schema_extension_version_invalid"
+  );
+  assertRelease(
+    schema.properties?.artifact?.properties?.file?.pattern
+      === `^chidianma-extension-${escapedVersion}-internal\\.zip$`,
+    "release_schema_artifact_name_invalid"
+  );
   const allPresent = [zipPath, shaPath, metadataPath].every(existsSync);
   if (!allPresent) {
     assertRelease(!requireArtifacts, "stage7c_release_artifacts_missing");

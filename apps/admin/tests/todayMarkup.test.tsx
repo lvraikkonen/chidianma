@@ -99,6 +99,34 @@ describe("today page markup", () => {
     expect(html).not.toContain("张三、李雷");
   });
 
+  it("renders truthful numeric and unknown walking and price labels", () => {
+    const known = render({
+      ...readyState(),
+      response: responseWith({
+        items: [{
+          ...response().items[0]!,
+          distanceMinutes: 6,
+          averagePriceCents: 2850
+        }]
+      })
+    });
+    const unknown = render({
+      ...readyState(),
+      response: responseWith({
+        items: [{
+          ...response().items[0]!,
+          distanceMinutes: undefined,
+          averagePriceCents: undefined
+        }]
+      })
+    });
+
+    expect(known).toContain("步行 6 分钟");
+    expect(known).toContain("人均 ¥28.5");
+    expect(unknown).toContain("步行时间未知");
+    expect(unknown).toContain("人均价格未知");
+  });
+
   it("renders generation instead of an error for no current batch", () => {
     const html = render({ kind: "no-current-batch" });
 

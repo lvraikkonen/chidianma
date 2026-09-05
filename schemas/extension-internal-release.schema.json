@@ -23,7 +23,7 @@
     "schema": { "const": "extension-internal-release/1.0" },
     "schemaVersion": { "const": "1.0" },
     "product": { "const": "chidianma-extension" },
-    "version": { "type": "string", "pattern": "^0\\.2\\.0$" },
+    "version": { "type": "string", "pattern": "^0\\.4\\.0$" },
     "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "extensionId": { "type": "string", "pattern": "^[a-p]{32}$" },
     "buildProfile": { "const": "internal" },
@@ -52,7 +52,7 @@
       "properties": {
         "file": {
           "type": "string",
-          "pattern": "^chidianma-extension-0\\.2\\.0-internal\\.zip$"
+          "pattern": "^chidianma-extension-0\\.4\\.0-internal\\.zip$"
         },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }

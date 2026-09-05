@@ -52,4 +52,15 @@ describe("recommendation view models", () => {
       value: -5
     });
   });
+
+  it("labels missing price and walking time as unknown", () => {
+    expect(toRecommendationCardModel({
+      ...item,
+      averagePriceCents: undefined,
+      distanceMinutes: undefined
+    })).toMatchObject({
+      distanceLabel: "步行时间未知",
+      priceLabel: "人均价格未知"
+    });
+  });
 });

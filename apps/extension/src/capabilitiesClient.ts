@@ -47,6 +47,12 @@ function parseCapabilitiesResponse(
   if (booleanFields.some((field) => typeof features[field] !== "boolean")) {
     invalidResponse("invalid_capabilities_response");
   }
+  if (
+    features.restaurantBulkImport !== undefined
+    && typeof features.restaurantBulkImport !== "boolean"
+  ) {
+    invalidResponse("invalid_capabilities_response");
+  }
   const provider = features.poiProvider;
   if (provider !== null && provider !== "mock" && provider !== "amap") {
     invalidResponse("invalid_capabilities_response");
@@ -55,6 +61,9 @@ function parseCapabilitiesResponse(
   return {
     groupId: expectedGroupId,
     features: {
+      ...(typeof features.restaurantBulkImport === "boolean"
+        ? { restaurantBulkImport: features.restaurantBulkImport }
+        : {}),
       luckyRestaurantWheel: features.luckyRestaurantWheel as boolean,
       poiReferenceSearch: features.poiReferenceSearch as boolean,
       poiReferenceDraft: features.poiReferenceDraft as boolean,

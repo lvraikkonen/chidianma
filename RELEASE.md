@@ -6,6 +6,11 @@ Date: 2026-07-20
 
 ## Version and deployment
 
+- Extension `0.4.0` is the unreleased restaurant-onboarding source candidate. It retains ID
+  `bbkeaogleldgfnkgebdhdbiohlmonbkk`, the existing permissions and exact production host. No
+  `0.4.0` release package, production runtime deployment or colleague distribution is claimed here;
+  the bulk, nearby-search and POI-save production flags remain off.
+
 - Stage 6 local annotated audit tag: `v0.1.0-internal`.
 - Stage 6 peeled commit: `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
 - Stage 7D pushed annotated baseline tag: `v0.2.0-internal`.
@@ -162,7 +167,7 @@ the [wheel QA record](qa/2026-07-22-controlled-colleague-beta-stage7d-wheel.md),
 
 ## Next step
 
-Verify mode locking, acceptance, keyboard, screen-reader and reduced-motion behavior. Also confirm
-that a non-allowlisted group remains closed and normal recommendations still work. Do not expand
-the cohort until those manual checks pass; the Stage 7C deployment remains the application
-rollback point.
+Complete the `0.4.0` clean-checkout package and whole-branch release gates, deploy the compatible
+runtime with onboarding flags off, then verify the approved three group IDs before enabling bulk,
+nearby search and POI save. Existing wheel manual checks and rollout boundaries remain open; the
+Stage 7C deployment remains the application rollback point.

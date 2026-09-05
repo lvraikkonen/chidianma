@@ -15,7 +15,7 @@ pnpm --filter @lunch/extension build
 It produces `apps/extension/dist` with:
 
 - name `中午吃点啥（内部测试）`;
-- version `0.3.0`;
+- version `0.4.0`;
 - fixed service `https://lunchserver-production.up.railway.app`;
 - exact production host permission;
 - public manifest key and stable Extension ID
@@ -48,7 +48,7 @@ The supported unpacked install, upgrade and rollback procedure is documented in
 [Internal Extension Distribution](../../docs/extension-internal-distribution.md).
 Load a fixed extracted directory, not a temporary download directory.
 
-The fixed public key keeps the Stage 7C Extension ID stable for the `0.3.0`
+The fixed public key keeps the Stage 7C Extension ID stable for the `0.4.0`
 upgrade. Installations from before the fixed-key Stage 7C candidate still need
 to reconnect through an existing identity connection code; automatic migration
 from those older Extension IDs is not promised.
@@ -60,7 +60,10 @@ from those older Extension IDs is not promised.
 3. Switch groups without copying tokens.
 4. Use the popup/detail pages for recommendations, participation, decisions and
    feedback.
-5. Use settings for personal history, local reminder customization and support
+5. Add a restaurant with only its name, optionally add an address and a real
+   teammate recommendation, or follow the capability-gated bulk/nearby links to
+   the Admin route for the current group. Those links contain no credentials.
+6. Use settings for personal history, local reminder customization and support
    version/service checks.
 
 Raw identity and group-session tokens are intentionally hidden from the UI.

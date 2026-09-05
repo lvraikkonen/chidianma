@@ -1107,6 +1107,43 @@ describe("grouped extension storage", () => {
 });
 
 describe("legacy settings migration", () => {
+  it("preserves current grouped state across a same-directory Extension upgrade", async () => {
+    const current = {
+      ...getDefaultStorageState(),
+      identityId: "identity-1",
+      identityToken: "identity-token",
+      activeGroupId: "group-1",
+      sessionsByGroupId: { "group-1": { token: "group-session-token" } },
+      groupSummariesById: {
+        "group-1": {
+          groupId: "group-1",
+          name: "午饭组",
+          role: "member" as const,
+          membershipId: "membership-1"
+        }
+      },
+      lastRecommendationsByGroupId: {
+        "group-1": recommendationResponse("group-1", "batch-1")
+      },
+      localReminderOverridesByGroupId: {
+        "group-1": { reminderTime: "11:45", enabled: false }
+      }
+    };
+    const set = vi.fn();
+    const remove = vi.fn();
+    vi.stubGlobal("chrome", {
+      storage: { local: {
+        get: vi.fn().mockResolvedValue({ [STORAGE_KEYS.state]: current }),
+        set,
+        remove
+      } }
+    });
+
+    await expect(getStorageState()).resolves.toEqual(current);
+    expect(set).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it("keeps current defaults free of legacy credentials", () => {
     expect(getDefaultSettings()).toEqual({
       apiBaseUrl: "http://localhost:3000",

@@ -201,7 +201,13 @@ export function TodayPage(props: {
               <span className="result-rank">#{item.rank}</span>
               <div>
                 <h3>{item.restaurantName}</h3>
-                <p>{[item.dish, item.distanceMinutes === undefined ? undefined : `步行 ${item.distanceMinutes} 分钟`].filter(Boolean).join(" · ")}</p>
+                <p>{[
+                  item.dish,
+                  item.distanceMinutes === undefined
+                    ? "步行时间未知"
+                    : `步行 ${item.distanceMinutes} 分钟`,
+                  formatAveragePrice(item.averagePriceCents)
+                ].filter(Boolean).join(" · ")}</p>
               </div>
               <strong className="score-value">{item.score}</strong>
             </div>
@@ -301,4 +307,10 @@ function MemberChip(props: { member: ParticipationMember }) {
 
 function formatScore(value: number): string {
   return value > 0 ? `+${value}` : String(value);
+}
+
+function formatAveragePrice(cents?: number): string {
+  if (cents === undefined) return "人均价格未知";
+  const yuan = cents / 100;
+  return `人均 ¥${Number.isInteger(yuan) ? yuan.toFixed(0) : yuan.toFixed(1)}`;
 }

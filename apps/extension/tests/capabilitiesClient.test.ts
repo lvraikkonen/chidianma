@@ -18,6 +18,7 @@ function response(groupId = "group-1"): GroupCapabilitiesResponse {
   return {
     groupId,
     features: {
+      restaurantBulkImport: true,
       luckyRestaurantWheel: true,
       poiReferenceSearch: false,
       poiReferenceDraft: false,
@@ -98,6 +99,42 @@ describe("group capabilities client", () => {
         features: {
           ...response().features,
           luckyRestaurantWheel: "true"
+        }
+      })
+    }));
+
+    await expect(fetchGroupCapabilitiesForStorage(storage())).rejects.toMatchObject({
+      kind: "invalid-response",
+      code: "invalid_capabilities_response"
+    });
+  });
+
+  it("accepts an older response without bulk import and leaves it disabled", async () => {
+    const { restaurantBulkImport: _missing, ...olderFeatures } = response().features;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        groupId: "group-1",
+        features: olderFeatures
+      })
+    }));
+
+    await expect(fetchGroupCapabilitiesForStorage(storage())).resolves.toEqual({
+      groupId: "group-1",
+      features: olderFeatures
+    });
+  });
+
+  it("rejects a malformed optional bulk import capability", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        ...response(),
+        features: {
+          ...response().features,
+          restaurantBulkImport: "true"
         }
       })
     }));

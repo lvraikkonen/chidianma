@@ -212,6 +212,7 @@ function disabledGroupCapabilities(groupId: string): GroupCapabilitiesResponse {
   return {
     groupId,
     features: {
+      restaurantBulkImport: false,
       luckyRestaurantWheel: false,
       poiReferenceSearch: false,
       poiReferenceDraft: false,

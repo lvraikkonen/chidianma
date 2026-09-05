@@ -2,6 +2,21 @@
 
 All notable user-facing changes to the internal product are recorded here.
 
+## 0.4.0 restaurant onboarding candidate — 2026-09-05
+
+Status: `Unreleased; onboarding production flags off`
+
+- Added name-only restaurant entry with optional address and optional teammate recommendation in
+  Admin and Extension, without creating fabricated recommendation records.
+- Added Admin paste imports and nearby Amap search/save flows behind independent group capability
+  gates. Extension QuickAdd links to those Admin modes with only the URL-encoded current group ID.
+- Newly listed restaurants explain that no teammate recommendation exists, and missing price or
+  walking time stays explicitly unknown on both Today recommendation surfaces.
+- Raised the Extension source candidate to `0.4.0` while retaining ID
+  `bbkeaogleldgfnkgebdhdbiohlmonbkk`, exact permissions and exact production host.
+- The feature runtime and Extension package have not been released to production. Strict packaging,
+  deployment verification and allowlist enablement remain release-operator work.
+
 ## Stage 7D.1 candidate — 2026-07-22
 
 Status: `Unreleased; default off; NO-GO`

@@ -177,6 +177,21 @@ body { width: 390px; min-height: 520px; max-height: 600px; }
   gap: 14px;
 }
 
+.quick-add-import-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quick-add-import-links .button {
+  min-height: 32px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
 .quick-add-details {
   border: 1px solid var(--border);
   border-radius: 11px;
