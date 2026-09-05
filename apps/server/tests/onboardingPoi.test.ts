@@ -1,11 +1,30 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AmapPoiProvider, MockPoiProvider } from '../src/services/onboarding/provider';
 import { signPoiTicket, verifyPoiTicket } from '../src/services/onboarding/tickets';
 const center = { label: '园区', latitude: 31.2, longitude: 121.4, coordinateSystem: 'GCJ02' as const };
 const subject = { groupId: 'g', membershipId: 'm', identityId: 'i', authVersion: 3 };
 const candidate = { provider: 'amap' as const, placeId: 'B001', name: '面馆', address: '', category: null, latitude: 31.2, longitude: 121.4, coordinateSystem: 'GCJ02' as const, distanceMeters: 500 };
 const secret = 'independent-secret'.repeat(3);
+const successResponse = () => new Response(JSON.stringify({
+  status: '1',
+  count: '1',
+  pois: [{ id: 'B001', name: '面馆', address: [], type: [], location: '121.4,31.2', distance: '500' }]
+}));
+
+function transientFetchError(code = 'ETIMEDOUT'): TypeError {
+  const aggregate = new AggregateError([
+    Object.assign(new Error('connect failed'), { code }),
+    Object.assign(new Error('network unreachable'), { code: 'ENETUNREACH' })
+  ]);
+  Object.assign(aggregate, { code });
+  return new TypeError('fetch failed', { cause: aggregate });
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('POI provider normalization', () => {
   it('uses v3 fixed nearby limits and normalizes missing arrays without inferring walking time', async () => {
     let url = '';
@@ -65,6 +84,141 @@ describe('POI provider normalization', () => {
     expect(last.candidates[0]?.placeId).not.toBe(first.candidates[0]?.placeId);
   });
 });
+
+describe('Amap POI transport recovery', () => {
+  it.each([1, 2])('recovers after %i transient fetch failure(s) inside bounded backoff', async failures => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const provider = new AmapPoiProvider('private-key', async () => {
+      attempts += 1;
+      if (attempts <= failures) throw transientFetchError();
+      return successResponse();
+    });
+
+    const pending = provider.search({ center, page: 1 });
+    const assertion = expect(pending).resolves.toEqual({ candidates: [candidate], hasMore: false });
+    await vi.advanceTimersByTimeAsync(failures === 1 ? 250 : 750);
+
+    await assertion;
+    expect(attempts).toBe(failures + 1);
+  });
+
+  it('retries a coded transient response-body failure', async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const provider = new AmapPoiProvider('private-key', async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const response = successResponse();
+        response.text = async () => { throw transientFetchError('ECONNRESET'); };
+        return response;
+      }
+      return successResponse();
+    });
+
+    const pending = provider.search({ center, page: 1 });
+    const assertion = expect(pending).resolves.toEqual({ candidates: [candidate], hasMore: false });
+    await vi.advanceTimersByTimeAsync(250);
+
+    await assertion;
+    expect(attempts).toBe(2);
+  });
+
+  it('caps transient transport attempts at three', async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const provider = new AmapPoiProvider('private-key', async () => {
+      attempts += 1;
+      throw transientFetchError();
+    });
+
+    const pending = provider.search({ center, page: 1 });
+    const assertion = expect(pending).rejects.toMatchObject({ code: 'poi_provider_unavailable' });
+    await vi.advanceTimersByTimeAsync(750);
+
+    await assertion;
+    expect(attempts).toBe(3);
+  });
+
+  it('uses one total deadline across fetch time and retry backoff', async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const provider = new AmapPoiProvider('private-key', async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        throw transientFetchError();
+      }
+      return new Promise(() => {});
+    }, 500);
+
+    const pending = provider.search({ center, page: 1 });
+    const assertion = expect(pending).rejects.toMatchObject({ code: 'poi_provider_unavailable' });
+    await vi.advanceTimersByTimeAsync(499);
+    expect(attempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await assertion;
+    expect(attempts).toBe(2);
+  });
+
+  it('cancels during retry backoff without starting another fetch', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    let attempts = 0;
+    const provider = new AmapPoiProvider('private-key', async () => {
+      attempts += 1;
+      throw transientFetchError();
+    });
+
+    const pending = provider.search({ center, page: 1 }, controller.signal);
+    const assertion = expect(pending).rejects.toMatchObject({ code: 'poi_request_cancelled' });
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+
+    await assertion;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(attempts).toBe(1);
+  });
+
+  it('does not retry when an in-flight fetch fails after cancellation', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    let rejectFetch!: (reason: unknown) => void;
+    let attempts = 0;
+    const provider = new AmapPoiProvider('private-key', async () => {
+      attempts += 1;
+      return new Promise<Response>((_, reject) => { rejectFetch = reject; });
+    });
+
+    const pending = provider.search({ center, page: 1 }, controller.signal);
+    const assertion = expect(pending).rejects.toMatchObject({ code: 'poi_request_cancelled' });
+    controller.abort();
+    await assertion;
+    rejectFetch(transientFetchError());
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(attempts).toBe(1);
+  });
+
+  it.each([
+    ['HTTP 429', async () => new Response('', { status: 429 })],
+    ['provider rejection', async () => new Response(JSON.stringify({ status: '0', infocode: '10001' }))],
+    ['invalid JSON', async () => new Response('{')],
+    ['schema-invalid provider data', async () => new Response(JSON.stringify({ status: '1', pois: {} }))],
+    ['uncoded TypeError', async () => { throw new TypeError('fetch failed: socket timeout'); }]
+  ])('does not retry %s', async (_name, fetcher) => {
+    let attempts = 0;
+    const provider = new AmapPoiProvider('private-key', async input => {
+      attempts += 1;
+      return fetcher(input);
+    });
+
+    await expect(provider.search({ center, page: 1 })).rejects.toMatchObject({ code: 'poi_provider_unavailable' });
+    expect(attempts).toBe(1);
+  });
+});
+
 describe('signed candidate tickets', () => {
   it('round trips normalized candidates and expires at exactly 30 minutes', () => {
     const ticket = signPoiTicket(candidate, subject, secret, 1000);

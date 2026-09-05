@@ -16,6 +16,52 @@ function location(value: unknown): { latitude: number; longitude: number } | nul
   if (latitude === undefined || longitude === undefined || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
   return { latitude, longitude };
 }
+
+const transientTransportCodes = new Set([
+  'EAI_AGAIN',
+  'ECONNABORTED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EPIPE',
+  'ETIMEDOUT',
+  'UND_ERR_BODY_TIMEOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET'
+]);
+const retryDelaysMs = [250, 500] as const;
+
+function isTransientTransportFailure(error: unknown): boolean {
+  const seen = new Set<object>();
+  const visit = (value: unknown): boolean => {
+    if (!value || typeof value !== 'object' || seen.has(value)) return false;
+    seen.add(value);
+    const candidate = value as { code?: unknown; cause?: unknown; errors?: unknown };
+    if (typeof candidate.code === 'string' && transientTransportCodes.has(candidate.code)) return true;
+    if (visit(candidate.cause)) return true;
+    return Array.isArray(candidate.errors) && candidate.errors.some(visit);
+  };
+  return visit(error);
+}
+
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(providerUnavailable());
+  return new Promise((resolve, reject) => {
+    const cancel = () => {
+      clearTimeout(timer);
+      reject(providerUnavailable());
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', cancel);
+      resolve();
+    }, delayMs);
+    signal.addEventListener('abort', cancel, { once: true });
+  });
+}
+
 export class AmapPoiProvider implements PoiProvider {
   constructor(private readonly key: string, private readonly fetcher: typeof fetch = fetch, private readonly timeoutMs = 8000) {}
   private async request(path: string, params: Record<string, string>, signal?: AbortSignal): Promise<Record<string, unknown>> {
@@ -33,12 +79,30 @@ export class AmapPoiProvider implements PoiProvider {
       url.search = new URLSearchParams({ ...params, key: this.key, output: 'JSON' }).toString();
       const result = await Promise.race([
         (async () => {
-          const response = await this.fetcher(url, { signal: controller.signal });
-          if (!response.ok) throw providerUnavailable();
-          // Restrict decoded body size; a provider failure never becomes an app log body.
-          const text = await response.text();
-          if (text.length > 1_000_000) throw providerUnavailable();
-          return record(JSON.parse(text));
+          for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+            let response: Response;
+            try {
+              response = await this.fetcher(url, { signal: controller.signal });
+            } catch (error) {
+              if (controller.signal.aborted || !isTransientTransportFailure(error) || attempt === retryDelaysMs.length) throw error;
+              await waitForRetry(retryDelaysMs[attempt]!, controller.signal);
+              continue;
+            }
+            if (controller.signal.aborted) throw providerUnavailable();
+            if (!response.ok) throw providerUnavailable();
+            let text: string;
+            try {
+              // Restrict decoded body size; a provider failure never becomes an app log body.
+              text = await response.text();
+            } catch (error) {
+              if (controller.signal.aborted || !isTransientTransportFailure(error) || attempt === retryDelaysMs.length) throw error;
+              await waitForRetry(retryDelaysMs[attempt]!, controller.signal);
+              continue;
+            }
+            if (controller.signal.aborted || text.length > 1_000_000) throw providerUnavailable();
+            return record(JSON.parse(text));
+          }
+          throw providerUnavailable();
         })(), stopped
       ]);
       if (!result || result.status !== '1') throw providerUnavailable();
