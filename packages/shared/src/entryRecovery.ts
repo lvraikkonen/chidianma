@@ -16,7 +16,7 @@ export type RecoveryVerdict =
 
 export interface RestaurantEntrySubmission {
   restaurant: CreateRestaurantRequest;
-  recommendation: Omit<CreateRecommendationRequest, "restaurantId">;
+  recommendation?: Omit<CreateRecommendationRequest, "restaurantId"> | undefined;
 }
 
 export type RestaurantEntryRecoveryState =
@@ -36,7 +36,7 @@ export type RestaurantEntryRecoveryState =
       restaurantId?: string | undefined;
       message: string;
     }
-  | { kind: "complete"; restaurantId: string };
+  | { kind: "complete"; restaurantId: string; restaurantName: string };
 
 export interface RestaurantEntryRecoveryDependencies {
   membershipId: string;
@@ -76,10 +76,16 @@ function optionalNumberMatches(
 
 export function sameRestaurantIdentity(
   restaurant: RestaurantSummary,
-  input: Pick<CreateRestaurantRequest, "name" | "area">
+  input: Pick<CreateRestaurantRequest, "name" | "area" | "address">
 ): boolean {
-  return normalizedText(restaurant.name).toLocaleLowerCase()
-      === normalizedText(input.name).toLocaleLowerCase()
+  const sameName = normalizedText(restaurant.name).toLocaleLowerCase()
+    === normalizedText(input.name).toLocaleLowerCase();
+  const restaurantAddress = normalizedText(restaurant.address).toLocaleLowerCase();
+  const inputAddress = normalizedText(input.address).toLocaleLowerCase();
+  if (restaurantAddress || inputAddress) {
+    return sameName && restaurantAddress === inputAddress;
+  }
+  return sameName
     && normalizedText(restaurant.area).toLocaleLowerCase()
       === normalizedText(input.area).toLocaleLowerCase();
 }
@@ -128,6 +134,16 @@ export function createRestaurantEntryRecoveryController(
   let restaurantIdsBefore = new Set<string>();
   let duplicateBeforeCreate = false;
 
+  function complete(restaurantId: string): RestaurantEntryRecoveryState {
+    if (!submission) throw new Error("entry_recovery_submission_missing");
+    state = {
+      kind: "complete",
+      restaurantId,
+      restaurantName: submission.restaurant.name
+    };
+    return state;
+  }
+
   function recovery(
     target: "restaurant" | "recommendation",
     verdict: "confirmed-missing" | "uncertain",
@@ -173,6 +189,10 @@ export function createRestaurantEntryRecoveryController(
     restaurantId: string
   ): Promise<RestaurantEntryRecoveryState> {
     if (!submission) throw new Error("entry_recovery_submission_missing");
+    const recommendationSubmission = submission.recommendation;
+    if (!recommendationSubmission) {
+      return complete(restaurantId);
+    }
     const restaurants = await loadRestaurantList("recommendation", restaurantId);
     if (!restaurants) return state;
     const restaurant = restaurants.find((item) => item.id === restaurantId);
@@ -187,13 +207,12 @@ export function createRestaurantEntryRecoveryController(
     const saved = restaurant.recommendations.some((recommendation) => (
       recommendationMatchesSubmission(
         recommendation,
-        submission!.recommendation,
+        recommendationSubmission,
         dependencies.membershipId
       )
     ));
     if (saved) {
-      state = { kind: "complete", restaurantId };
-      return state;
+      return complete(restaurantId);
     }
     return recovery(
       "recommendation",
@@ -207,14 +226,17 @@ export function createRestaurantEntryRecoveryController(
     restaurantId: string
   ): Promise<RestaurantEntryRecoveryState> {
     if (!submission) throw new Error("entry_recovery_submission_missing");
+    const recommendationSubmission = submission.recommendation;
+    if (!recommendationSubmission) {
+      return complete(restaurantId);
+    }
     state = { kind: "submitting-recommendation", restaurantId };
     try {
       await dependencies.createRecommendation({
         restaurantId,
-        ...submission.recommendation
+        ...recommendationSubmission
       });
-      state = { kind: "complete", restaurantId };
-      return state;
+      return complete(restaurantId);
     } catch {
       return reconcileRecommendation(restaurantId);
     }
@@ -233,14 +255,16 @@ export function createRestaurantEntryRecoveryController(
         return recovery(
           "restaurant",
           "uncertain",
-          "已存在同名同区域餐厅，请先在餐厅库核对并为现有餐厅补充推荐。"
+          "已存在可能重复的同名餐厅，请先在餐厅库核对并为现有餐厅补充推荐。"
         );
       }
       duplicateBeforeCreate = false;
       return recovery(
         "restaurant",
         "confirmed-missing",
-        "同名餐厅已不存在，可以安全重试保存餐厅和推荐。"
+        submission.recommendation
+          ? "可能重复的同名餐厅已不存在，可以安全重试保存餐厅和推荐。"
+          : "可能重复的同名餐厅已不存在，可以安全重试保存餐厅。"
       );
     }
 
@@ -259,7 +283,9 @@ export function createRestaurantEntryRecoveryController(
       return recovery(
         "restaurant",
         "confirmed-missing",
-        "已确认餐厅没有保存，可以安全重试保存餐厅和推荐。"
+        submission.recommendation
+          ? "已确认餐厅没有保存，可以安全重试保存餐厅和推荐。"
+          : "已确认餐厅没有保存，可以安全重试保存餐厅。"
       );
     }
     return recovery(
@@ -281,7 +307,7 @@ export function createRestaurantEntryRecoveryController(
       return recovery(
         "restaurant",
         "uncertain",
-        "已存在同名同区域餐厅，请先在餐厅库核对并为现有餐厅补充推荐。"
+        "已存在可能重复的同名餐厅，请先在餐厅库核对并为现有餐厅补充推荐。"
       );
     }
 
@@ -326,15 +352,19 @@ export function createRestaurantEntryRecoveryController(
           : { supportsTakeout: input.restaurant.supportsTakeout }),
         tags: normalizedSet(input.restaurant.tags)
       },
-      recommendation: {
-        ...(input.recommendation.dish?.trim()
-          ? { dish: input.recommendation.dish.trim() }
-          : {}),
-        reason: input.recommendation.reason.trim(),
-        weatherTags: normalizedSet(input.recommendation.weatherTags),
-        weekdayTags: normalizedSet(input.recommendation.weekdayTags),
-        moodTags: normalizedSet(input.recommendation.moodTags)
-      }
+      ...(input.recommendation
+        ? {
+            recommendation: {
+              ...(input.recommendation.dish?.trim()
+                ? { dish: input.recommendation.dish.trim() }
+                : {}),
+              reason: input.recommendation.reason.trim(),
+              weatherTags: normalizedSet(input.recommendation.weatherTags),
+              weekdayTags: normalizedSet(input.recommendation.weekdayTags),
+              moodTags: normalizedSet(input.recommendation.moodTags)
+            }
+          }
+        : {})
     };
     duplicateBeforeCreate = false;
     restaurantIdsBefore = new Set();

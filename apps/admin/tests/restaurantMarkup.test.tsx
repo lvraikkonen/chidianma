@@ -5,7 +5,11 @@ import type {
 } from "@lunch/shared";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { RestaurantsPage } from "../src/pages/RestaurantsPage";
+import {
+  CreateRestaurantForm,
+  RecommendationFields,
+  RestaurantsPage
+} from "../src/pages/RestaurantsPage";
 import type { RestaurantEntryState } from "../src/features/restaurants/restaurantModel";
 
 function group(role: "admin" | "member", membershipId: string): GroupSummary {
@@ -70,6 +74,7 @@ function pageProps(input: {
     restaurants: input.restaurants ?? [restaurant()],
     loading: false,
     entryState: input.entryState ?? { kind: "idle" as const },
+    onOpenToday: vi.fn(),
     onRetryLoad: vi.fn(),
     onCreateEntry: vi.fn(),
     onRetryEntry: vi.fn(),
@@ -81,6 +86,64 @@ function pageProps(input: {
 }
 
 describe("restaurant page markup", () => {
+  it("renders name and address first with optional sections collapsed", () => {
+    const html = renderToStaticMarkup(
+      <CreateRestaurantForm
+        restaurants={[]}
+        entryState={{ kind: "idle" }}
+        pending={false}
+        onSubmit={vi.fn()}
+        onRetry={vi.fn()}
+        onRecheck={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    expect(html).toContain("餐厅名称 *");
+    expect(html).toContain("详细地址");
+    expect(html).toContain("更多餐厅信息");
+    expect(html).toContain("添加一条同事推荐");
+    expect(html).toContain("<details");
+    expect(html.match(/required=""/g)).toHaveLength(1);
+    expect(html).not.toContain("推荐菜 *");
+  });
+
+  it("requires only the reason inside the enabled recommendation fields", () => {
+    const html = renderToStaticMarkup(
+      <RecommendationFields
+        dish=""
+        reason=""
+        weather={[]}
+        weekdays={[]}
+        moods=""
+        onDish={vi.fn()}
+        onReason={vi.fn()}
+        onWeather={vi.fn()}
+        onWeekdays={vi.fn()}
+        onMoods={vi.fn()}
+      />
+    );
+
+    expect(html).toContain("推荐菜（可选）");
+    expect(html).toContain("推荐理由 *");
+    expect(html.match(/required=""/g)).toHaveLength(1);
+  });
+
+  it("offers existing Today controls after a successful save", () => {
+    const html = renderToStaticMarkup(
+      <RestaurantsPage {...pageProps({
+        entryState: {
+          kind: "complete",
+          restaurantId: "restaurant-new",
+          restaurantName: "新餐厅"
+        }
+      })} />
+    );
+
+    expect(html).toContain("餐厅已保存");
+    expect(html).toContain("去今日推荐");
+  });
+
   it("hides status governance from a member but keeps owned edit", () => {
     const html = renderToStaticMarkup(
       <RestaurantsPage {...pageProps({

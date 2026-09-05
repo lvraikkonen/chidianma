@@ -177,6 +177,63 @@ body { width: 390px; min-height: 520px; max-height: 600px; }
   gap: 14px;
 }
 
+.quick-add-details {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.quick-add-details summary {
+  padding: 11px 12px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.quick-add-details[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.quick-add-details .field-grid,
+.quick-add-details > .tag-picker {
+  margin: 12px;
+}
+
+.quick-add-toggle {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.quick-add-toggle input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.quick-add-toggle span,
+.quick-add-recommendation {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-add-toggle span {
+  gap: 3px;
+}
+
+.quick-add-toggle small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.quick-add-recommendation[hidden] {
+  display: none;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -304,6 +361,14 @@ body { width: 390px; min-height: 520px; max-height: 600px; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.quick-add-success-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.quick-add-success-actions .button:last-child {
+  grid-column: 1 / -1;
 }
 
 .quick-add-submit {

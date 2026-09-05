@@ -39,6 +39,7 @@ interface RestaurantsPageProps {
   operationError?: string | undefined;
   entryState: RestaurantEntryState;
   onRetryLoad: () => void | Promise<void>;
+  onOpenToday: () => void;
   onCreateEntry: (
     input: CreateRestaurantEntryInput
   ) => RestaurantEntryState | Promise<RestaurantEntryState>;
@@ -123,6 +124,22 @@ export function RestaurantsPage(props: RestaurantsPageProps) {
         </div>
       ) : null}
       {props.operationError ? <p className="inline-error" role="alert">{props.operationError}</p> : null}
+      {props.entryState.kind === "complete" ? (
+        <div className="partial-success" aria-live="polite">
+          <div>
+            <strong>「{props.entryState.restaurantName}」餐厅已保存</strong>
+            <p>当前推荐批次没有自动变化。可以继续添加，或去今日推荐手动生成 / 更新。</p>
+          </div>
+          <div className="row-actions">
+            <button className="button secondary" type="button" onClick={() => setModal({ kind: "create" })}>
+              继续添加
+            </button>
+            <button className="button primary" type="button" onClick={props.onOpenToday}>
+              去今日推荐
+            </button>
+          </div>
+        </div>
+      ) : null}
       {partialState ? (
         <div className="partial-success" aria-live="polite">
           <div>
@@ -423,7 +440,7 @@ function RestaurantForm(props: {
   );
 }
 
-function CreateRestaurantForm(props: {
+export function CreateRestaurantForm(props: {
   restaurants: RestaurantSummary[];
   entryState: RestaurantEntryState;
   pending: boolean;
@@ -438,39 +455,55 @@ function CreateRestaurantForm(props: {
   const [weather, setWeather] = useState<WeatherTag[]>([]);
   const [weekdays, setWeekdays] = useState<WeekdayTag[]>([]);
   const [moods, setMoods] = useState("");
+  const [recommendationEnabled, setRecommendationEnabled] = useState(false);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void props.onSubmit({
       restaurant: restaurantCreate(values),
-      dish: dish.trim(),
-      reason: reason.trim(),
-      weatherTags: weather,
-      weekdayTags: weekdays,
-      moodTags: commaValues(moods)
+      ...(recommendationEnabled
+        ? {
+            recommendation: {
+              ...(dish.trim() ? { dish: dish.trim() } : {}),
+              reason: reason.trim(),
+              weatherTags: weather,
+              weekdayTags: weekdays,
+              moodTags: commaValues(moods)
+            }
+          }
+        : {})
     });
   }
 
   return (
     <form onSubmit={submit}>
       <div className="modal-body">
-        <RestaurantFields values={values} onChange={setValues} autofocus />
-        <div className="form-section-heading">
-          <span className="eyebrow">首条团队经验</span>
-          <h3>同时保存一条具体推荐</h3>
-        </div>
-        <RecommendationFields
-          dish={dish}
-          reason={reason}
-          weather={weather}
-          weekdays={weekdays}
-          moods={moods}
-          onDish={setDish}
-          onReason={setReason}
-          onWeather={setWeather}
-          onWeekdays={setWeekdays}
-          onMoods={setMoods}
-        />
+        <RestaurantFields values={values} onChange={setValues} autofocus mode="entry" />
+        <label className="optional-section-toggle">
+          <input
+            type="checkbox"
+            checked={recommendationEnabled}
+            onChange={(event) => setRecommendationEnabled(event.target.checked)}
+          />
+          <span>
+            <strong>添加一条同事推荐</strong>
+            <small>有亲自体验时再填写；推荐理由必填，推荐菜可选。</small>
+          </span>
+        </label>
+        {recommendationEnabled ? (
+          <RecommendationFields
+            dish={dish}
+            reason={reason}
+            weather={weather}
+            weekdays={weekdays}
+            moods={moods}
+            onDish={setDish}
+            onReason={setReason}
+            onWeather={setWeather}
+            onWeekdays={setWeekdays}
+            onMoods={setMoods}
+          />
+        ) : null}
         {props.entryState.kind === "recovery" ? (
           <div className="partial-success" aria-live="polite">
             <div>
@@ -497,7 +530,11 @@ function CreateRestaurantForm(props: {
       <div className="modal-footer">
         <button className="button ghost" type="button" disabled={props.pending} onClick={props.onCancel}>取消</button>
         <button className="button primary" type="submit" disabled={props.pending || props.entryState.kind === "recovery" || props.entryState.kind === "checking"}>
-          {props.pending ? "正在保存…" : "保存餐厅和推荐"}
+          {props.pending
+            ? "正在保存…"
+            : recommendationEnabled
+              ? "保存餐厅和推荐"
+              : "保存餐厅"}
         </button>
       </div>
     </form>
@@ -574,15 +611,20 @@ function RestaurantFields(props: {
   values: RestaurantValues;
   onChange: (values: RestaurantValues) => void;
   autofocus?: boolean | undefined;
+  mode?: "entry" | "full" | undefined;
 }) {
   const update = <K extends keyof RestaurantValues>(key: K, value: RestaurantValues[K]) => {
     props.onChange({ ...props.values, [key]: value });
   };
-  return (
-    <div className="form-grid">
+  const primaryFields = (
+    <>
       <label><span>餐厅名称 *</span><input data-autofocus={props.autofocus || undefined} required value={props.values.name} onChange={(event) => update("name", event.target.value)} /></label>
+      <label><span>详细地址</span><input value={props.values.address} onChange={(event) => update("address", event.target.value)} /></label>
+    </>
+  );
+  const extraFields = (
+    <>
       <label><span>区域</span><input value={props.values.area} onChange={(event) => update("area", event.target.value)} /></label>
-      <label className="wide"><span>详细地址</span><input value={props.values.address} onChange={(event) => update("address", event.target.value)} /></label>
       <label><span>菜系</span><input value={props.values.cuisine} onChange={(event) => update("cuisine", event.target.value)} /></label>
       <label><span>步行分钟</span><input min="0" type="number" value={props.values.distanceMinutes} onChange={(event) => update("distanceMinutes", event.target.value)} /></label>
       <label><span>价格带</span><input placeholder="例如 ¥ / ¥¥" value={props.values.priceBand} onChange={(event) => update("priceBand", event.target.value)} /></label>
@@ -592,11 +634,28 @@ function RestaurantFields(props: {
         <label><input type="checkbox" checked={props.values.supportsDineIn} onChange={(event) => update("supportsDineIn", event.target.checked)} />堂食</label>
         <label><input type="checkbox" checked={props.values.supportsTakeout} onChange={(event) => update("supportsTakeout", event.target.checked)} />外带</label>
       </div>
+    </>
+  );
+  if (props.mode === "entry") {
+    return (
+      <>
+        <div className="form-grid">{primaryFields}</div>
+        <details className="optional-entry-fields">
+          <summary>更多餐厅信息</summary>
+          <div className="form-grid">{extraFields}</div>
+        </details>
+      </>
+    );
+  }
+  return (
+    <div className="form-grid">
+      {primaryFields}
+      {extraFields}
     </div>
   );
 }
 
-function RecommendationFields(props: {
+export function RecommendationFields(props: {
   dish: string;
   reason: string;
   weather: WeatherTag[];
@@ -610,7 +669,7 @@ function RecommendationFields(props: {
 }) {
   return (
     <div className="form-grid">
-      <label><span>推荐菜 *</span><input required value={props.dish} onChange={(event) => props.onDish(event.target.value)} /></label>
+      <label><span>推荐菜（可选）</span><input value={props.dish} onChange={(event) => props.onDish(event.target.value)} /></label>
       <label className="wide"><span>推荐理由 *</span><textarea required rows={3} value={props.reason} onChange={(event) => props.onReason(event.target.value)} /></label>
       <fieldset className="wide"><legend>适合天气</legend><TagOptions options={weatherTags} selected={props.weather} onChange={props.onWeather} /></fieldset>
       <fieldset className="wide"><legend>适合工作日</legend><TagOptions options={weekdayTags} selected={props.weekdays} onChange={props.onWeekdays} /></fieldset>
@@ -741,7 +800,7 @@ function formatPrice(restaurant: RestaurantSummary): string {
 
 function modalTitle(modal: ModalState): string {
   if (!modal) return "餐厅";
-  if (modal.kind === "create") return "新增餐厅和首条推荐";
+  if (modal.kind === "create") return "新增餐厅";
   if (modal.kind === "edit-restaurant") return "编辑餐厅";
   if (modal.kind === "create-recommendation") return "添加推荐";
   return "编辑推荐";

@@ -5,25 +5,20 @@ import {
   type RecommendationMutationResponse,
   type RestaurantEntryRecoveryState,
   type RestaurantListResponse,
-  type RestaurantMutationResponse,
-  type WeatherTag,
-  type WeekdayTag
+  type RestaurantMutationResponse
 } from "@lunch/shared";
 
 export type QuickAddState = RestaurantEntryRecoveryState;
 
 export interface QuickAddInput {
   name: string;
+  address?: string | undefined;
   area?: string | undefined;
   cuisine?: string | undefined;
   averagePriceCents?: number | undefined;
   distanceMinutes?: number | undefined;
   tags: string[];
-  dish: string;
-  reason: string;
-  weatherTags: WeatherTag[];
-  weekdayTags: WeekdayTag[];
-  moodTags: string[];
+  recommendation?: Omit<CreateRecommendationRequest, "restaurantId"> | undefined;
 }
 
 export function createQuickAddController(dependencies: {
@@ -43,6 +38,7 @@ export function createQuickAddController(dependencies: {
       return controller.submit({
         restaurant: {
           name: input.name,
+          ...(input.address?.trim() ? { address: input.address } : {}),
           ...(input.area?.trim() ? { area: input.area } : {}),
           ...(input.cuisine?.trim() ? { cuisine: input.cuisine } : {}),
           ...(input.averagePriceCents === undefined
@@ -53,13 +49,9 @@ export function createQuickAddController(dependencies: {
             : { distanceMinutes: input.distanceMinutes }),
           tags: input.tags
         },
-        recommendation: {
-          dish: input.dish,
-          reason: input.reason,
-          weatherTags: input.weatherTags,
-          weekdayTags: input.weekdayTags,
-          moodTags: input.moodTags
-        }
+        ...(input.recommendation
+          ? { recommendation: input.recommendation }
+          : {})
       });
     },
     retry: controller.retry,

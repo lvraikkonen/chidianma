@@ -41,13 +41,19 @@ export function rankRestaurantCandidates(input: {
         negativeFeedbackCount: candidate.negativeFeedbackCount,
         weights: input.weights
       });
+      const reasons = [
+        ...(candidate.teammateRecommendationCount === 0
+          ? ["新收录，尚无同事推荐"]
+          : []),
+        ...result.reasons
+      ];
 
       return {
         restaurantId: candidate.restaurantId,
         recommendationId: candidate.recommendationId,
         restaurantName: candidate.name,
         dish: candidate.dish,
-        reason: result.reasons.length ? result.reasons.join("，") : "今天也适合来点稳妥的。",
+        reason: reasons.length ? reasons.join("，") : "今天也适合来点稳妥的。",
         distanceMinutes: candidate.distanceMinutes,
         tags: candidate.tags,
         score: result.score,

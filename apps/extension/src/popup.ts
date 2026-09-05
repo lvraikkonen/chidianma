@@ -1036,7 +1036,7 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
   const title = document.createElement("h2");
   title.textContent = "加个新店进干饭名单";
   const hint = document.createElement("p");
-  hint.textContent = "保存餐厅和第一条真实推荐，带 * 的内容必填。";
+  hint.textContent = "只填店名就能保存；地址可帮助区分不同分店。";
   header.append(cancelButton, title, hint);
 
   const form = document.createElement("form");
@@ -1046,6 +1046,9 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
   const name = createQuickAddInput("店名", "name", {
     required: true,
     placeholder: "例如：老王炒饭店"
+  });
+  const address = createQuickAddInput("详细地址", "address", {
+    placeholder: "例如：科技路 8 号"
   });
   const area = createQuickAddInput("区域", "area", {
     placeholder: "例如：B 楼美食街"
@@ -1067,14 +1070,14 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
     step: "1",
     type: "number"
   });
-  const dish = createQuickAddInput("推荐菜", "dish", {
-    required: true,
+  const dish = createQuickAddInput("推荐菜（可选）", "dish", {
     placeholder: "例如：红烧牛肉面"
   });
   const reason = createQuickAddTextarea(
     "一句话推荐理由",
     "reason",
-    "为什么值得吃？适合什么天气或场景？"
+    "为什么值得吃？适合什么天气或场景？",
+    true
   );
 
   const restaurantGrid = document.createElement("div");
@@ -1085,6 +1088,47 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
     averagePriceCents.field,
     distanceMinutes.field
   );
+  const extraDetails = document.createElement("details");
+  extraDetails.className = "quick-add-details";
+  const extraSummary = document.createElement("summary");
+  extraSummary.textContent = "更多餐厅信息";
+  extraDetails.append(
+    extraSummary,
+    restaurantGrid,
+    createTagPicker("餐厅标签", "restaurantTags", RESTAURANT_TAG_OPTIONS)
+  );
+
+  const recommendationToggle = document.createElement("label");
+  recommendationToggle.className = "quick-add-toggle";
+  const recommendationEnabled = document.createElement("input");
+  recommendationEnabled.type = "checkbox";
+  recommendationEnabled.name = "recommendationEnabled";
+  const recommendationToggleText = document.createElement("span");
+  const recommendationToggleTitle = document.createElement("strong");
+  recommendationToggleTitle.textContent = "添加一条同事推荐";
+  const recommendationToggleHint = document.createElement("small");
+  recommendationToggleHint.textContent = "有亲自体验时再填写；推荐理由必填，推荐菜可选。";
+  recommendationToggleText.append(
+    recommendationToggleTitle,
+    recommendationToggleHint
+  );
+  recommendationToggle.append(recommendationEnabled, recommendationToggleText);
+
+  const recommendationFields = document.createElement("section");
+  recommendationFields.className = "quick-add-recommendation";
+  recommendationFields.hidden = true;
+  recommendationFields.append(
+    dish.field,
+    reason.field,
+    createTagPicker("适合天气", "weatherTags", WEATHER_TAG_OPTIONS),
+    createTagPicker("适合星期", "weekdayTags", WEEKDAY_TAG_OPTIONS),
+    createTagPicker("适合心情 / 场景", "moodTags", MOOD_TAG_OPTIONS)
+  );
+  reason.input.required = false;
+  recommendationEnabled.addEventListener("change", () => {
+    recommendationFields.hidden = !recommendationEnabled.checked;
+    reason.input.required = recommendationEnabled.checked;
+  });
 
   const fieldError = document.createElement("p");
   fieldError.className = "field-error";
@@ -1101,13 +1145,10 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
 
   form.append(
     name.field,
-    restaurantGrid,
-    createTagPicker("餐厅标签", "restaurantTags", RESTAURANT_TAG_OPTIONS),
-    dish.field,
-    reason.field,
-    createTagPicker("适合天气", "weatherTags", WEATHER_TAG_OPTIONS),
-    createTagPicker("适合星期", "weekdayTags", WEEKDAY_TAG_OPTIONS),
-    createTagPicker("适合心情 / 场景", "moodTags", MOOD_TAG_OPTIONS),
+    address.field,
+    extraDetails,
+    recommendationToggle,
+    recommendationFields,
     fieldError,
     partialSuccess,
     submitButton
@@ -1136,7 +1177,7 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
       name: name.input,
       averagePriceCents: averagePriceCents.input,
       distanceMinutes: distanceMinutes.input,
-      dish: dish.input,
+      recommendationEnabled: recommendationEnabled.checked,
       reason: reason.input
     });
     if (validationMessage) {
@@ -1146,6 +1187,7 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
 
     const input: QuickAddInput = {
       name: name.input.value,
+      address: address.input.value,
       area: area.input.value,
       cuisine: cuisine.input.value,
       ...(averagePriceCents.input.value === ""
@@ -1155,11 +1197,19 @@ function renderQuickAddForm(hostState: QuickAddHostState): void {
         ? {}
         : { distanceMinutes: Number(distanceMinutes.input.value) }),
       tags: checkedValues(form, "restaurantTags"),
-      dish: dish.input.value,
-      reason: reason.input.value,
-      weatherTags: checkedValues<WeatherTag>(form, "weatherTags"),
-      weekdayTags: checkedValues<WeekdayTag>(form, "weekdayTags"),
-      moodTags: checkedValues(form, "moodTags")
+      ...(recommendationEnabled.checked
+        ? {
+            recommendation: {
+              ...(dish.input.value.trim()
+                ? { dish: dish.input.value }
+                : {}),
+              reason: reason.input.value,
+              weatherTags: checkedValues<WeatherTag>(form, "weatherTags"),
+              weekdayTags: checkedValues<WeekdayTag>(form, "weekdayTags"),
+              moodTags: checkedValues(form, "moodTags")
+            }
+          }
+        : {})
     };
 
     runExclusive(async () => {
@@ -1329,8 +1379,30 @@ async function handleQuickAddState(
     return;
   }
   if (state.kind === "complete") {
-    await reloadPopup();
-    setStatus("餐厅和推荐已保存。");
+    const title = document.createElement("strong");
+    title.textContent = `「${state.restaurantName}」已保存`;
+    const message = document.createElement("p");
+    message.textContent = "今日推荐没有自动变化。你可以继续添加，或现在手动更新。";
+    const actions = document.createElement("div");
+    actions.className = "partial-success-actions quick-add-success-actions";
+    const continueButton = createButton("继续添加", "button secondary");
+    const refreshButton = createButton("更新今日推荐", "button primary");
+    const returnButton = createButton("返回今日推荐", "button ghost");
+    continueButton.addEventListener("click", () => renderQuickAddForm(hostState));
+    refreshButton.addEventListener("click", () => {
+      runExclusive(() => runRecommendationRefresh(
+        refreshButton,
+        "正在更新...",
+        "今日推荐已更新。",
+        "更新推荐失败，请重试。"
+      ));
+    });
+    returnButton.addEventListener("click", () => {
+      renderPopup(hostState);
+      setStatus(`「${state.restaurantName}」已保存；今日推荐未自动更新。`);
+    });
+    actions.append(continueButton, refreshButton, returnButton);
+    partialSuccess.append(title, message, actions);
   }
 }
 
@@ -1367,18 +1439,19 @@ function createQuickAddInput(
 function createQuickAddTextarea(
   labelText: string,
   name: string,
-  placeholder: string
+  placeholder: string,
+  required = false
 ): { field: HTMLLabelElement; input: HTMLTextAreaElement } {
   const field = document.createElement("label");
   field.className = "quick-add-field";
   const label = document.createElement("span");
   label.className = "quick-add-label";
-  label.textContent = `${labelText} *`;
+  label.textContent = required ? `${labelText} *` : labelText;
   const input = document.createElement("textarea");
   input.className = "quick-add-input quick-add-textarea";
   input.name = name;
   input.placeholder = placeholder;
-  input.required = true;
+  input.required = required;
   field.append(label, input);
   return { field, input };
 }
@@ -1423,12 +1496,13 @@ function quickAddValidationMessage(fields: {
   name: HTMLInputElement;
   averagePriceCents: HTMLInputElement;
   distanceMinutes: HTMLInputElement;
-  dish: HTMLInputElement;
+  recommendationEnabled: boolean;
   reason: HTMLTextAreaElement;
 }): string | null {
   if (!fields.name.value.trim()) return "请填写店名。";
-  if (!fields.dish.value.trim()) return "请填写第一条推荐菜。";
-  if (!fields.reason.value.trim()) return "请填写第一条推荐理由。";
+  if (fields.recommendationEnabled && !fields.reason.value.trim()) {
+    return "请填写推荐理由。";
+  }
   if (!fields.averagePriceCents.validity.valid) return "人均价格请填写不小于 0 的数字。";
   if (!fields.distanceMinutes.validity.valid) return "步行时间请填写不小于 0 的整数。";
   return null;

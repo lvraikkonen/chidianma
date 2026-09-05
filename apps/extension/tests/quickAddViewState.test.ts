@@ -64,4 +64,19 @@ describe("popup quick add cancel lifecycle", () => {
       submitButton: { disabled: true, hidden: true }
     });
   });
+
+  it("shows the success actions after the write completes", () => {
+    expect(quickAddControlsForState({
+      kind: "complete",
+      restaurantId: "restaurant-1",
+      restaurantName: "巷口砂锅"
+    })).toEqual({
+      cancelDisabled: true,
+      cancelHidden: true,
+      fieldsDisabled: true,
+      partialSuccessVisible: true,
+      submitDisabled: true,
+      submitHidden: true
+    });
+  });
 });

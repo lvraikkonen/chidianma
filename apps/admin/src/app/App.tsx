@@ -375,10 +375,16 @@ export function App() {
     });
     restaurantEntryController.current = { controller, request, groupId: context.groupId };
     const next = await controller.submit(input);
-    if (requestGate.current.isCurrent(request)) {
-      setRestaurantEntryState(next);
-      if (next.kind === "complete") setRestaurantReload((value) => value + 1);
+    if (!requestGate.current.isCurrent(request)) {
+      return {
+        kind: "recovery",
+        target: "restaurant",
+        verdict: "uncertain",
+        message: "当前小组已切换；本次结果不会应用到新的小组页面。"
+      };
     }
+    setRestaurantEntryState(next);
+    if (next.kind === "complete") setRestaurantReload((value) => value + 1);
     return next;
   }
 
@@ -405,10 +411,16 @@ export function App() {
         : {})
     });
     const next = await pendingEntry.controller.retry();
-    if (requestGate.current.isCurrent(pendingEntry.request)) {
-      setRestaurantEntryState(next);
-      if (next.kind === "complete") setRestaurantReload((value) => value + 1);
+    if (!requestGate.current.isCurrent(pendingEntry.request)) {
+      return {
+        kind: "recovery",
+        target: "restaurant",
+        verdict: "uncertain",
+        message: "当前小组已切换；恢复结果不会应用到新的小组页面。"
+      };
     }
+    setRestaurantEntryState(next);
+    if (next.kind === "complete") setRestaurantReload((value) => value + 1);
     return next;
   }
 
@@ -435,10 +447,16 @@ export function App() {
         : {})
     });
     const next = await pendingEntry.controller.recheck();
-    if (requestGate.current.isCurrent(pendingEntry.request)) {
-      setRestaurantEntryState(next);
-      if (next.kind === "complete") setRestaurantReload((value) => value + 1);
+    if (!requestGate.current.isCurrent(pendingEntry.request)) {
+      return {
+        kind: "recovery",
+        target: "restaurant",
+        verdict: "uncertain",
+        message: "当前小组已切换；核对结果不会应用到新的小组页面。"
+      };
     }
+    setRestaurantEntryState(next);
+    if (next.kind === "complete") setRestaurantReload((value) => value + 1);
     return next;
   }
 
@@ -570,6 +588,7 @@ export function App() {
           loadError={restaurantLoadError}
           operationError={restaurantOperationError}
           entryState={restaurantEntryState}
+          onOpenToday={() => navigate("today")}
           onRetryLoad={() => setRestaurantReload((value) => value + 1)}
           onCreateEntry={handleCreateRestaurantEntry}
           onRetryEntry={handleRetryRestaurantEntry}

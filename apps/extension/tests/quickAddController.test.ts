@@ -4,16 +4,19 @@ import type { RestaurantSummary } from "@lunch/shared";
 
 const input = {
   name: "巷口砂锅",
+  address: "科技路 8 号",
   area: "A 楼底商",
   cuisine: "砂锅",
   averagePriceCents: 2800,
   distanceMinutes: 6,
   tags: ["热乎", "近"],
-  dish: "番茄肥牛砂锅",
-  reason: "下雨天热乎且离得近",
-  weatherTags: ["rainy" as const],
-  weekdayTags: ["friday" as const],
-  moodTags: ["热乎"]
+  recommendation: {
+    dish: "番茄肥牛砂锅",
+    reason: "下雨天热乎且离得近",
+    weatherTags: ["rainy" as const],
+    weekdayTags: ["friday" as const],
+    moodTags: ["热乎"]
+  }
 };
 
 function restaurant(
@@ -55,11 +58,11 @@ function dependencies(overrides: Record<string, unknown> = {}) {
         id: "recommendation-1",
         groupId: "group-1",
         restaurantId: "restaurant-1",
-        dish: input.dish,
-        reason: input.reason,
-        weatherTags: input.weatherTags,
-        weekdayTags: input.weekdayTags,
-        moodTags: input.moodTags,
+        dish: input.recommendation.dish,
+        reason: input.recommendation.reason,
+        weatherTags: input.recommendation.weatherTags,
+        weekdayTags: input.recommendation.weekdayTags,
+        moodTags: input.recommendation.moodTags,
         createdByMembershipId: "membership-1",
         createdAt: "2026-07-16T00:00:00.000Z",
         updatedAt: "2026-07-16T00:00:00.000Z"
@@ -70,6 +73,27 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("extension quick add controller", () => {
+  it("submits name and address without creating optional knowledge", async () => {
+    const deps = dependencies();
+    const controller = createQuickAddController(deps);
+
+    await expect(controller.submit({
+      name: " 巷口砂锅 ",
+      address: " 科技路 8 号 ",
+      tags: []
+    })).resolves.toEqual({
+      kind: "complete",
+      restaurantId: "restaurant-1",
+      restaurantName: "巷口砂锅"
+    });
+    expect(deps.createRestaurant).toHaveBeenCalledWith({
+      name: "巷口砂锅",
+      address: "科技路 8 号",
+      tags: []
+    });
+    expect(deps.createRecommendation).not.toHaveBeenCalled();
+  });
+
   it("creates the restaurant before its first recommendation", async () => {
     const deps = dependencies();
     const controller = createQuickAddController(deps);

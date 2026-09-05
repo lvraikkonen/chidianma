@@ -86,11 +86,7 @@ export function recommendationPermissions(
 
 export interface CreateRestaurantEntryInput {
   restaurant: CreateRestaurantRequest;
-  dish: string;
-  reason: string;
-  weatherTags: WeatherTag[];
-  weekdayTags: WeekdayTag[];
-  moodTags: string[];
+  recommendation?: Omit<CreateRecommendationRequest, "restaurantId"> | undefined;
 }
 
 export type RestaurantEntryState = RestaurantEntryRecoveryState;
@@ -110,13 +106,9 @@ export function createRestaurantEntryController(dependencies: {
   async function submit(input: CreateRestaurantEntryInput) {
     return controller.submit({
       restaurant: input.restaurant,
-      recommendation: {
-        dish: input.dish.trim(),
-        reason: input.reason.trim(),
-        weatherTags: input.weatherTags,
-        weekdayTags: input.weekdayTags,
-        moodTags: input.moodTags
-      }
+      ...(input.recommendation
+        ? { recommendation: input.recommendation }
+        : {})
     });
   }
 

@@ -25,6 +25,13 @@ const submission: RestaurantEntrySubmission = {
   }
 };
 
+const restaurantOnlySubmission: RestaurantEntrySubmission = {
+  restaurant: {
+    name: " 新餐厅 ",
+    address: " 科技路 8 号 "
+  }
+};
+
 function recommendation(
   overrides: Partial<RecommendationSummary> = {}
 ): RecommendationSummary {
@@ -90,10 +97,72 @@ function controller(overrides: Partial<Parameters<
 }
 
 describe("restaurant entry lost-response recovery", () => {
+  it("completes a name-only entry without creating a recommendation", async () => {
+    const createRecommendation = vi.fn();
+    const subject = controller({ createRecommendation });
+
+    await expect(subject.submit(restaurantOnlySubmission)).resolves.toEqual({
+      kind: "complete",
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
+    });
+    expect(createRecommendation).not.toHaveBeenCalled();
+  });
+
+  it("confirms a restaurant-only write after a lost response", async () => {
+    const createRecommendation = vi.fn();
+    const subject = controller({
+      listRestaurants: vi.fn()
+        .mockResolvedValueOnce(list([]))
+        .mockResolvedValueOnce(list([
+          restaurant({ area: undefined, address: "科技路 8 号", cuisine: undefined, tags: [] })
+        ])),
+      createRestaurant: vi.fn().mockRejectedValue(new Error("lost response")),
+      createRecommendation
+    });
+
+    await expect(subject.submit(restaurantOnlySubmission)).resolves.toEqual({
+      kind: "complete",
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
+    });
+    expect(createRecommendation).not.toHaveBeenCalled();
+  });
+
+  it("safely retries a confirmed-missing restaurant-only write", async () => {
+    const createRecommendation = vi.fn();
+    const createRestaurant = vi.fn()
+      .mockRejectedValueOnce(new Error("not saved"))
+      .mockResolvedValueOnce({
+        groupId: "group-1",
+        restaurant: restaurant({ area: undefined, address: "科技路 8 号" })
+      });
+    const subject = controller({
+      listRestaurants: vi.fn().mockResolvedValue(list([])),
+      createRestaurant,
+      createRecommendation
+    });
+
+    await expect(subject.submit(restaurantOnlySubmission)).resolves.toMatchObject({
+      kind: "recovery",
+      target: "restaurant",
+      verdict: "confirmed-missing",
+      message: "已确认餐厅没有保存，可以安全重试保存餐厅。"
+    });
+    await expect(subject.retry()).resolves.toEqual({
+      kind: "complete",
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
+    });
+    expect(createRestaurant).toHaveBeenCalledTimes(2);
+    expect(createRecommendation).not.toHaveBeenCalled();
+  });
+
   it("completes the normal two-step write", async () => {
     await expect(controller().submit(submission)).resolves.toEqual({
       kind: "complete",
-      restaurantId: "restaurant-new"
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
     });
   });
 
@@ -113,7 +182,8 @@ describe("restaurant entry lost-response recovery", () => {
 
     await expect(subject.submit(submission)).resolves.toEqual({
       kind: "complete",
-      restaurantId: "restaurant-new"
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
     });
     expect(createRestaurant).toHaveBeenCalledOnce();
     expect(createRecommendation).toHaveBeenCalledOnce();
@@ -132,7 +202,8 @@ describe("restaurant entry lost-response recovery", () => {
 
     await expect(subject.submit(submission)).resolves.toEqual({
       kind: "complete",
-      restaurantId: "restaurant-new"
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
     });
     expect(createRecommendation).toHaveBeenCalledOnce();
   });
@@ -158,7 +229,8 @@ describe("restaurant entry lost-response recovery", () => {
     });
     await expect(subject.retry()).resolves.toEqual({
       kind: "complete",
-      restaurantId: "restaurant-new"
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
     });
     expect(createRecommendation).toHaveBeenCalledTimes(2);
   });
@@ -185,7 +257,8 @@ describe("restaurant entry lost-response recovery", () => {
     });
     await expect(subject.retry()).resolves.toEqual({
       kind: "complete",
-      restaurantId: "restaurant-new"
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
     });
     expect(createRestaurant).toHaveBeenCalledTimes(2);
   });
@@ -284,7 +357,8 @@ describe("restaurant entry lost-response recovery", () => {
 
     await expect(subject.submit(submission)).resolves.toEqual({
       kind: "complete",
-      restaurantId: "restaurant-new"
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
     });
   });
 
@@ -303,5 +377,27 @@ describe("restaurant entry lost-response recovery", () => {
       verdict: "uncertain"
     });
     expect(createRestaurant).not.toHaveBeenCalled();
+  });
+
+  it("allows the same name and area when the address identifies another branch", async () => {
+    const createRestaurant = vi.fn().mockResolvedValue({
+      groupId: "group-1",
+      restaurant: restaurant({ address: "科技路 8 号" })
+    });
+    const subject = controller({
+      listRestaurants: vi.fn().mockResolvedValue(list([
+        restaurant({ id: "existing", address: "科技路 18 号" })
+      ])),
+      createRestaurant
+    });
+
+    await expect(subject.submit({
+      ...submission,
+      restaurant: {
+        ...submission.restaurant,
+        address: "科技路 8 号"
+      }
+    })).resolves.toMatchObject({ kind: "complete" });
+    expect(createRestaurant).toHaveBeenCalledOnce();
   });
 });

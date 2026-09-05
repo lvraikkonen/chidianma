@@ -73,11 +73,13 @@ const createEntryInput: CreateRestaurantEntryInput = {
     area: "B 楼",
     cuisine: "面食"
   },
-  dish: "牛肉面",
-  reason: "出餐快",
-  weatherTags: [],
-  weekdayTags: [],
-  moodTags: ["赶时间"]
+  recommendation: {
+    dish: "牛肉面",
+    reason: "出餐快",
+    weatherTags: [],
+    weekdayTags: [],
+    moodTags: ["赶时间"]
+  }
 };
 
 function restaurantMutation(id = "restaurant-new"): RestaurantMutationResponse {
@@ -98,6 +100,65 @@ function recommendationMutation(): RecommendationMutationResponse {
 }
 
 describe("restaurant model", () => {
+  it("creates a name-and-address restaurant without fabricating a recommendation", async () => {
+    const createRestaurant = vi.fn().mockResolvedValue(restaurantMutation());
+    const createRecommendation = vi.fn();
+    const controller = createRestaurantEntryController({
+      membershipId: "membership-member",
+      listRestaurants: vi.fn().mockResolvedValue({
+        groupId: "group-1",
+        restaurants: []
+      }),
+      createRestaurant,
+      createRecommendation
+    });
+
+    await expect(controller.submit({
+      restaurant: { name: " 新餐厅 ", address: " 科技路 8 号 " }
+    })).resolves.toEqual({
+      kind: "complete",
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
+    });
+    expect(createRestaurant).toHaveBeenCalledWith({
+      name: "新餐厅",
+      address: "科技路 8 号",
+      tags: []
+    });
+    expect(createRecommendation).not.toHaveBeenCalled();
+  });
+
+  it("allows an optional recommendation without a dish", async () => {
+    const createRecommendation = vi.fn().mockResolvedValue(recommendationMutation());
+    const controller = createRestaurantEntryController({
+      membershipId: "membership-member",
+      listRestaurants: vi.fn().mockResolvedValue({
+        groupId: "group-1",
+        restaurants: []
+      }),
+      createRestaurant: vi.fn().mockResolvedValue(restaurantMutation()),
+      createRecommendation
+    });
+
+    await controller.submit({
+      restaurant: { name: "新餐厅" },
+      recommendation: {
+        reason: "出餐快",
+        weatherTags: [],
+        weekdayTags: [],
+        moodTags: []
+      }
+    });
+
+    expect(createRecommendation).toHaveBeenCalledWith({
+      restaurantId: "restaurant-new",
+      reason: "出餐快",
+      weatherTags: [],
+      weekdayTags: [],
+      moodTags: []
+    });
+  });
+
   it("filters by normalized search, cuisine, and status", () => {
     const restaurants = [
       restaurant(),
@@ -174,7 +235,11 @@ describe("restaurant model", () => {
       verdict: "confirmed-missing",
       restaurantId: "restaurant-new"
     });
-    expect(second).toEqual({ kind: "complete", restaurantId: "restaurant-new" });
+    expect(second).toEqual({
+      kind: "complete",
+      restaurantId: "restaurant-new",
+      restaurantName: "新餐厅"
+    });
     expect(createRestaurant).toHaveBeenCalledTimes(1);
     expect(createRecommendation).toHaveBeenCalledTimes(2);
   });

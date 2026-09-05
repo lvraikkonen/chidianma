@@ -231,6 +231,14 @@ input, select, textarea {
 .tag-picker input { width: auto; margin: 0; accent-color: var(--accent); }
 .form-section-heading { padding-top: 18px; border-top: 1px solid var(--border); }
 .form-section-heading h3 { margin: 4px 0 0; color: var(--fg-strong); font-size: 17px; }
+.optional-entry-fields { padding: 0; border: 1px solid var(--border); border-radius: 12px; }
+.optional-entry-fields summary { padding: 12px 14px; color: var(--fg-strong); cursor: pointer; font-size: 13px; font-weight: 800; }
+.optional-entry-fields[open] summary { border-bottom: 1px solid var(--border); }
+.optional-entry-fields .form-grid { padding: 14px; }
+.optional-section-toggle { display: flex; gap: 10px; align-items: flex-start; padding: 13px 14px; border: 1px solid var(--border); border-radius: 12px; color: var(--fg-strong); background: var(--surface-2); cursor: pointer; }
+.optional-section-toggle input { width: auto; margin-top: 3px; accent-color: var(--accent); }
+.optional-section-toggle span { display: grid; gap: 3px; }
+.optional-section-toggle small { color: var(--muted); font-weight: 500; }
 .form-context { margin: 0; padding: 10px 12px; border-radius: 10px; color: var(--muted); background: var(--surface-2); }
 
 @media (max-width: 820px) {

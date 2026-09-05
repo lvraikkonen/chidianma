@@ -54,7 +54,7 @@ export function quickAddControlsForState(state: QuickAddState): QuickAddControls
       cancelDisabled: true,
       cancelHidden: true,
       fieldsDisabled: true,
-      partialSuccessVisible: false,
+      partialSuccessVisible: true,
       submitDisabled: true,
       submitHidden: true
     };

@@ -2,6 +2,55 @@ import { describe, expect, it } from "vitest";
 import { rankRestaurantCandidates } from "../src/services/recommendation/scorer";
 
 describe("rankRestaurantCandidates", () => {
+  it("identifies a newly listed restaurant while preserving real score reasons", () => {
+    const [ranked] = rankRestaurantCandidates({
+      candidates: [{
+        restaurantId: "restaurant-new",
+        name: "新餐厅",
+        distanceMinutes: 8,
+        tags: [],
+        weekdayMatch: 0,
+        weatherMatch: 0,
+        teammateRecommendationCount: 0,
+        recentlyRecommended: false,
+        negativeFeedbackCount: 0
+      }],
+      limit: 3
+    });
+
+    expect(ranked).toMatchObject({
+      restaurantId: "restaurant-new",
+      score: 20,
+      reason: "新收录，尚无同事推荐，离办公室近"
+    });
+  });
+
+  it("does not award a distance score when walking time is unknown", () => {
+    const [ranked] = rankRestaurantCandidates({
+      candidates: [{
+        restaurantId: "restaurant-new",
+        name: "新餐厅",
+        tags: [],
+        weekdayMatch: 0,
+        weatherMatch: 0,
+        teammateRecommendationCount: 0,
+        recentlyRecommended: false,
+        negativeFeedbackCount: 0
+      }],
+      limit: 3
+    });
+
+    expect(ranked).toMatchObject({
+      score: 0,
+      reason: "新收录，尚无同事推荐",
+      scoreBreakdown: {
+        distance: 0,
+        teammateRecommendation: 0,
+        total: 0
+      }
+    });
+  });
+
   it("returns explainable ranked candidates", () => {
     const ranked = rankRestaurantCandidates({
       candidates: [
