@@ -1,6 +1,6 @@
 import type { GroupCapabilitiesResponse, PoiCandidate } from "@lunch/shared";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import { Children, isValidElement, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
   BulkImportEditor,
@@ -49,6 +49,18 @@ function findButton(node: ReactNode, label: string): ReactElement<{
     }
   }
   throw new Error(`Button not found: ${label}`);
+}
+
+function findCheckboxes(node: ReactNode): Array<ReactElement<{
+  type?: string;
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+}>> {
+  if (!isValidElement(node)) return [];
+  const element = node as ReactElement<{ children?: ReactNode; type?: string; onChange?: (event: ChangeEvent<HTMLInputElement>) => void }>;
+  return [
+    ...(element.type === "input" && element.props.type === "checkbox" ? [element] : []),
+    ...Children.toArray(element.props.children).flatMap(findCheckboxes)
+  ];
 }
 
 describe("restaurant onboarding markup", () => {
@@ -167,6 +179,31 @@ describe("restaurant onboarding markup", () => {
     expect(onCorrection).toHaveBeenCalledWith("correct-rejected");
     expect(resolved).toContain("disabled");
     expect(resolved).toContain("请先开始新一批");
+  });
+
+  it("lets a confirmed ambiguous branch be unselected again", () => {
+    const onChange = vi.fn();
+    const row = {
+      ...createPasteDraft("分店", [{ name: "分店", address: "一楼" }]).rows[0]!,
+      selected: true,
+      confirmSeparateBranch: true
+    };
+    const tree = BulkImportEditor({
+      rows: [row],
+      overflow: false,
+      pending: false,
+      action: "new-import",
+      existingRestaurants: [{ name: "分店", address: "一楼" }],
+      onChange,
+      onSubmit: vi.fn()
+    });
+
+    const selection = findCheckboxes(tree)[0]!;
+    selection.props.onChange?.({ target: { checked: false } } as ChangeEvent<HTMLInputElement>);
+
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ selected: false, confirmSeparateBranch: true })
+    ]);
   });
 
   it("renders provider facts and straight-line meters without inferred fields", () => {

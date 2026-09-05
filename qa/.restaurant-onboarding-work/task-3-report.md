@@ -149,3 +149,14 @@ Final amended checks (no repeated full-monorepo suite):
 - `git diff --check` — passed.
 
 Root prepared a disposable response-loss proxy to exercise the same-request recovery and partial-success correction-loss paths in the browser after this fix commit. Those browser results are recorded by Root separately and are not claimed here.
+
+### Review round 1 adjacent Minor follow-up
+
+The post-fix review approved all three Important findings and found that a confirmed ambiguous row's now-enabled selection checkbox still immediately reselected itself when unchecked. The UI used any hint as its previous blocking condition even though a confirmed ambiguous hint is no longer blocking.
+
+- RED: `pnpm --filter @lunch/admin exec vitest run tests/onboardingMarkup.test.tsx` — 1/7 failed; direct checkbox interaction expected `selected: false` but received `selected: true`.
+- GREEN: `pnpm --filter @lunch/admin exec vitest run tests/onboardingModel.test.ts tests/onboardingMarkup.test.tsx` — **15/15 passed** after previous/current blocking checks were aligned.
+- `pnpm --filter @lunch/admin typecheck` — passed.
+- `pnpm --filter @lunch/admin build` — passed.
+
+The confirmed branch remains valid and selected by default when first confirmed, and can now be deliberately unselected and selected again. Exact duplicates and unconfirmed ambiguous rows remain disabled.

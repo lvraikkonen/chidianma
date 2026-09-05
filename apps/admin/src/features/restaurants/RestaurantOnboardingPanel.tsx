@@ -481,9 +481,8 @@ export function BulkImportEditor(props: {
     const withoutOldHint = { ...next, error };
     delete withoutOldHint.hint;
     const classified = classifyPasteDraftRow(withoutOldHint, props.existingRestaurants ?? []);
-    const wasBlocked = Boolean(row.error || row.hint);
-    const isBlocked = Boolean(classified.error || classified.hint === "duplicate"
-      || (classified.hint === "ambiguous_branch" && !classified.confirmSeparateBranch));
+    const wasBlocked = pasteDraftRowIsBlocked(row);
+    const isBlocked = pasteDraftRowIsBlocked(classified);
     return wasBlocked && !isBlocked ? { ...classified, selected: true } : classified;
   }));
   return (
@@ -642,6 +641,11 @@ function pasteHintMessage(code: "duplicate" | "ambiguous_branch"): string {
   return code === "duplicate"
     ? "餐厅库已有同名同址记录，默认跳过"
     : "餐厅库已有同名记录：补充不同地址，或确认是独立分店后再选择";
+}
+
+function pasteDraftRowIsBlocked(row: PasteDraftRow): boolean {
+  return Boolean(row.error || row.hint === "duplicate"
+    || (row.hint === "ambiguous_branch" && !row.confirmSeparateBranch));
 }
 
 function onboardingErrorMessage(error: unknown): string {
