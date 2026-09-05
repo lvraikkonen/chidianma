@@ -103,6 +103,8 @@ export function manualRowsFromDraft(rows: PasteDraftRow[]): RestaurantImportRow[
   }));
 }
 
+export interface ImportRowLabel { name: string; address?: string | undefined }
+
 export type ImportControllerState =
   | { kind: "idle" }
   | {
@@ -111,6 +113,8 @@ export type ImportControllerState =
       requestIds: string[];
       results: RestaurantImportResponse["results"];
       rowsById: Record<string, RestaurantImportRow>;
+      labelsById?: Record<string, ImportRowLabel>;
+      resultLabelsById?: Record<string, ImportRowLabel>;
     }
   | {
       kind: "recovery";
@@ -119,6 +123,8 @@ export type ImportControllerState =
       requestIds: string[];
       results: RestaurantImportResponse["results"];
       rowsById: Record<string, RestaurantImportRow>;
+      labelsById?: Record<string, ImportRowLabel>;
+      resultLabelsById?: Record<string, ImportRowLabel>;
     }
   | {
       kind: "complete";
@@ -127,6 +133,8 @@ export type ImportControllerState =
       requestIds: string[];
       results: RestaurantImportResponse["results"];
       rowsById: Record<string, RestaurantImportRow>;
+      labelsById?: Record<string, ImportRowLabel>;
+      resultLabelsById?: Record<string, ImportRowLabel>;
     };
 
 export type BulkImportAction =
@@ -143,6 +151,14 @@ export function bulkImportAction(state: ImportControllerState): BulkImportAction
     : "start-new-required";
 }
 
+export function rejectedImportRows(
+  rows: RestaurantImportRow[],
+  results: RestaurantImportResponse["results"]
+): RestaurantImportRow[] {
+  const rejected = new Set(results.filter((result) => result.status === "rejected").map((result) => result.rowId));
+  return rows.filter((row) => rejected.has(row.rowId));
+}
+
 export function createImportController(dependencies: {
   submit: (request: RestaurantImportRequest) => Promise<RestaurantImportResponse>;
   createRequestId?: (() => string) | undefined;
@@ -152,6 +168,8 @@ export function createImportController(dependencies: {
   let accumulatedResults: RestaurantImportResponse["results"] = [];
   let knownRows = new Map<string, RestaurantImportRow>();
   let requestIds: string[] = [];
+  let labelsById: Record<string, ImportRowLabel> = {};
+  let resultLabelsById: Record<string, ImportRowLabel> = {};
   const correctionRequestIds = new Set<string>();
   const commit = (next: ImportControllerState) => {
     state = next;
@@ -161,11 +179,17 @@ export function createImportController(dependencies: {
     const progress = () => ({
       requestIds: [...requestIds],
       results: [...accumulatedResults],
-      rowsById: Object.fromEntries(knownRows)
+      rowsById: Object.fromEntries(knownRows),
+      labelsById: { ...labelsById },
+      resultLabelsById: { ...resultLabelsById }
     });
     commit({ kind: "submitting", request, ...progress() });
     try {
       const response = await dependencies.submit(request);
+      for (const result of response.results) {
+        const label = labelsById[result.rowId];
+        if (label) resultLabelsById[result.rowId] = { ...label };
+      }
       accumulatedResults = correctionRequestIds.has(request.requestId)
         ? mergeImportResults(accumulatedResults, response.results)
         : response.results;
@@ -182,27 +206,32 @@ export function createImportController(dependencies: {
   };
   return {
     getState: () => state,
-    submit: (request: RestaurantImportRequest) => {
+    submit: (request: RestaurantImportRequest, poiLabels: Record<string, ImportRowLabel> = {}) => {
       if (state.kind !== "idle") return Promise.resolve(state);
       accumulatedResults = [];
+      resultLabelsById = {};
       knownRows = new Map(request.rows.map((row) => [row.rowId, row]));
+      labelsById = Object.fromEntries(request.rows.flatMap((row) => {
+        const label = row.kind === "manual" ? row : poiLabels[row.rowId];
+        return label ? [[row.rowId, { name: label.name, address: label.address }]] : [];
+      }));
       requestIds = [request.requestId];
       correctionRequestIds.clear();
       return send(request);
     },
     retry: () => state.kind === "recovery" ? send(state.request) : Promise.resolve(state),
-    correctRejected: (rowsById: Record<string, RestaurantImportRow>) => {
+    correctRejected: (correctionsById: Record<string, RestaurantImportRow>) => {
       if (state.kind !== "complete") return Promise.resolve(state);
-      const rejected = new Set(state.response.results
-        .filter((result) => result.status === "rejected")
-        .map((result) => result.rowId));
-      const rows = Object.values(rowsById).filter((row) => rejected.has(row.rowId));
+      const rows = rejectedImportRows(Object.values(correctionsById), state.response.results);
       if (rows.length === 0) return Promise.resolve(state);
       const request = {
         requestId: dependencies.createRequestId?.() ?? crypto.randomUUID(),
         rows
       };
-      for (const row of rows) knownRows.set(row.rowId, row);
+      for (const row of rows) {
+        knownRows.set(row.rowId, row);
+        if (row.kind === "manual") labelsById[row.rowId] = { name: row.name, address: row.address };
+      }
       requestIds.push(request.requestId);
       correctionRequestIds.add(request.requestId);
       return send(request);
@@ -210,8 +239,10 @@ export function createImportController(dependencies: {
     resetResolved() {
       if (state.kind !== "complete") return state;
       accumulatedResults = [];
+      resultLabelsById = {};
       knownRows = new Map();
       requestIds = [];
+      labelsById = {};
       correctionRequestIds.clear();
       commit({ kind: "idle" });
       return state;

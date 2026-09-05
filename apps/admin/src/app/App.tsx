@@ -85,6 +85,9 @@ export function App() {
   const [restaurantIntent, setRestaurantIntent] = useState(() => (
     parseRestaurantRouteIntent(window.location.hash)
   ));
+  const destinationAttempt = useRef<{ key: string } | null>(null);
+  const [destinationFailure, setDestinationFailure] = useState<{ key: string; message: string } | null>(null);
+  const [destinationRetry, setDestinationRetry] = useState(0);
   const [groupEntryOpen, setGroupEntryOpen] = useState(false);
   const [todayState, setTodayState] = useState<TodayViewState>({ kind: "loading" });
   const [todayReload, setTodayReload] = useState(0);
@@ -183,17 +186,46 @@ export function App() {
   const restaurantDestinationPending = route === "restaurants"
     && restaurantDestination.kind === "switch";
 
+  const destinationIdentity = "session" in authState ? authState.session.identityId : undefined;
+  const destinationKey = JSON.stringify([destinationIdentity, restaurantIntent?.groupId, restaurantIntent?.mode]);
+  const currentDestinationFailure = destinationFailure?.key === destinationKey ? destinationFailure : null;
+
   useEffect(() => {
+    // Loading/switching are transient states of the same destination attempt.
+    if (!restaurantIntent || authState.kind === "identity-entry") {
+      destinationAttempt.current = null;
+      setDestinationFailure(null);
+      return;
+    }
     if (authState.kind !== "authenticated" && authState.kind !== "group-entry") return;
+    if (destinationAttempt.current?.key !== destinationKey) {
+      destinationAttempt.current = null;
+      setDestinationFailure(null);
+    }
     const destination = resolveRestaurantDestination(
       restaurantIntent,
       authState.groups,
       authState.session.activeGroupId
     );
-    if (destination.kind === "switch") {
-      void authController.switchGroup(destination.groupId);
-    }
-  }, [authController, authState.kind, restaurantIntent?.groupId, activeGroupId]);
+    if (destination.kind !== "switch" || destinationAttempt.current) return;
+    const attempt = { key: destinationKey };
+    destinationAttempt.current = attempt;
+    void authController.switchGroup(destination.groupId).then(() => {
+      if (destinationAttempt.current !== attempt) return;
+      const result = authController.getState();
+      if (result.kind === "authenticated" && result.session.activeGroupId === destination.groupId) return;
+      setDestinationFailure({
+        key: attempt.key,
+        message: "error" in result && result.error ? result.error : "操作没有完成，请检查网络后重试。"
+      });
+    });
+  }, [authController, authState.kind, destinationKey, activeGroupId, destinationRetry]);
+
+  function retryRestaurantDestination() {
+    destinationAttempt.current = null;
+    setDestinationFailure(null);
+    setDestinationRetry((value) => value + 1);
+  }
 
   useEffect(() => {
     if (route !== "today" || !groupContext) return;
@@ -615,6 +647,9 @@ export function App() {
     >
       {route === "restaurants" ? restaurantDestinationUnauthorized ? (
         <StatusPanel title="无法打开这个小组" message="当前身份不是目标小组的有效成员。请切换到已有小组，或使用正确的身份连接后再试。" />
+      ) : restaurantDestinationPending && currentDestinationFailure ? (
+        <StatusPanel title="切换小组失败" message={currentDestinationFailure.message} tone="error"
+          action={<button className="button secondary" type="button" onClick={retryRestaurantDestination}>重试切换小组</button>} />
       ) : restaurantDestinationPending ? (
         <StatusPanel title="正在切换小组" message="正在验证目标小组成员身份，请稍候。" />
       ) : activeGroup && groupContext ? (

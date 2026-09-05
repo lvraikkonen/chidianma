@@ -30,6 +30,8 @@ import {
   createPasteDraft,
   manualRowsFromDraft,
   nearbyCapabilityView,
+  rejectedImportRows,
+  type ImportRowLabel,
   validateManualDraft,
   type ImportControllerState,
   type BulkImportAction,
@@ -80,6 +82,8 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
   const geocodeFlight = useRef<{ generation: number; abort: AbortController } | null>(null);
   const geocodeGeneration = useRef(0);
   const alive = useRef(true);
+  const geocodeQuery = useRef({ address, city });
+  geocodeQuery.current = { address, city };
 
   const handleError = async (error: unknown) => {
     if (alive.current && isMembershipInvalid(error)) {
@@ -191,9 +195,23 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
     poiImportState.kind !== "idle"
   );
 
+  function editGeocodeInput(field: "address" | "city", value: string) {
+    geocodeQuery.current = { ...geocodeQuery.current, [field]: value };
+    geocodeGeneration.current += 1;
+    geocodeFlight.current?.abort.abort();
+    setGeocodePending(false);
+    setCenters([]);
+    setChosenCenter(null);
+    setGeocodeAttribution(undefined);
+    setGeocodeError(undefined);
+    if (field === "address") setAddress(value);
+    else setCity(value);
+  }
+
   async function resolveAddress(event: FormEvent) {
     event.preventDefault();
-    const inputAddress = address.trim();
+    const query = { address, city };
+    const inputAddress = query.address.trim();
     if (!inputAddress) {
       setGeocodeError("请输入要定位的地址。");
       return;
@@ -201,6 +219,8 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
     geocodeGeneration.current += 1;
     geocodeFlight.current?.abort.abort();
     const ownGeneration = geocodeGeneration.current;
+    const isCurrent = () => geocodeGeneration.current === ownGeneration
+      && geocodeQuery.current.address === query.address && geocodeQuery.current.city === query.city;
     const abort = new AbortController();
     geocodeFlight.current = { generation: ownGeneration, abort };
     setGeocodePending(true);
@@ -210,18 +230,18 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
     try {
       const response = await geocodePoi(
         { ...props.context, signal: abort.signal },
-        { address: inputAddress, ...(city.trim() ? { city: city.trim() } : {}) }
+        { address: inputAddress, ...(query.city.trim() ? { city: query.city.trim() } : {}) }
       );
-      if (geocodeGeneration.current !== ownGeneration || abort.signal.aborted) return;
+      if (!isCurrent() || abort.signal.aborted) return;
       setCenters(response.centers);
       setGeocodeAttribution(response.attribution);
       if (response.centers.length === 0) setGeocodeError("没有找到可确认的位置，请补充更具体的地址。");
     } catch (error) {
-      if (geocodeGeneration.current !== ownGeneration || abort.signal.aborted) return;
+      if (!isCurrent() || abort.signal.aborted) return;
       await handleError(error);
       if (!isMembershipInvalid(error)) setGeocodeError(onboardingErrorMessage(error));
     } finally {
-      if (geocodeGeneration.current === ownGeneration) setGeocodePending(false);
+      if (isCurrent()) setGeocodePending(false);
     }
   }
 
@@ -290,7 +310,10 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
       kind: "poi",
       ticket: candidate.ticket
     }));
-    const next = await poiController.submit({ requestId: crypto.randomUUID(), rows });
+    const labels = Object.fromEntries(selected.map((candidate, index) => [
+      `poi-${index + 1}`, { name: candidate.name, address: candidate.address }
+    ]));
+    const next = await poiController.submit({ requestId: crypto.randomUUID(), rows }, labels);
     await finishImport(next, poiImportState.kind === "complete" ? poiImportState.request.requestId : undefined);
   }
 
@@ -328,6 +351,7 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
                   overflow={draft.error === "too_many_rows"}
                   pending={bulkImportState.kind === "submitting"}
                   action={bulkAction}
+                  results={bulkImportState.kind === "idle" ? [] : bulkImportState.results}
                   existingRestaurants={props.restaurants}
                   onChange={(rows) => setDraft({ ...draft, rows })}
                   onSubmit={submitManualRows}
@@ -360,8 +384,8 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
                     </div>
                   ) : null}
                   <form className="center-form" onSubmit={resolveAddress}>
-                    <label className="field"><span>搜索中心地址</span><input value={address} maxLength={500} onChange={(event) => setAddress(event.target.value)} placeholder="输入办公楼或附近地址" /></label>
-                    <label className="field"><span>城市（可选）</span><input value={city} maxLength={100} onChange={(event) => setCity(event.target.value)} /></label>
+                    <label className="field"><span>搜索中心地址</span><input value={address} maxLength={500} onChange={(event) => editGeocodeInput("address", event.target.value)} placeholder="输入办公楼或附近地址" /></label>
+                    <label className="field"><span>城市（可选）</span><input value={city} maxLength={100} onChange={(event) => editGeocodeInput("city", event.target.value)} /></label>
                     <button className="button secondary" type="submit" disabled={geocodePending}>{geocodePending ? "正在解析…" : "解析地址"}</button>
                   </form>
                   {geocodeError ? <p className="inline-error" role="alert">{geocodeError}</p> : null}
@@ -414,6 +438,7 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
                   {poiPreview ? (
                     <PoiSavePreview
                       candidates={nearbyController.getSelected()}
+                      saveLocked={poiImportState.kind !== "idle" || !available.nearbySave}
                       pending={poiImportState.kind === "submitting"}
                       onCancel={() => setPoiPreview(false)}
                       onSave={savePoiSelection}
@@ -460,11 +485,14 @@ export function BulkImportEditor(props: {
   overflow: boolean;
   pending: boolean;
   action: BulkImportAction;
+  results?: RestaurantImportRowResult[];
   existingRestaurants?: Array<{ name: string; address?: string | undefined }>;
   onChange: (rows: PasteDraftRow[]) => void;
   onSubmit: (action: BulkImportAction) => void | Promise<void>;
 }) {
-  const selectedCount = manualRowsFromDraft(props.rows).length;
+  const selectedRows = manualRowsFromDraft(props.rows);
+  const selectedCount = (props.action === "correct-rejected"
+    ? rejectedImportRows(selectedRows, props.results ?? []) : selectedRows).length;
   const locked = props.action === "disabled" || props.action === "start-new-required";
   const actionLabel = props.pending ? "正在保存…"
     : props.action === "correct-rejected" ? `重试已修正的失败行（${selectedCount} 行）`
@@ -542,6 +570,7 @@ export function NearbyResults(props: {
 function PoiSavePreview(props: {
   candidates: PoiCandidate[];
   pending: boolean;
+  saveLocked: boolean;
   onCancel: () => void;
   onSave: () => void | Promise<void>;
 }) {
@@ -552,7 +581,7 @@ function PoiSavePreview(props: {
       <ul>{props.candidates.map((candidate) => <li key={candidate.placeId}><strong>{candidate.name}</strong><span>{candidate.address || "地址未提供"}</span></li>)}</ul>
       <div className="flow-actions">
         <button className="button ghost compact" type="button" disabled={props.pending} onClick={props.onCancel}>返回选择</button>
-        <button className="button primary compact" type="button" disabled={props.pending || props.candidates.length === 0} onClick={props.onSave}>{props.pending ? "正在保存…" : "确认保存"}</button>
+        <button className="button primary compact" type="button" disabled={props.pending || props.saveLocked || props.candidates.length === 0} onClick={props.onSave}>{props.pending ? "正在保存…" : "确认保存"}</button>
       </div>
     </div>
   );
@@ -586,7 +615,15 @@ export function ImportFeedback(props: {
     <div className={`import-feedback${props.state.kind === "recovery" ? " recovery" : ""}`} aria-live="polite" {...(props.state.kind === "recovery" ? { role: "alert" } : {})}>
       <strong>{title}</strong>
       <p>请求记录：{props.state.requestIds.join("、")}</p>
-      {props.state.results.length > 0 ? <ul>{props.state.results.map((result) => <ImportResult key={result.rowId} result={result} />)}</ul> : null}
+      {props.state.results.length > 0 ? <ul>{props.state.results.map((result) => <ImportResult key={result.rowId} result={result} label={props.state.kind !== "idle" ? props.state.resultLabelsById?.[result.rowId] : undefined} />)}</ul> : null}
+      {props.state.kind !== "complete" ? (
+        <div><p>本次提交（{props.state.kind === "recovery" ? "结果待确认" : "正在保存"}）：</p>
+          <ul>{props.state.request.rows.map((row) => {
+            const label = props.state.kind !== "idle" ? props.state.labelsById?.[row.rowId] : undefined;
+            return <li key={row.rowId}><strong>{row.rowId}</strong><ImportLabel label={label} /></li>;
+          })}</ul>
+        </div>
+      ) : null}
       {props.state.kind === "recovery" ? (
         <>
           <p>{onboardingErrorMessage(props.state.error)} 当前请求和此前已知结果都已保留。</p>
@@ -602,9 +639,13 @@ export function ImportFeedback(props: {
   );
 }
 
-function ImportResult({ result }: { result: RestaurantImportRowResult }) {
+function ImportResult({ result, label: restaurant }: { result: RestaurantImportRowResult; label?: ImportRowLabel | undefined }) {
   const label = result.status === "created" ? "已创建" : result.status === "existing" ? "已存在，已跳过" : "未保存";
-  return <li className={result.status}><strong>{result.rowId} · {label}</strong><span>{result.message}</span></li>;
+  return <li className={result.status}><strong>{result.rowId} · {label}</strong><ImportLabel label={restaurant} /><span>{result.message}</span></li>;
+}
+
+function ImportLabel({ label }: { label?: ImportRowLabel | undefined }) {
+  return label ? <><span>{label.name}</span><small>{label.address || "地址未提供"}</small></> : null;
 }
 
 function sameCenter(left: PoiSearchCenter | null, right: PoiSearchCenter | null): boolean {

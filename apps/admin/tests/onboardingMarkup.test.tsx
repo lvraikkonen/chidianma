@@ -148,6 +148,7 @@ describe("restaurant onboarding markup", () => {
       overflow: false,
       pending: false,
       action: "correct-rejected",
+      results: [{ rowId: "line-1", status: "rejected", code: "ambiguous_branch", message: "address needed" }],
       onChange: vi.fn(),
       onSubmit: onCorrection
     });
@@ -157,6 +158,7 @@ describe("restaurant onboarding markup", () => {
         overflow={false}
         pending={false}
         action="correct-rejected"
+        results={[{ rowId: "line-1", status: "rejected", code: "ambiguous_branch", message: "address needed" }]}
         onChange={vi.fn()}
         onSubmit={vi.fn()}
       />
