@@ -100,8 +100,9 @@ For the controlled install/upgrade/rollback flow, use
   passed automated, Railway and real Chrome exit gates.
 - Stage 7D.0 freezes the approved planning baseline. Stage 7D feature flags and explicit cohort
   approval still control colleague rollout.
-- Extension `0.4.0` is the restaurant-onboarding source candidate. It retains the fixed ID and
-  permissions; packaging and deployment evidence must be added before it is called released.
+- Extension `0.4.0` is the verified restaurant-onboarding internal release. It retains the fixed
+  ID and permissions; its [release record](releases/restaurant-onboarding-0.4.0-2026-09-05.md)
+  separates package/runtime identity from documentation commits and records the open Chrome check.
 - `CHANGELOG.md` records user-facing capability; `RELEASE.md` records deployment/database/rollback
   state and known issues.
 

@@ -1,0 +1,387 @@
+{
+  "sourceCommit": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+  "cohortNames": [
+    "TT和她的饭搭子们",
+    "冬冬，今天吃点嘛？",
+    "干饭天团"
+  ],
+  "gates": {
+    "sourceCommit": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+    "checks": [
+      {
+        "check": "test",
+        "exitCode": 0,
+        "totals": [
+          "packages/shared test:  Test Files  7 passed (7)",
+          "packages/shared test:       Tests  65 passed (65)",
+          "apps/admin test:  Test Files  24 passed (24)",
+          "apps/admin test:       Tests  119 passed (119)",
+          "apps/extension test:  Test Files  31 passed (31)",
+          "apps/extension test:       Tests  412 passed (412)",
+          "apps/server test:  Test Files  33 passed (33)",
+          "apps/server test:       Tests  360 passed (360)"
+        ]
+      },
+      {
+        "check": "typecheck",
+        "exitCode": 0
+      },
+      {
+        "check": "build",
+        "exitCode": 0
+      },
+      {
+        "check": "railway-build",
+        "exitCode": 0
+      }
+    ],
+    "tests": 956,
+    "testFiles": 95,
+    "realPostgresTests": 10,
+    "review": "spec compliant; quality approved; one minor nested-error-only fixture coverage follow-up",
+    "strictPackage": {
+      "schema": "extension-internal-release/1.0",
+      "schemaVersion": "1.0",
+      "product": "chidianma-extension",
+      "version": "0.4.0",
+      "commit": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+      "extensionId": "bbkeaogleldgfnkgebdhdbiohlmonbkk",
+      "buildProfile": "internal",
+      "name": "中午吃点啥（内部测试）",
+      "permissions": [
+        "alarms",
+        "notifications",
+        "storage"
+      ],
+      "hostPermissions": [
+        "https://lunchserver-production.up.railway.app/*"
+      ],
+      "fileCount": 23,
+      "artifact": {
+        "file": "chidianma-extension-0.4.0-internal.zip",
+        "sha256": "5159f4564aa07cc3b5c22b8413c2ee77f63a759c31de288bb39d5fc1893093ed"
+      },
+      "builtAt": "2026-09-05T07:36:04.717Z"
+    },
+    "docs": "passed",
+    "artifactChecks": "passed",
+    "secretChecks": "passed",
+    "actualPrivateValueScan": {
+      "ok": true,
+      "actualPrivateValuesChecked": 4,
+      "filesChecked": 438,
+      "zipChecked": true
+    },
+    "productionVulnerabilities": {
+      "versions": 111,
+      "findings": 0,
+      "lockfileUnchangedSinceFullScan": true
+    }
+  },
+  "deployments": {
+    "paused": {
+      "id": "68625219-512d-43d0-9aaa-369e051fb2e5",
+      "status": "SUCCESS",
+      "createdAt": "2026-09-05T07:38:29.356Z",
+      "revision": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+      "imageDigest": "sha256:cd8d752901fea5cc63a5cf916b4d820db2fb0d710d4e82d97897e466708868bc"
+    },
+    "enabled": {
+      "id": "fa4353d5-9202-4414-bee5-9261fdf45192",
+      "status": "SUCCESS",
+      "createdAt": "2026-09-05T07:41:21.261Z",
+      "revision": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+      "imageDigest": "sha256:e54c39eb60f18245fb10a7ae363732bd7aa962d2f0f9b343b810068944640dff"
+    }
+  },
+  "public": {
+    "paused": {
+      "ok": true,
+      "phase": "recovery-paused",
+      "revision": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+      "health": 200,
+      "ready": 200,
+      "admin": 200,
+      "hashedAsset": 200,
+      "indexNoStore": true,
+      "assetImmutable": true,
+      "unknownApi": 404,
+      "protectedApi": 401
+    },
+    "enabled": {
+      "ok": true,
+      "phase": "recovery-on",
+      "revision": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+      "health": 200,
+      "ready": 200,
+      "admin": 200,
+      "hashedAsset": 200,
+      "indexNoStore": true,
+      "assetImmutable": true,
+      "unknownApi": 404,
+      "protectedApi": 401
+    }
+  },
+  "database": {
+    "paused": {
+      "check": "database",
+      "exitCode": 0,
+      "results": [
+        {
+          "ok": true,
+          "checks": [
+            {
+              "name": "unfinished_migrations",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "cross_group_relationships",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "duplicate_current_batches",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "legacy_batch_count_delta",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "legacy_item_count_delta",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "groups_without_active_admin",
+              "ok": true,
+              "count": 0
+            }
+          ]
+        }
+      ]
+    },
+    "enabled": {
+      "check": "database",
+      "exitCode": 0,
+      "results": [
+        {
+          "ok": true,
+          "checks": [
+            {
+              "name": "unfinished_migrations",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "cross_group_relationships",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "duplicate_current_batches",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "legacy_batch_count_delta",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "legacy_item_count_delta",
+              "ok": true,
+              "count": 0
+            },
+            {
+              "name": "groups_without_active_admin",
+              "ok": true,
+              "count": 0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "cohortSmoke": {
+    "paused": {
+      "ok": true,
+      "phase": "paused",
+      "revision": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+      "cohort": [
+        {
+          "cohortIndex": 1,
+          "capabilities": "paused",
+          "geocode": 403,
+          "search": 403,
+          "import": 200
+        },
+        {
+          "cohortIndex": 2,
+          "capabilities": "paused",
+          "geocode": 403,
+          "search": 403,
+          "import": 200
+        },
+        {
+          "cohortIndex": 3,
+          "capabilities": "paused",
+          "geocode": 403,
+          "search": 403,
+          "import": 200
+        }
+      ],
+      "excludedGroupDisabled": true,
+      "wheelUnchanged": true,
+      "providerSmoke": true,
+      "businessDataUnchanged": true,
+      "groupCentersNotWritten": true,
+      "completedMigrations": 6,
+      "temporaryCredentialLifetimeSeconds": 60,
+      "credentialsPersisted": false,
+      "persistenceEffect": "duplicate-only receipts, zero restaurants or lunch-history writes"
+    },
+    "enabled": {
+      "ok": true,
+      "phase": "on",
+      "revision": "96ea5b6a50442df938021e7bd802be3e98be7fb1",
+      "cohort": [
+        {
+          "cohortIndex": 1,
+          "capabilities": "enabled",
+          "geocode": 200,
+          "search": 200,
+          "candidateCount": 1,
+          "duplicateOnlyImport": true,
+          "replayEqual": true,
+          "jsonKeyOrderDiffers": false
+        },
+        {
+          "cohortIndex": 2,
+          "capabilities": "enabled",
+          "geocode": 200,
+          "search": 200,
+          "candidateCount": 5,
+          "duplicateOnlyImport": true,
+          "replayEqual": true,
+          "jsonKeyOrderDiffers": false
+        },
+        {
+          "cohortIndex": 3,
+          "capabilities": "enabled",
+          "geocode": 200,
+          "search": 200,
+          "candidateCount": 2,
+          "duplicateOnlyImport": true,
+          "replayEqual": true,
+          "jsonKeyOrderDiffers": false
+        }
+      ],
+      "excludedGroupDisabled": true,
+      "wheelUnchanged": true,
+      "providerSmoke": true,
+      "businessDataUnchanged": true,
+      "groupCentersNotWritten": true,
+      "completedMigrations": 6,
+      "temporaryCredentialLifetimeSeconds": 60,
+      "credentialsPersisted": false,
+      "persistenceEffect": "duplicate-only receipts, zero restaurants or lunch-history writes"
+    }
+  },
+  "logs": {
+    "ok": true,
+    "deployment": "fa4353d5-9202-4414-bee5-9261fdf45192",
+    "logEntriesRead": 82,
+    "operationEntries": [
+      {
+        "timestamp": "2026-09-05T07:43:55.429003959Z",
+        "operation": "poi_geocode",
+        "provider": "amap"
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.429011359Z",
+        "operation": "poi_search",
+        "provider": "amap"
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.429018099Z",
+        "operation": "restaurant_import",
+        "createdCount": 0,
+        "existingCount": 1,
+        "rejectedCount": 0
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.429363607Z",
+        "operation": "restaurant_import",
+        "createdCount": 0,
+        "existingCount": 1,
+        "rejectedCount": 0
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.429378727Z",
+        "operation": "poi_geocode",
+        "provider": "amap"
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.429386187Z",
+        "operation": "poi_search",
+        "provider": "amap"
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.429795984Z",
+        "operation": "restaurant_import",
+        "createdCount": 0,
+        "existingCount": 1,
+        "rejectedCount": 0
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.429802824Z",
+        "operation": "restaurant_import",
+        "createdCount": 0,
+        "existingCount": 1,
+        "rejectedCount": 0
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.429817124Z",
+        "operation": "poi_geocode",
+        "provider": "amap"
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.430278360Z",
+        "operation": "poi_search",
+        "provider": "amap"
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.430285310Z",
+        "operation": "restaurant_import",
+        "createdCount": 0,
+        "existingCount": 1,
+        "rejectedCount": 0
+      },
+      {
+        "timestamp": "2026-09-05T07:43:55.430292320Z",
+        "operation": "restaurant_import",
+        "createdCount": 0,
+        "existingCount": 1,
+        "rejectedCount": 0
+      }
+    ],
+    "http5xxOperationEntries": 0,
+    "observationOnly": true
+  },
+  "limitations": [
+    "Scripted local first-build timing 36506 ms; colleague first-use timing remains open.",
+    "One user-confirmed familiar sample per group; not overall coverage.",
+    "Actual Chrome 0.4.0 load/upgrade blocked by browser URL policy; manual check remains open.",
+    "Wheel human QA remains open and one-group scope is unchanged.",
+    "Minor nested-AggregateError-only regression fixture follow-up; implementation reviewed as correct."
+  ],
+  "finalDocumentationCheck": {
+    "ok": true,
+    "markdownFiles": 70,
+    "localLinks": 192
+  }
+}

@@ -1,15 +1,17 @@
 # 中午吃点啥 Roadmap
 
-## Current execution update — 2026-09-04
+## Current execution update — 2026-09-05
 
 The wheel source is on main; its remaining manual QA and existing rollout scope are retained.
 The user-approved [restaurant onboarding plan](plans/2026-09-04-restaurant-onboarding.md)
-on `feat/restaurant-onboarding` now governs the next release: minimal entry, pasted lists,
-Amap nearby search and explicit selected-result saving for the three existing colleague groups.
+was implemented on `feat/restaurant-onboarding`, merged into main and released as 0.4.0:
+minimal entry, pasted lists, Amap nearby search and explicit selected-result saving are verified
+for the three approved colleague groups. The ZIP is ready; actual Chrome upgrade and colleague
+first-use observations remain open in the [release record](docs/releases/restaurant-onboarding-0.4.0-2026-09-05.md).
 It supersedes the old standalone, search-only Stage 7D.2 spike. See its
 [design](specs/2026-09-04-restaurant-onboarding-design.md) for changed persistence and migration boundaries.
 
-After this release: cross-group selected lists, same-day conditions, actual dining/queue feedback,
+Next, plan separate branches for cross-group selected lists, same-day conditions, actual dining/queue feedback,
 restaurant freshness and facade photos, then in-product ZIP update notices. Provider authorization
 confirmation remains a separate follow-up. Later-stage headings below preserve the earlier cadence.
 
@@ -260,7 +262,8 @@ extension handoff.
 
 ## Stage 7: Internal Beta Productization
 
-**Status:** In Progress. Stage 7A–7C and Stage 7D.0 are complete; Stage 7D.1 is next.
+**Status:** In Progress. Stage 7A–7C and Stage 7D.0 are complete. Stage 7D.1 has a single-group
+Server rollout with manual QA open; restaurant onboarding 0.4.0 is verified for three groups.
 
 **Design:** [`specs/2026-07-15-internal-beta-productization-stage7-design.md`](specs/2026-07-15-internal-beta-productization-stage7-design.md)
 

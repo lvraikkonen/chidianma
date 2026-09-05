@@ -1,11 +1,12 @@
 # Restaurant onboarding 0.4.0 — verification
 
-Status: local verification complete; final review, strict package and production rollout pending.
+Status: implementation, independent review, strict package and production verification complete; the three-group trial is enabled. Remaining human checks are listed below.
 
 Scope: [approved design](../specs/2026-09-04-restaurant-onboarding-design.md) and
 [implementation plan](../plans/2026-09-04-restaurant-onboarding.md). Feature base `881b893`;
-dependency-maintenance head `7f01a8e43fc2b1d0fe09fa9243922f5e6a603c2d`.
-Production and package identities will be recorded in the
+release source `96ea5b6a50442df938021e7bd802be3e98be7fb1`; dependency-maintenance head
+`7f01a8e43fc2b1d0fe09fa9243922f5e6a603c2d`.
+Production and package identities are recorded in the
 [release record](../docs/releases/restaurant-onboarding-0.4.0-2026-09-05.md).
 
 ## Implementation and review
@@ -24,24 +25,32 @@ Production and package identities will be recorded in the
 - Each implementation task received a separate spec/quality review. The reviews led to fixes for
   whitespace reason validation before writes, Mock field bounds, recovery controls and outcomes,
   retained POI saving when search is disabled, branch selection and Extension link context guards.
+- Whole-branch review and one combined fix wave closed five Admin findings: failed deep-link
+  switching now requires explicit retry, edited address/city invalidate late geocoding, correction
+  counts match submitted rows, receipt labels remain immutable, and completed POI saves are disabled.
+- The subsequent production transport remediation received a separate approved spec/quality review.
+  One minor regression-test follow-up remains: add an AggregateError fixture whose transient code
+  exists only in a nested member. The reviewer verified that the implementation traverses those
+  members correctly; the existing fixture also gives the aggregate a recognized top-level code.
 
 ## Automated checks
 
-The maintenance slice ran the following on the final dependency tree. All completed successfully.
+The root ran the following on the final release source and dependency tree. All completed successfully.
 No lint or CI-workflow run is claimed.
 
 | Check | Result |
 | --- | --- |
-| `ONBOARDING_TEST_DATABASE_URL=<explicit local test DB> pnpm test` | 937 tests / 93 files: shared 65, Admin 112, Extension 412, Server 348; includes 10 real PostgreSQL tests |
+| `ONBOARDING_TEST_DATABASE_URL=<explicit local test DB> pnpm test` | 956 tests / 95 files: shared 65, Admin 119, Extension 412, Server 360; includes 10 real PostgreSQL tests |
 | `pnpm typecheck` / `pnpm build` | All four packages pass |
 | `pnpm build:railway` | Shared → Admin → Prisma generation → Server succeeds |
 | `pnpm --filter @lunch/extension build:dev` | Pass |
-| `STAGE7C_REQUIRE_ARTIFACTS=0 pnpm check:stage7c-release` | Dev/internal profiles, icons, stable ID, exact host and runtime checks pass; this pre-package run does not claim ZIP validation |
-| `pnpm check:docs` | Pass before this QA consolidation; rerun required for final docs |
+| `pnpm package:extension:internal` / `pnpm check:stage7c-release` | Clean committed worktree, dev/internal profiles, icons, stable ID, exact host, ZIP bytes/checksum and metadata all pass |
+| `pnpm check:docs` | 70 documents / 192 links pass after final release-record consolidation |
 | `pnpm check:release-artifacts` / `pnpm check:release-secrets` | Pass; no legacy runtime residue |
 | Frozen offline install / Prisma generate / Prisma validate | Pass |
 | Static hosting and Railway contract tests | 7 pass, including Admin cache behavior, API precedence and missing-build failure |
 | Disposable database verifier | All six invariants pass |
+| Actual private-value scan | Four production private values checked in memory against 438 tracked/built files and ZIP entries; none found |
 
 Native PostgreSQL 15 ran on a loopback-only disposable endpoint. Only the dedicated backend test
 database was recreated, applying the five prior migrations before legacy fixtures and the new
@@ -68,6 +77,8 @@ Mock and Amap providers. These are scripted checks, not observations of colleagu
 | Search center | Explicit administrator selection/save survives reload; member PATCH is denied by the actual API |
 | Selected POI save | One existing source is preserved and two new Mock places save; real Amap source separately saves through the actual API |
 | Group deep link | Admin switches to its own authorized target membership; an unknown target shows an access error |
+| Failed deep-link switch | Service outage produces a stable error and explicit retry; restoring the service and retrying switches successfully |
+| Late geocode | Editing either address or city while the actual response is delayed drops the old choices and retains the new input |
 | Narrow layout | At 390 CSS pixels the nearby flow has no horizontal document overflow |
 
 An empty disposable group started with zero restaurants and zero batches. A prepared ten-name
@@ -81,8 +92,8 @@ The real Amap HTTP smoke saved 大王家面·饭 with the selected necessary sou
 coordinates. Its 285 m straight-line distance did not become walking minutes. Price and walking
 time remained null and no recommendation was fabricated. Unauthorized requests, member center
 writes, page/radius bounds and tampered tickets were rejected. Replaying the original request
-returned the same result, including after restarting the API process; recommendation batches did
-not change.
+returned the same result, including after ticket expiry and restarting the API process;
+recommendation batches did not change.
 
 Manual browser coverage did not include login destination retention or every late-response race;
 those have controller/routing tests. No production fault injection or production test-data seeding
@@ -116,6 +127,50 @@ The fuzzy query “798食堂” returned unrelated 798-area matches and remains 
 imported as a verified place. Record broader coverage, branch/address errors and actual time with
 the three groups during their trial.
 
+## Production rollout and transport remediation
+
+The release source `96ea5b6a50442df938021e7bd802be3e98be7fb1` was fast-forwarded into main and
+pushed. Railway built it from GitHub. The existing six migrations were complete, and both final
+deployments passed all six database invariants, public health/readiness, exact revision, Admin
+entry/hashed-asset cache behavior, protected API 401 and unknown API JSON 404 checks.
+
+| Final production phase | Deployment | Result |
+| --- | --- | --- |
+| Bulk enabled, POI paused | `68625219-512d-43d0-9aaa-369e051fb2e5` | Real direct provider smoke passes; all three groups deny POI routes with 403 and accept duplicate-only bulk imports |
+| Three-group POI restored | `fa4353d5-9202-4414-bee5-9261fdf45192` | All three groups return geocode/search 200 with signed GCJ02 candidates; duplicate-only imports and receipt replay pass |
+
+The confirmed sample queries returned 1, 5 and 2 candidates respectively. The similarly named
+excluded group remains disabled. All three exact allowlists and the original wheel configuration
+were verified; wheel remains enabled for one group. Snapshots before/after show no changes to
+restaurants, recommendation batches, feedback or search centers. The production write checks
+create only durable duplicate-import receipts. They use short-lived 60-second credentials in
+memory; no smoke token is persisted. Positive real POI creation remains local PostgreSQL evidence,
+not a production seeding claim.
+
+The first enabled source, `7220344`, exposed intermittent Node transport failures before any Amap
+HTTP response. A spaced diagnostic had two `ETIMEDOUT` failures among eight calls; neighboring
+calls returned HTTP 200 / provider code 10000. An isolated connection-family timeout experiment
+still failed twice among eight calls, with IPv4 `ETIMEDOUT` and IPv6 `ENETUNREACH` nested causes.
+No global Node connection setting was applied. POI search/save were temporarily disabled while
+bulk import remained enabled.
+
+The separately reviewed fix permits three total attempts only for recognized transient GET
+transport errors. Abortable 250/500 ms backoff shares the original eight-second total deadline.
+Cancellation stops later attempts; HTTP 429/other HTTP errors, provider rejection and invalid
+data are not retried. Focused tests cover recovery, exhaustion, body transport, cancellation,
+late settlement and the shared deadline. The final paused and enabled production smokes above
+both passed. This is a bounded verification window, not a long-term availability measurement.
+
+The final log sample contained 82 returned entries, including six POI operations and six
+duplicate-only import outcomes (zero created, one existing, zero rejected per import). No failed
+onboarding operation was observed in that sample. Earlier provider errors remain part of this
+record. A superseded first deployment briefly showed a failed teardown status with SIGTERM during
+replacement and later became `REMOVED`; the sampled logs were consistent with container shutdown,
+and the final active deployment reports `SUCCESS`.
+
+Sanitized machine-readable release evidence is retained in
+[release verification](assets/restaurant-onboarding-0.4.0/release-verification.json).
+
 ## Dependency disposition
 
 The old tree failed the required scan with 11 high and 3 medium production findings. The bounded
@@ -145,4 +200,5 @@ critical 0, high 0, medium 0, low 0. No development or production exception rema
   Onboarding approval does not expand the wheel's single-group rollout.
 - Actual three-group first-use timing and broader place coverage remain trial observations.
 - Provider authorization confirmation is deferred by the user's approved design.
-- Strict ZIP, whole-branch review and production rollout are pending in this pre-release record.
+- A minor nested-AggregateError-only regression fixture remains a test follow-up; independent
+  review found no blocking defect in the implemented traversal.

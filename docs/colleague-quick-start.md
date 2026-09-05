@@ -1,6 +1,6 @@
 # 同事 Quick Start：中午吃点啥
 
-状态：受控 Internal Beta。餐厅快速建库 `0.4.0` 仍是未部署的候选版本；仅在负责人完成发布门禁并发出邀请后使用。
+状态：受控 Internal Beta。餐厅快速建库 `0.4.0` 已完成服务端发布与验证；批量导入、附近搜索和保存向 TT和她的饭搭子们、冬冬，今天吃点嘛？、干饭天团开放。首次升级请按下方步骤保留原身份，并核对 Chrome 中的版本与小组。
 
 管理端地址：[https://lunchserver-production.up.railway.app/](https://lunchserver-production.up.railway.app/)。
 

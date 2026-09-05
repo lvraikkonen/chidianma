@@ -1,6 +1,6 @@
 # 主分支归并与餐馆快速建库一期实施计划
 
-Status: Approved by the user; implementation in progress.
+Status: implemented, reviewed, merged into main and production verified on 2026-09-05. The three-group trial is enabled; actual Chrome upgrade, colleague timing and broader coverage remain follow-up evidence.
 
 Design: [餐馆快速建库一期](../specs/2026-09-04-restaurant-onboarding-design.md).
 
@@ -34,9 +34,7 @@ Controller owns orchestration and deployment. Run complete test/typecheck/build,
 
 The required dependency gate found new advisories in the existing lockfile on 2026-09-04 (11 high and 3 medium production findings). Before final packaging, complete a separate, reviewed maintenance slice after the feature tasks: select supported patched versions using primary maintainer documentation, preserve Fastify 5 and the current Prisma architecture, and verify any necessary transitive override against its actual caller. Update affected development tools as already required by the current release record. Do not weaken the vulnerability classifier or waive high/critical findings. Repeat the lockfile scan, full regression checks, static Admin/API precedence checks, Prisma generation and disposable migration rehearsal after the dependency changes. Record remaining findings and their concrete applicability; this maintenance does not add product scope.
 
-## Later branches
-
-### Production verification follow-up — 2026-09-05
+## Production verification follow-up — 2026-09-05
 
 The first deployment passed migration, readiness and flags-off checks. Enabled production smoke
 then observed intermittent `ETIMEDOUT` before an Amap HTTP response, including IPv4 connection
@@ -49,5 +47,13 @@ of explicit HTTP/provider/data failures, and tests before code. Independently re
 affected/full release gates, repackage at the new source commit and repeat production verification
 before restoring the exact three-group POI allowlists. This is remediation of observed release-gate
 failures, not another pass over the closed five Admin review findings.
+
+Completed at `96ea5b6a50442df938021e7bd802be3e98be7fb1`: focused and full release checks pass;
+the reviewed ZIP has the same source identity. The paused production gate and subsequent enabled
+gate both pass, including all three groups. See the [release record](../docs/releases/restaurant-onboarding-0.4.0-2026-09-05.md)
+and [QA evidence](../qa/2026-09-05-restaurant-onboarding.md) for exact deployment/package identities,
+observed transport failures and the remaining human checks.
+
+## Later branches
 
 Cross-group selected lists → daily conditions → actual meal/revisit/queue experience → freshness/facade photos → ZIP update notification. Scope each after this release; do not pre-create data structures now.

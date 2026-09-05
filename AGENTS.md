@@ -78,14 +78,22 @@ Historical or superseded Stage documents must not override a later current spec,
 
 ## Current Stage Documents
 
-Current user-approved execution (2026-09-04):
+Current user-approved delivery (verified 2026-09-05):
 `specs/2026-09-04-restaurant-onboarding-design.md` and
 `plans/2026-09-04-restaurant-onboarding.md` supersede the older Stage 7D.2
 search-only/save-disabled, standalone-spike and no-migration boundaries for this release.
-Work on `feat/restaurant-onboarding` after the wheel fast-forward into main. Implement minimal
-entry, pasted lists and real Amap search/selected-result persistence for the existing three colleague
-groups; provider authorization confirmation is a later follow-up. Keep existing wheel scope and
-outstanding manual QA. Historical stage status statements below are not newer execution instructions.
+The wheel branch and `feat/restaurant-onboarding` were fast-forwarded into main. Minimal entry,
+pasted lists and real Amap search/selected-result persistence are deployed for the three approved
+colleague groups. Runtime/package source is `96ea5b6a50442df938021e7bd802be3e98be7fb1`; exact
+deployment and checksum evidence live in the release record. Provider authorization confirmation,
+actual Chrome upgrade and colleague trial observations remain follow-up work. Keep the existing
+single-group wheel scope and outstanding manual QA. Plan later product branches from the roadmap;
+do not restart the superseded search-only spike.
+
+- specs/2026-09-04-restaurant-onboarding-design.md
+- plans/2026-09-04-restaurant-onboarding.md
+- docs/releases/restaurant-onboarding-0.4.0-2026-09-05.md
+- qa/2026-09-05-restaurant-onboarding.md
 
 - specs/2026-07-15-internal-beta-productization-stage7-design.md
 - specs/2026-07-20-controlled-colleague-beta-stage7d-design.md
@@ -105,14 +113,13 @@ outstanding manual QA. Historical stage status statements below are not newer ex
 
 The frozen Stage 6 audit baseline is `1eb7dbb1b26341b5f50d830d5d168ab3700cb1d9`.
 The Stage 7D baseline is `072ce70abda268f2cdf4fea1a349c16a976e70b5`, recorded by the pushed annotated
-tag `v0.2.0-internal`. The current production runtime remains the Stage 7C Railway deployment
+tag `v0.2.0-internal`. The historical Stage 7C Railway deployment is
 `03d744f6-a5bd-486c-ba65-3541dbfe9096`, sourced from commit
 `e9912c9cc72e237b0baa1aa922b3f49c5473f66a`; the later main commit only changed documentation and
 its Railway deployment was skipped. Stage 7B deployment `6d80eb52-d35a-4554-9d66-aa44dd2d6b1c`
-remains the deeper application rollback point. Stage 7A, Stage 7B and Stage 7C are complete; Stage
-7D.0 is complete and the current Stage 7D design and plan govern execution. Implement Stage 7D.1
-on `feat/lucky-restaurant-wheel` first. Keep Stage 7D.2 on the later independent
-`spike/poi-reference-search` branch; do not mix the workstreams or execute Web Store work.
+remains a deeper historical application rollback point. Stage 7A, Stage 7B, Stage 7C and Stage
+7D.0 are complete. Their earlier branch sequencing and search-only Stage 7D.2 constraints are
+superseded by the current onboarding design above. Do not execute Web Store work.
 
 ## Product Principles
 

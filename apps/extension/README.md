@@ -5,7 +5,7 @@ feedback, personal history and calm lunch reminders.
 
 ## Build profiles
 
-The default build is the controlled internal candidate:
+The default build is the controlled internal release:
 
 ```bash
 pnpm --filter @lunch/shared build

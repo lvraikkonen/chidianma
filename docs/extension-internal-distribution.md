@@ -1,6 +1,6 @@
 # Internal Extension Distribution
 
-Status: Restaurant onboarding source candidate; not deployed or distributed
+Status: Restaurant onboarding production verified for the three approved groups; ZIP ready for internal distribution. Actual Chrome 0.4.0 load/upgrade verification remains open.
 
 Version: `0.4.0`
 
