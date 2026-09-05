@@ -15,6 +15,7 @@ import { Modal } from "../components/Modal";
 import {
   filterRestaurants,
   recommendationPermissions,
+  restaurantEntryValidationMessage,
   restaurantPermissions,
   type CreateRestaurantEntryInput,
   type RestaurantEntryState
@@ -456,10 +457,11 @@ export function CreateRestaurantForm(props: {
   const [weekdays, setWeekdays] = useState<WeekdayTag[]>([]);
   const [moods, setMoods] = useState("");
   const [recommendationEnabled, setRecommendationEnabled] = useState(false);
+  const [validationError, setValidationError] = useState<string>();
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void props.onSubmit({
+    const input: CreateRestaurantEntryInput = {
       restaurant: restaurantCreate(values),
       ...(recommendationEnabled
         ? {
@@ -472,7 +474,14 @@ export function CreateRestaurantForm(props: {
             }
           }
         : {})
-    });
+    };
+    const message = restaurantEntryValidationMessage(input);
+    if (message) {
+      setValidationError(message);
+      return;
+    }
+    setValidationError(undefined);
+    void props.onSubmit(input);
   }
 
   return (
@@ -483,7 +492,10 @@ export function CreateRestaurantForm(props: {
           <input
             type="checkbox"
             checked={recommendationEnabled}
-            onChange={(event) => setRecommendationEnabled(event.target.checked)}
+            onChange={(event) => {
+              setRecommendationEnabled(event.target.checked);
+              if (!event.target.checked) setValidationError(undefined);
+            }}
           />
           <span>
             <strong>添加一条同事推荐</strong>
@@ -498,11 +510,17 @@ export function CreateRestaurantForm(props: {
             weekdays={weekdays}
             moods={moods}
             onDish={setDish}
-            onReason={setReason}
+            onReason={(value) => {
+              setReason(value);
+              if (value.trim()) setValidationError(undefined);
+            }}
             onWeather={setWeather}
             onWeekdays={setWeekdays}
             onMoods={setMoods}
           />
+        ) : null}
+        {validationError ? (
+          <p className="inline-error" role="alert">{validationError}</p>
         ) : null}
         {props.entryState.kind === "recovery" ? (
           <div className="partial-success" aria-live="polite">

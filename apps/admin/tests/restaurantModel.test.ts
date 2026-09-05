@@ -100,6 +100,46 @@ function recommendationMutation(): RecommendationMutationResponse {
 }
 
 describe("restaurant model", () => {
+  it("rejects a whitespace-only optional recommendation before either write and accepts a correction", async () => {
+    const deps = {
+      membershipId: "membership-member",
+      listRestaurants: vi.fn().mockResolvedValue({
+        groupId: "group-1",
+        restaurants: []
+      }),
+      createRestaurant: vi.fn().mockResolvedValue(restaurantMutation()),
+      createRecommendation: vi.fn().mockResolvedValue(recommendationMutation())
+    };
+    const controller = createRestaurantEntryController(deps);
+
+    await expect(controller.submit({
+      restaurant: { name: "新餐厅" },
+      recommendation: {
+        reason: "   ",
+        weatherTags: [],
+        weekdayTags: [],
+        moodTags: []
+      }
+    })).rejects.toThrow("restaurant_entry_recommendation_reason_required");
+    expect(deps.listRestaurants).not.toHaveBeenCalled();
+    expect(deps.createRestaurant).not.toHaveBeenCalled();
+    expect(deps.createRecommendation).not.toHaveBeenCalled();
+
+    await expect(controller.submit({
+      restaurant: { name: "新餐厅" },
+      recommendation: {
+        reason: " 修改后有内容 ",
+        weatherTags: [],
+        weekdayTags: [],
+        moodTags: []
+      }
+    })).resolves.toMatchObject({ kind: "complete" });
+    expect(deps.createRestaurant).toHaveBeenCalledOnce();
+    expect(deps.createRecommendation).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "修改后有内容"
+    }));
+  });
+
   it("creates a name-and-address restaurant without fabricating a recommendation", async () => {
     const createRestaurant = vi.fn().mockResolvedValue(restaurantMutation());
     const createRecommendation = vi.fn();

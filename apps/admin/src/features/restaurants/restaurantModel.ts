@@ -91,6 +91,15 @@ export interface CreateRestaurantEntryInput {
 
 export type RestaurantEntryState = RestaurantEntryRecoveryState;
 
+export function restaurantEntryValidationMessage(
+  input: CreateRestaurantEntryInput
+): string | null {
+  if (input.recommendation && !input.recommendation.reason.trim()) {
+    return "请填写推荐理由。";
+  }
+  return null;
+}
+
 export function createRestaurantEntryController(dependencies: {
   membershipId: string;
   listRestaurants: () => Promise<RestaurantListResponse>;
@@ -104,6 +113,9 @@ export function createRestaurantEntryController(dependencies: {
   const controller = createRestaurantEntryRecoveryController(dependencies);
 
   async function submit(input: CreateRestaurantEntryInput) {
+    if (restaurantEntryValidationMessage(input)) {
+      throw new Error("restaurant_entry_recommendation_reason_required");
+    }
     return controller.submit({
       restaurant: input.restaurant,
       ...(input.recommendation
