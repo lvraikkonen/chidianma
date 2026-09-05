@@ -23,13 +23,16 @@ import type { AdminGroupContext } from "../../clients/today";
 import { isMembershipInvalid } from "../auth/authModel";
 import {
   availableOnboardingModes,
+  bulkImportAction,
   classifyPasteDraftRow,
   createImportController,
   createNearbySearchController,
   createPasteDraft,
   manualRowsFromDraft,
+  nearbyCapabilityView,
   validateManualDraft,
   type ImportControllerState,
+  type BulkImportAction,
   type NearbySearchState,
   type PasteDraftRow
 } from "./onboardingModel";
@@ -179,6 +182,14 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
     keyword,
     radius
   );
+  const bulkAction = bulkImportAction(bulkImportState);
+  const nearbyView = nearbyCapabilityView(
+    features ?? {},
+    Boolean(currentSearchConfiguration && searchState.pages[visiblePage])
+      || searchState.selectedPlaceIds.length > 0
+      || poiPreview,
+    poiImportState.kind !== "idle"
+  );
 
   async function resolveAddress(event: FormEvent) {
     event.preventDefault();
@@ -241,12 +252,27 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
     }
   }
 
-  async function submitManualRows() {
+  async function submitManualRows(action: BulkImportAction) {
     const rows = manualRowsFromDraft(draft.rows);
     if (draft.error || rows.length === 0 || rows.length > 60) return;
-    const request = { requestId: crypto.randomUUID(), rows };
-    const next = await bulkController.submit(request);
+    const next = action === "new-import"
+      ? await bulkController.submit({ requestId: crypto.randomUUID(), rows })
+      : action === "correct-rejected"
+        ? await bulkController.correctRejected(Object.fromEntries(rows.map((row) => [row.rowId, row])))
+        : bulkController.getState();
     await finishImport(next, bulkImportState.kind === "complete" ? bulkImportState.request.requestId : undefined);
+  }
+
+  function startNewBulkImport() {
+    if (bulkController.resetResolved().kind !== "idle") return;
+    setPaste("");
+    setDraft({ rows: [], error: null });
+  }
+
+  function startNewPoiImport() {
+    if (poiController.resetResolved().kind !== "idle") return;
+    nearbyController.clearSelection();
+    setPoiPreview(false);
   }
 
   async function savePoiSelection() {
@@ -301,12 +327,14 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
                   rows={draft.rows}
                   overflow={draft.error === "too_many_rows"}
                   pending={bulkImportState.kind === "submitting"}
+                  action={bulkAction}
                   existingRestaurants={props.restaurants}
                   onChange={(rows) => setDraft({ ...draft, rows })}
                   onSubmit={submitManualRows}
                 />
               ) : null}
               <ImportFeedback
+                key={bulkImportState.kind === "idle" ? "bulk-idle" : bulkImportState.requestIds[0]}
                 state={bulkImportState}
                 onRetry={async () => { await finishImport(await bulkController.retry(), undefined); }}
                 onCorrect={async (confirmedRows) => {
@@ -318,11 +346,12 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
                   ]));
                   await finishImport(await bulkController.correctRejected(rows), undefined);
                 }}
+                onStartNew={startNewBulkImport}
               />
             </div>
           ) : mode === "nearby" ? (
             <div className="onboarding-flow">
-              {available.nearbySearch ? (
+              {nearbyView.showSearchControls ? (
                 <>
                   {settings?.searchCenter ? (
                     <div className="saved-center">
@@ -363,12 +392,20 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
                     </div>
                   ) : <p className="muted-note">请先选择并确认一个地址解析结果。</p>}
                   {searchState.error ? <p className="inline-error" role="alert">{onboardingErrorMessage(searchState.error)}</p> : null}
+                </>
+              ) : (
+                <p className="muted-note">当前不能发起新的附近搜索。已有的有效结果仍由服务器按保存能力校验。</p>
+              )}
+              {nearbyView.showRetainedWork ? (
+                <>
                   {currentSearchConfiguration && searchState.pages[visiblePage] ? (
                     <NearbyResults
                       response={searchState.pages[visiblePage]!}
                       selectedPlaceIds={searchState.selectedPlaceIds}
                       pending={searchState.pendingPage !== undefined || poiImportState.kind === "submitting"}
                       canSave={available.nearbySave}
+                      canPaginate={available.nearbySearch}
+                      saveLocked={poiImportState.kind !== "idle"}
                       onToggle={(placeId, selected) => nearbyController.toggle(placeId, selected)}
                       onPage={(page) => { setVisiblePage(page); void nearbyController.searchPage(page); }}
                       onSave={() => setPoiPreview(true)}
@@ -383,14 +420,14 @@ export function RestaurantOnboardingPanel(props: RestaurantOnboardingPanelProps)
                     />
                   ) : null}
                   <ImportFeedback
+                    key={poiImportState.kind === "idle" ? "poi-idle" : poiImportState.requestIds[0]}
                     state={poiImportState}
                     onRetry={async () => { await finishImport(await poiController.retry(), undefined); }}
                     onCorrect={async (confirmedRows) => { await finishImport(await poiController.correctRejected(confirmedRows), undefined); }}
+                    onStartNew={startNewPoiImport}
                   />
                 </>
-              ) : (
-                <p className="muted-note">当前不能发起新的附近搜索。已有的有效结果仍由服务器按保存能力校验。</p>
-              )}
+              ) : null}
             </div>
           ) : (
             <p className="muted-note">当前小组暂未开启批量粘贴。</p>
@@ -422,11 +459,17 @@ export function BulkImportEditor(props: {
   rows: PasteDraftRow[];
   overflow: boolean;
   pending: boolean;
+  action: BulkImportAction;
   existingRestaurants?: Array<{ name: string; address?: string | undefined }>;
   onChange: (rows: PasteDraftRow[]) => void;
-  onSubmit: () => void | Promise<void>;
+  onSubmit: (action: BulkImportAction) => void | Promise<void>;
 }) {
   const selectedCount = manualRowsFromDraft(props.rows).length;
+  const locked = props.action === "disabled" || props.action === "start-new-required";
+  const actionLabel = props.pending ? "正在保存…"
+    : props.action === "correct-rejected" ? `重试已修正的失败行（${selectedCount} 行）`
+      : props.action === "start-new-required" ? "请先开始新一批"
+        : `保存所选 ${selectedCount} 行`;
   const update = (rowId: string, patch: Partial<PasteDraftRow>) => props.onChange(props.rows.map((row) => {
     if (row.rowId !== rowId) return row;
     const next = {
@@ -449,7 +492,7 @@ export function BulkImportEditor(props: {
       <div className="import-row import-row-heading" aria-hidden="true"><span>选择</span><span>名称</span><span>地址</span><span>分店确认</span></div>
       {props.rows.map((row) => (
         <div className="import-row" key={row.rowId}>
-          <label className="row-selector"><span className="sr-only">选择 {row.rowId}</span><input type="checkbox" checked={row.selected} disabled={Boolean(row.error || row.hint)} onChange={(event) => update(row.rowId, { selected: event.target.checked })} /></label>
+          <label className="row-selector"><span className="sr-only">选择 {row.rowId}</span><input type="checkbox" checked={row.selected} disabled={Boolean(row.error || row.hint === "duplicate" || (row.hint === "ambiguous_branch" && !row.confirmSeparateBranch))} onChange={(event) => update(row.rowId, { selected: event.target.checked })} /></label>
           <label><span className="sr-only">餐厅名称</span><input value={row.name} maxLength={200} onChange={(event) => update(row.rowId, { name: event.target.value })} /></label>
           <label><span className="sr-only">餐厅地址</span><input value={row.address} maxLength={500} onChange={(event) => update(row.rowId, { address: event.target.value })} /></label>
           <label className="branch-check"><input type="checkbox" checked={row.confirmSeparateBranch} disabled={row.hint === "duplicate"} onChange={(event) => update(row.rowId, { confirmSeparateBranch: event.target.checked })} /><span>确认是独立分店</span></label>
@@ -457,7 +500,7 @@ export function BulkImportEditor(props: {
           {row.hint ? <small className={`row-hint ${row.hint}`}>{pasteHintMessage(row.hint)}</small> : null}
         </div>
       ))}
-      <div className="flow-actions"><button className="button primary" type="button" disabled={props.pending || props.overflow || selectedCount === 0} onClick={props.onSubmit}>{props.pending ? "正在保存…" : `保存所选 ${selectedCount} 行`}</button></div>
+      <div className="flow-actions"><button className="button primary" type="button" disabled={props.pending || locked || props.overflow || selectedCount === 0} onClick={() => props.onSubmit(props.action)}>{actionLabel}</button></div>
     </div>
   );
 }
@@ -467,6 +510,8 @@ export function NearbyResults(props: {
   selectedPlaceIds: string[];
   pending: boolean;
   canSave: boolean;
+  canPaginate?: boolean | undefined;
+  saveLocked?: boolean | undefined;
   onToggle: (placeId: string, selected: boolean) => void;
   onPage: (page: number) => void;
   onSave: () => void | Promise<void>;
@@ -483,13 +528,13 @@ export function NearbyResults(props: {
         ))}
       </div>
       <div className="pagination" aria-label="附近搜索分页">
-        <button className="button ghost compact" type="button" disabled={props.pending || props.response.page <= 1} onClick={() => props.onPage(props.response.page - 1)}>上一页</button>
+        <button className="button ghost compact" type="button" disabled={props.pending || props.canPaginate === false || props.response.page <= 1} onClick={() => props.onPage(props.response.page - 1)}>上一页</button>
         <span>第 {props.response.page} / 3 页</span>
-        <button className="button ghost compact" type="button" disabled={props.pending || !props.response.hasMore || props.response.page >= 3} onClick={() => props.onPage(props.response.page + 1)}>下一页</button>
+        <button className="button ghost compact" type="button" disabled={props.pending || props.canPaginate === false || !props.response.hasMore || props.response.page >= 3} onClick={() => props.onPage(props.response.page + 1)}>下一页</button>
       </div>
       <div className="flow-actions">
         <span>已选 {props.selectedPlaceIds.length} 家</span>
-        {props.canSave ? <button className="button primary" type="button" disabled={props.pending || props.selectedPlaceIds.length === 0} onClick={props.onSave}>预览并保存所选餐厅</button> : <small>当前仅可搜索，不能保存结果。</small>}
+        {props.canSave ? <button className="button primary" type="button" disabled={props.pending || props.saveLocked || props.selectedPlaceIds.length === 0} onClick={props.onSave}>{props.saveLocked ? "请先处理当前保存结果" : "预览并保存所选餐厅"}</button> : <small>当前仅可搜索，不能保存结果。</small>}
       </div>
     </div>
   );
@@ -514,23 +559,17 @@ function PoiSavePreview(props: {
   );
 }
 
-function ImportFeedback(props: {
+export function ImportFeedback(props: {
   state: ImportControllerState;
   onRetry: () => void | Promise<void>;
   onCorrect: (rows: Record<string, RestaurantImportRow>) => void | Promise<void>;
+  onStartNew: () => void;
 }) {
   const [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
-  if (props.state.kind === "idle" || props.state.kind === "submitting") return null;
-  if (props.state.kind === "recovery") return (
-    <div className="import-feedback recovery" role="alert">
-      <strong>保存结果尚未确认</strong>
-      <p>{onboardingErrorMessage(props.state.error)} 原请求编号会原样保留，重试不会重复创建已成功的餐厅。</p>
-      <button className="button secondary compact" type="button" onClick={props.onRetry}>用同一请求安全重试</button>
-    </div>
-  );
-  const rejected = props.state.response.results.filter((result) => result.status === "rejected");
+  if (props.state.kind === "idle") return null;
+  const rejected = props.state.results.filter((result) => result.status === "rejected");
   const requestRows = new Map(Object.entries(props.state.rowsById));
-  const corrections = Object.fromEntries(rejected.flatMap((result) => {
+  const corrections = props.state.kind === "complete" ? Object.fromEntries(rejected.flatMap((result) => {
     const row = requestRows.get(result.rowId);
     if (!row) return [];
     if (row.kind === "poi" && (result.code !== "ambiguous_branch" || !confirmed[result.rowId])) {
@@ -540,15 +579,26 @@ function ImportFeedback(props: {
       ...row,
       ...(confirmed[result.rowId] ? { confirmSeparateBranch: true } : {})
     }]];
-  }));
+  })) : {};
+  const title = props.state.kind === "recovery" ? "保存结果尚未确认"
+    : props.state.kind === "submitting" ? "正在保存"
+      : "保存结果";
   return (
-    <div className="import-feedback" aria-live="polite">
-      <strong>保存结果</strong>
-      <ul>{props.state.response.results.map((result) => <ImportResult key={result.rowId} result={result} />)}</ul>
-      {rejected.map((result) => result.code === "ambiguous_branch" ? (
+    <div className={`import-feedback${props.state.kind === "recovery" ? " recovery" : ""}`} aria-live="polite" {...(props.state.kind === "recovery" ? { role: "alert" } : {})}>
+      <strong>{title}</strong>
+      <p>请求记录：{props.state.requestIds.join("、")}</p>
+      {props.state.results.length > 0 ? <ul>{props.state.results.map((result) => <ImportResult key={result.rowId} result={result} />)}</ul> : null}
+      {props.state.kind === "recovery" ? (
+        <>
+          <p>{onboardingErrorMessage(props.state.error)} 当前请求和此前已知结果都已保留。</p>
+          <button className="button secondary compact" type="button" onClick={props.onRetry}>用同一请求安全重试</button>
+        </>
+      ) : null}
+      {props.state.kind === "complete" ? rejected.map((result) => result.code === "ambiguous_branch" ? (
         <label className="branch-check" key={result.rowId}><input type="checkbox" checked={confirmed[result.rowId] ?? false} onChange={(event) => setConfirmed({ ...confirmed, [result.rowId]: event.target.checked })} /><span>{result.rowId}：确认是独立分店</span></label>
-      ) : null)}
+      ) : null) : null}
       {Object.keys(corrections).length > 0 ? <button className="button secondary compact" type="button" onClick={() => props.onCorrect(corrections)}>用新请求重试已修正的失败行</button> : null}
+      {props.state.kind === "complete" ? <button className="button ghost compact" type="button" onClick={props.onStartNew}>开始新一批</button> : null}
     </div>
   );
 }

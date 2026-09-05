@@ -112,3 +112,40 @@ Expected RED: 3 failures showed missing `duplicate`/`ambiguous_branch` classific
 Self-review checked the approved flow against the implementation, including independent gates, payload/request identity, result merging, stale-response boundaries, source-ticket opacity, branch handling, route membership resolution and no automatic recommendation refresh. The initial self-review added an explicit POI save preview and guards that make stale center/query results unsubmittable. Root's first browser pass then exposed and drove the local duplicate/ambiguous preview fix above.
 
 No known automated correctness issue remains. Root still owns the final browser pass against the local migrated UI database, including real click behavior, page-2/3 selection, member temporary-center behavior and auth destination handoff. Live Amap was not called by this task; provider authorization remains deferred and the live key/provider smoke remains Root's responsibility. No dependency maintenance or full-monorepo/release check was performed here because those remain later Task 4/Root gates.
+
+## Review round 1 fixes
+
+Independent review at `72b437c` found three Important recovery/gating defects. They were fixed together because they share the import-state/UI boundary.
+
+1. Import submission is now state-locked. The controller rejects ordinary replacement submissions while submitting, uncertain or complete. Bulk ordinary Save is disabled while uncertain, becomes a correction action after a resolved partial result, and calls `correctRejected`, which creates a new request ID and filters out successful/existing rows. A separate `开始新一批` action is the only UI path that resets resolved work; the controller refuses that reset while work is pending or uncertain.
+2. Import submitting/recovery/complete states now all carry accumulated per-row results, the original and correction request IDs, and the known row payloads. A failed correction therefore keeps prior created/existing rows and both receipt request IDs on screen. Retrying still passes the exact correction request object that had the uncertain result. Later correction success merges into the retained result set.
+3. Nearby address resolution/new search and retained-work rendering now use separate gates. If refreshed capabilities disable search while save remains enabled, selected results, explicit save preview and import recovery stay visible. Pagination is disabled with search, so retained rows cannot accidentally issue a new provider request. Save itself remains gated by `poiReferenceDraft`.
+
+The adjacent Minor was also fixed: an ambiguous preview row's selection checkbox is disabled only until separate-branch confirmation. A confirmed row remains selected and can be toggled; exact duplicates remain locked and cannot be overridden.
+
+### Review round 1 RED/GREEN evidence
+
+Controller RED:
+
+```bash
+pnpm --filter @lunch/admin exec vitest run tests/onboardingModel.test.ts
+```
+
+Before implementation, 3/7 new/affected controller tests failed: an uncertain request could be replaced (`submit` called twice), a resolved import could be replaced without reset, and `bulkImportAction`/retained correction progress did not exist. GREEN after the state-machine change: all 8 controller tests passed, including exact-object uncertain retry, partial-success correction loss, accumulated request IDs/results, explicit resolved reset, query cancellation and search selection retention.
+
+UI RED:
+
+```bash
+pnpm --filter @lunch/admin exec vitest run tests/onboardingModel.test.ts tests/onboardingMarkup.test.tsx
+```
+
+Before the UI change, 3/13 tests failed: the nearby retained-work capability decision was missing, recovery feedback was not exported/renderable with known outcomes, and partial-success ordinary Save still rendered the original save action. GREEN after wiring the controller state into the rendered controls: 2 files, **14/14 passed**. Markup/interaction coverage verifies recovery Save is disabled, prior results and both request IDs stay visible, the same-request retry remains available, partial-success button interaction emits `correct-rejected`, resolved work requires the separate new-import action, and retained POI saving remains available while pagination is disabled.
+
+Final amended checks (no repeated full-monorepo suite):
+
+- `pnpm --filter @lunch/admin exec vitest run tests/onboardingModel.test.ts tests/onboardingMarkup.test.tsx` — **14/14 passed**.
+- `pnpm --filter @lunch/admin typecheck` — passed.
+- `pnpm --filter @lunch/admin build` — passed; Vite transformed 63 modules and emitted the production bundle.
+- `git diff --check` — passed.
+
+Root prepared a disposable response-loss proxy to exercise the same-request recovery and partial-success correction-loss paths in the browser after this fix commit. Those browser results are recorded by Root separately and are not claimed here.

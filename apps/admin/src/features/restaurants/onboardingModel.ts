@@ -20,6 +20,17 @@ export function availableOnboardingModes(
   };
 }
 
+export function nearbyCapabilityView(
+  features: Partial<GroupCapabilitiesResponse["features"]>,
+  hasRetainedResults: boolean,
+  hasImportWork: boolean
+) {
+  return {
+    showSearchControls: features.poiReferenceSearch === true,
+    showRetainedWork: hasImportWork || hasRetainedResults
+  };
+}
+
 export interface PasteDraftRow {
   rowId: string;
   name: string;
@@ -94,14 +105,43 @@ export function manualRowsFromDraft(rows: PasteDraftRow[]): RestaurantImportRow[
 
 export type ImportControllerState =
   | { kind: "idle" }
-  | { kind: "submitting"; request: RestaurantImportRequest }
-  | { kind: "recovery"; request: RestaurantImportRequest; error: unknown }
+  | {
+      kind: "submitting";
+      request: RestaurantImportRequest;
+      requestIds: string[];
+      results: RestaurantImportResponse["results"];
+      rowsById: Record<string, RestaurantImportRow>;
+    }
+  | {
+      kind: "recovery";
+      request: RestaurantImportRequest;
+      error: unknown;
+      requestIds: string[];
+      results: RestaurantImportResponse["results"];
+      rowsById: Record<string, RestaurantImportRow>;
+    }
   | {
       kind: "complete";
       request: RestaurantImportRequest;
       response: RestaurantImportResponse;
+      requestIds: string[];
+      results: RestaurantImportResponse["results"];
       rowsById: Record<string, RestaurantImportRow>;
     };
+
+export type BulkImportAction =
+  | "new-import"
+  | "correct-rejected"
+  | "start-new-required"
+  | "disabled";
+
+export function bulkImportAction(state: ImportControllerState): BulkImportAction {
+  if (state.kind === "idle") return "new-import";
+  if (state.kind === "submitting" || state.kind === "recovery") return "disabled";
+  return state.results.some((result) => result.status === "rejected")
+    ? "correct-rejected"
+    : "start-new-required";
+}
 
 export function createImportController(dependencies: {
   submit: (request: RestaurantImportRequest) => Promise<RestaurantImportResponse>;
@@ -111,13 +151,19 @@ export function createImportController(dependencies: {
   let state: ImportControllerState = { kind: "idle" };
   let accumulatedResults: RestaurantImportResponse["results"] = [];
   let knownRows = new Map<string, RestaurantImportRow>();
+  let requestIds: string[] = [];
   const correctionRequestIds = new Set<string>();
   const commit = (next: ImportControllerState) => {
     state = next;
     dependencies.onState?.(next);
   };
   const send = async (request: RestaurantImportRequest) => {
-    commit({ kind: "submitting", request });
+    const progress = () => ({
+      requestIds: [...requestIds],
+      results: [...accumulatedResults],
+      rowsById: Object.fromEntries(knownRows)
+    });
+    commit({ kind: "submitting", request, ...progress() });
     try {
       const response = await dependencies.submit(request);
       accumulatedResults = correctionRequestIds.has(request.requestId)
@@ -127,18 +173,20 @@ export function createImportController(dependencies: {
         kind: "complete",
         request,
         response: { ...response, results: accumulatedResults },
-        rowsById: Object.fromEntries(knownRows)
+        ...progress()
       });
     } catch (error) {
-      commit({ kind: "recovery", request, error });
+      commit({ kind: "recovery", request, error, ...progress() });
     }
     return state;
   };
   return {
     getState: () => state,
     submit: (request: RestaurantImportRequest) => {
+      if (state.kind !== "idle") return Promise.resolve(state);
       accumulatedResults = [];
       knownRows = new Map(request.rows.map((row) => [row.rowId, row]));
+      requestIds = [request.requestId];
       correctionRequestIds.clear();
       return send(request);
     },
@@ -155,8 +203,18 @@ export function createImportController(dependencies: {
         rows
       };
       for (const row of rows) knownRows.set(row.rowId, row);
+      requestIds.push(request.requestId);
       correctionRequestIds.add(request.requestId);
       return send(request);
+    },
+    resetResolved() {
+      if (state.kind !== "complete") return state;
+      accumulatedResults = [];
+      knownRows = new Map();
+      requestIds = [];
+      correctionRequestIds.clear();
+      commit({ kind: "idle" });
+      return state;
     }
   };
 }
@@ -252,6 +310,9 @@ export function createNearbySearchController(dependencies: {
       const ids = new Set(state.selectedPlaceIds);
       if (selected) ids.add(placeId); else ids.delete(placeId);
       commit({ ...state, selectedPlaceIds: [...ids] });
+    },
+    clearSelection() {
+      commit({ ...state, selectedPlaceIds: [] });
     },
     getSelected(): PoiCandidate[] {
       const candidates = Object.values(state.pages).flatMap((page) => page?.candidates ?? []);

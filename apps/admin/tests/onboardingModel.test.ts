@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   availableOnboardingModes,
   createImportController,
+  bulkImportAction,
   createNearbySearchController,
-  createPasteDraft
+  createPasteDraft,
+  nearbyCapabilityView
 } from "../src/features/restaurants/onboardingModel";
 
 function candidate(placeId: string): PoiCandidate {
@@ -44,6 +46,18 @@ describe("restaurant onboarding model", () => {
       poiReferenceSearch: true,
       poiReferenceDraft: false
     })).toEqual({ bulk: false, nearbySearch: true, nearbySave: false });
+  });
+
+  it("retains selected nearby work when search becomes disabled but save stays enabled", () => {
+    expect(nearbyCapabilityView({
+      poiReferenceSearch: true,
+      poiReferenceDraft: true
+    }, true, true)).toEqual({ showSearchControls: true, showRetainedWork: true });
+
+    expect(nearbyCapabilityView({
+      poiReferenceSearch: false,
+      poiReferenceDraft: true
+    }, true, true)).toEqual({ showSearchControls: false, showRetainedWork: true });
   });
 
   it("integrates shared paste parsing into editable selected rows", () => {
@@ -98,6 +112,8 @@ describe("restaurant onboarding model", () => {
 
     await controller.submit(original);
     expect(controller.getState()).toMatchObject({ kind: "recovery", request: original });
+    await controller.submit({ requestId: "must-not-replace", rows: [original.rows[0]!] });
+    expect(submit).toHaveBeenCalledTimes(1);
     await controller.retry();
     expect(submit.mock.calls[1]![0]).toBe(original);
     await controller.correctRejected({
@@ -108,6 +124,73 @@ describe("restaurant onboarding model", () => {
       requestId: "request-correction",
       rows: [{ rowId: "line-2", kind: "manual", name: "砂锅", address: "二楼", confirmSeparateBranch: true }]
     });
+  });
+
+  it("keeps resolved rows and every receipt ID visible when a correction response is lost", async () => {
+    const original: RestaurantImportRequest = {
+      requestId: "request-original",
+      rows: [
+        { rowId: "line-1", kind: "manual", name: "面馆" },
+        { rowId: "line-2", kind: "manual", name: "砂锅" }
+      ]
+    };
+    const correction = { rowId: "line-2", kind: "manual" as const, name: "砂锅", address: "二楼" };
+    const submit = vi.fn()
+      .mockResolvedValueOnce({
+        requestId: "request-original",
+        results: [
+          { rowId: "line-1", status: "created", code: "created", message: "created" },
+          { rowId: "line-2", status: "rejected", code: "ambiguous_branch", message: "address needed" }
+        ]
+      })
+      .mockRejectedValueOnce(new Error("correction response lost"))
+      .mockResolvedValueOnce({
+        requestId: "request-correction",
+        results: [{ rowId: "line-2", status: "created", code: "created", message: "created" }]
+      });
+    const controller = createImportController({ submit, createRequestId: () => "request-correction" });
+
+    await controller.submit(original);
+    expect(bulkImportAction(controller.getState())).toBe("correct-rejected");
+    await controller.correctRejected({ "line-2": correction });
+
+    expect(controller.getState()).toMatchObject({
+      kind: "recovery",
+      requestIds: ["request-original", "request-correction"],
+      results: [
+        { rowId: "line-1", status: "created" },
+        { rowId: "line-2", status: "rejected" }
+      ]
+    });
+    const correctionRequest = submit.mock.calls[1]![0];
+    await controller.retry();
+    expect(submit.mock.calls[2]![0]).toBe(correctionRequest);
+    expect(controller.getState()).toMatchObject({
+      kind: "complete",
+      requestIds: ["request-original", "request-correction"],
+      results: [
+        { rowId: "line-1", status: "created" },
+        { rowId: "line-2", status: "created" }
+      ]
+    });
+    expect(bulkImportAction(controller.getState())).toBe("start-new-required");
+  });
+
+  it("starts a distinct import only after resolved work is explicitly reset", async () => {
+    const submit = vi.fn().mockResolvedValue({
+      requestId: "one",
+      results: [{ rowId: "line-1", status: "created", code: "created", message: "created" }]
+    });
+    const controller = createImportController({ submit });
+    const first = { requestId: "one", rows: [{ rowId: "line-1", kind: "manual" as const, name: "面馆" }] };
+    const second = { requestId: "two", rows: [{ rowId: "line-2", kind: "manual" as const, name: "饭馆" }] };
+
+    await controller.submit(first);
+    await controller.submit(second);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(controller.resetResolved()).toEqual({ kind: "idle" });
+    await controller.submit(second);
+    expect(submit).toHaveBeenCalledTimes(2);
   });
 
   it("keeps selection across pages and ignores a late response after the query changes", async () => {
