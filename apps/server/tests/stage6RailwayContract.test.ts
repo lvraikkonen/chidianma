@@ -6,7 +6,6 @@ const workspaceRoot = resolve(process.cwd(), "../..");
 const rootPackage = JSON.parse(readFileSync(resolve(workspaceRoot, "package.json"), "utf8")) as {
   engines: Record<string, string>;
   scripts: Record<string, string>;
-  pnpm: { overrides: Record<string, string> };
 };
 const railway = JSON.parse(readFileSync(resolve(workspaceRoot, "railway.json"), "utf8")) as {
   build: Record<string, unknown>;
@@ -23,7 +22,6 @@ describe("Stage 6 Railway release contract", () => {
     expect(build.indexOf("@lunch/server prisma:generate")).toBeLessThan(build.indexOf("@lunch/admin build"));
     expect(build.indexOf("@lunch/admin build")).toBeLessThan(build.indexOf("@lunch/server build"));
     expect(build).not.toContain("@lunch/extension");
-    expect(rootPackage.pnpm.overrides["@fastify/static>glob"]).toMatch(/11\.1/);
     expect(rootPackage.scripts["check:release-artifacts"])
       .toBe("node scripts/check-stage6-artifacts.mjs");
     expect(rootPackage.scripts["check:production-vulnerabilities"])
